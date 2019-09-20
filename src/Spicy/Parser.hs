@@ -43,6 +43,7 @@ import           Prelude                   hiding (cycle, foldl1, foldr1, head,
 import           Spicy.Molecule.Util
 import           Spicy.Types
 import           Text.Read
+import Data.Typeable
 -- import Data.Monoid
 -- import Data.Sequence (Seq)
 -- import Debug.Trace
@@ -69,6 +70,11 @@ Convert strict text to lazy text.
 textS2L :: TS.Text -> TL.Text
 textS2L = TL.pack . TS.unpack
 
+parse' :: MonadThrow m, Typeable a => Parser a -> TL.Text -> m a
+parse' p t =
+  case parse p t of
+    Done _ r -> return r
+    Fail _ _ e -> throwM $ ParserException ""
 ----------------------------------------------------------------------------------------------------
 {-|
 Parse a .xyz file (has no connectivity, atom types or partioal charges).

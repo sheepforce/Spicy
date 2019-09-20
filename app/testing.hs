@@ -3,6 +3,7 @@ Unit testing and golden testing (unit testing based on files) for Spicy. Test al
 parts of Spicy. This is especially Spicy.MolecularSystem and Spicy.Parser.
 All tests are required to pass. There is no gray zone!!
 -}
+import           Control.Exception.Safe
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Except
@@ -326,47 +327,17 @@ data MolWriterEnv = MolWriterEnv
   }
 
 {-|
-Defines a job step for the test case. Either process the original input file (step 1), or the
-spicy-written file.
--}
-data MolWriterStep = OrigFile | WriterFile deriving Eq
-
-{-|
-Process input files of the test type (XYZ, TXYZ, MOL2, PDB, ...) and parse them to an 'Either'
-'String' 'Molecule'.
--}
-mweProcessFile :: MolWriterStep -> ExceptT String (ReaderT MolWriterEnv IO) Molecule
-mweProcessFile step = ExceptT $ do
-  env <- ask
-  let inputToRead =
-        case step of
-          OrigFile   -> mweOrigFile env
-          WriterFile -> mweWriterFile env
-  raw <- liftIO $ T.readFile inputToRead
-  return $ eitherResult . parse (mweParser env) $ raw
-
-{-|
-Process a given 'Molecule' with a monad transformer to a 'Either' 'String' 'Text', where 'Text' is
-representing the molecule in the file format representation to be tested.
--}
-mweWriteFileFormat :: Molecule -> ExceptT String (ReaderT MolWriterEnv IO) Text
-mweWriteFileFormat mol = ExceptT $ do
-  env <- ask
-  let molFormatText = (mweWriter env) $ mol
-  return molFormatText
-
-{-|
 Provides the IO action for 'goldenVsFile', writing the original representation in JSON and the
 writer format, and the writer representation as JSON again. Compares the writer JSON representation
 against the original JSON representation.
 -}
-mweParseWriteParseWrite :: MolWriterEnv -> IO ()
+mweParseWriteParseWrite :: ReaderT MolWriterEnv IO ()
 mweParseWriteParseWrite molWriterEnv = do
-  _ <- flip runReaderT molWriterEnv . runExceptT $ do
     -- Get the environment.
-    env               <- lift ask
+    env               <- ask
     -- Read and parse the original (external) file
-    origMol           <- mweProcessFile OrigFile
+    origMol           <- liftIO $ T.readFile (mweOrigFile env)
+
     -- Get the writer representation of the original molecule.
     origMolFormatText <- mweWriteFileFormat origMol
     -- Write internal representation and writer representation of the original molecule.
