@@ -33,6 +33,7 @@ import           Prelude             hiding (cycle, foldl1, foldr1, head, init,
                                       last, maximum, minimum, tail, take,
                                       takeWhile, (!!))
 import           Spicy.Types
+import Control.Exception.Safe
 
 {-
 "IS" = IntSet
@@ -60,21 +61,21 @@ Check sanity of 'Molecule', which means test the following criteria:
   - Bonds of a layer are bidirectorial
   - The size of '_atom_Coordinates' is strictly 3 for all atoms of this layer
 -}
-checkMolecule :: Molecule -> Either String Molecule
+checkMolecule :: MonadThrow m => Molecule -> m Molecule
 checkMolecule mol
   | not layerIndCheck        =
-      Left "checkMolecule: Bonds vs Atoms mismatch. Your bonds bind to non existing atoms."
+      throwM $ MolLogicException "checkMolecule" ("Bonds vs Atoms mismatch. Your bonds bind to non existing atoms." :: String)
   | not fragAtomsDisjCheck   =
-      Left "checkMolecule: The atoms of deeper layers are not disjoint but shared by fragments."
+      throwM $ MolLogicException "checkMolecule" ("The atoms of deeper layers are not disjoint but shared by fragments." :: String)
   | not subsetCheckAtoms     =
-      Left "checkMolecule: The atoms of deeper layers are not a subset of this layer."
+      throwM $ MolLogicException "checkMolecule" ("The atoms of deeper layers are not a subset of this layer." :: String)
   | not bondBidectorialCheck =
-      Left "checkMolecule: The bonds are not bidirectorially defined."
+      throwM $ MolLogicException "checkMolecule" ("The bonds are not bidirectorially defined." :: String)
   | not atomCoordCheck       =
-      Left "checkMolecule: Not all atoms have exactly 3 coordinates."
+      throwM $ MolLogicException "checkMolecule" ("Not all atoms have exactly 3 coordinates." :: String)
   | otherwise                =
       if S.null (mol ^. molecule_SubMol)
-        then Right mol
+        then return mol
         else do
           subMols <- traverse checkMolecule $ mol ^. molecule_SubMol
           return $ mol & molecule_SubMol .~ subMols
@@ -161,7 +162,7 @@ This reindexes all structures in a 'Molecule' with predefined counting scheme. T
 of 'Atom's will start at 0 and be consecutive. This also influences bonds in '_molecule_Bonds' and
 layers in '_molecule_SubMol'. Pseudoatoms will be taken care of.
 -}
-reIndex2BaseMolecule :: Molecule -> Either String Molecule
+reIndex2BaseMolecule :: MonadThrow m => Molecule -> m Molecule
 reIndex2BaseMolecule mol =
   let allAtomIndices = getAtomIndices mol
       repMap         =
@@ -192,7 +193,7 @@ from a global replacement Map, mapping old to new indices. This function assumes
 is sane in the overall assumptions of this program. This means that the lower layers obey the
 counting scheme of the atoms of the higher layers and pseudoatoms come last.
 -}
-reIndexMolecule :: IntMap Int -> Molecule -> Either String Molecule
+reIndexMolecule :: MonadThrow m => IntMap Int -> Molecule -> m Molecule
 reIndexMolecule repMap mol = do
   -- Get the submolecules
   let subMols = mol ^. molecule_SubMol
@@ -201,7 +202,7 @@ reIndexMolecule repMap mol = do
     -- If the molecule has no submolecules:
   if S.null subMols
     -- Then we are done.
-    then Right molRI
+    then return molRI
     -- Else we need to reindex the deeper layers also.
     else do
       subMolsRI <- traverse (reIndexMolecule repMap) subMols
@@ -214,21 +215,22 @@ incompleteness of the replacement 'IntMap' 'Int' will result in 'Left' 'String',
 if the 'Atom's indexing is sane and indices are unique.
 -}
 reIndexMoleculeLayer ::
-     IntMap Int             -- ^ 'IntMap' with mappings from old indices to new indices (bonds and
-                            --   atoms).
-  -> Molecule               -- ^ Molecule to reindex.
-  -> Either String Molecule -- ^ 'Left' 'String' in case the mapping from old keys to new keys is
+     MonadThrow m
+  => IntMap Int -- ^ 'IntMap' with mappings from old indices to new indices (bonds and
+                --   atoms).
+  -> Molecule   -- ^ Molecule to reindex.
+  -> m Molecule -- ^ 'Left' 'String' in case the mapping from old keys to new keys is
                             --   incomplete.
 reIndexMoleculeLayer repMap mol
   -- If old Atom indices cannot be completely replaced by the Map:
   | not $ checkRepMapCompleteIS repMap (IM.keysSet $ mol ^. molecule_Atoms) =
-      Left "reIndexMoleculeLayer: The remapping of indices is not complete for the atom indices."
+      throwM $ MolLogicException "reIndexMoleculeLayer" "The remapping of indices is not complete for the atom indices."
   -- If old bond type data cannot be completely replaced by the Map:
   | not $ checkRepMapCompleteIMIS repMap (mol ^. molecule_Bonds)            =
-      Left "reIndexMoleculeLayer: The remapping of indices is not complete for the bond data."
+      throwM $ MolLogicException "reIndexMoleculeLayer" "The remapping of indices is not complete for the bond data."
   -- If both checks went fine:
   | otherwise                                                               =
-      Right $ mol
+      return $ mol
         -- Use the (%~) lens to update the atoms indices of a molecule with new indices.
         & molecule_Atoms %~ replaceIMKeys repMap
         -- Use the (%~) lens to update keys and values (IntSet) of the bond type data structure.
@@ -335,7 +337,7 @@ groupTupleSeq a =
       keyValGroups  = groupBy (\x y -> fst x == fst y) . S.sortOn fst $ a
       -- Transform the grouped key value structures to a Seq (IntMap IntSet), where each IntMap has
       -- just one key.
-      atomicIntMaps :: Either String (Seq (IntMap IntSet))
+      atomicIntMaps :: MonadThrow m => m (Seq (IntMap IntSet))
       atomicIntMaps = traverse imisFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap  = foldl' (<>) IM.empty <$> atomicIntMaps
@@ -352,15 +354,15 @@ elements of the tuple, all need to be the same 'IM.key'. If they are not the ass
 function are not met and a 'Left' 'String' as error will be returned. The result will be an IntMap
 with a single 'IM.Key'.
 -}
-imisFromGroupedSequence :: Seq (Int, Int) -> Either String (IntMap IntSet)
+imisFromGroupedSequence :: MonadThrow m => Seq (Int, Int) -> m (IntMap IntSet)
 imisFromGroupedSequence group
-  | S.null group = Right IM.empty
+  | S.null group = return IM.empty
   | keyCheck     =
       case headKey of
-        Nothing -> Right IM.empty
-        Just k  -> Right $ IM.fromList [(k, values)]
+        Nothing -> return IM.empty
+        Just k  -> return $ IM.fromList [(k, values)]
   | otherwise    =
-      Left "imisFromGroupedSequence: The keys are not all the same."
+      throwM $ DataStructureException "imisFromGroupedSequence" "The keys are not all the same."
   where
     headGroup = group S.!? 0
     keys      = fst <$> group
