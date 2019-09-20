@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ce9efd07789c2822a02c3709f518367cc687758e201731eed397e487e2e3dd9c
+-- hash: 3ec6c73eb9c7d34aa1b5f6744d900e3aae8206911f44d51a5cf0ec300c64d100
 
 name:           spicy
 version:        0.0.0.1
@@ -102,6 +102,7 @@ library
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , safe-exceptions >=0.1.7.0
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
@@ -146,6 +147,7 @@ executable benchmarks-exe
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , text >=1.2.2.0
@@ -190,6 +192,7 @@ executable spicy
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , text >=1.2.2.0
@@ -234,6 +237,7 @@ executable unittests-exe
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , tasty >=0.11.3
@@ -282,6 +286,7 @@ test-suite unittests
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , tasty >=0.11.3
@@ -331,6 +336,7 @@ benchmark benchmarks
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , text >=1.2.2.0
