@@ -18,9 +18,9 @@ module Spicy.Writer.Molecule
 , writePDB
 , writeSpicy
 ) where
+import           Control.Exception.Safe
 import           Data.Aeson.Encode.Pretty
 import           Data.Attoparsec.Text.Lazy (isEndOfLine)
-import           Data.Either
 import           Data.Foldable
 import qualified Data.IntMap.Lazy          as IM
 import           Data.IntSet               (IntSet)
@@ -40,11 +40,10 @@ import           Spicy.Molecule.Util
 import           Spicy.Types
 import           Text.Printf
 
-
 {-|
 Write a Molden XYZ file from a molecule. This format ignores all deep level layers of a molecule.
 -}
-writeXYZ :: Molecule -> Either String Text
+writeXYZ :: MonadThrow m => Molecule -> m Text
 writeXYZ mol = toXYZ <$> checkMolecule mol
   where
     -- Assemble a XYZ file from a molecule
@@ -80,11 +79,11 @@ for visualisation but obviously not for MM.
 
 This format ingores all deeper level layers of a molecule.
 -}
-writeTXYZ :: Molecule -> Either String Text
+writeTXYZ :: MonadThrow m => Molecule -> m Text
 writeTXYZ mol
   | ffTypeCheck =
        toTXYZ <$> (checkMolecule =<< reIndex2BaseMolecule (mol & molecule_SubMol .~ S.empty))
-  | otherwise   = Left "writeTXYZ: Not all atoms have Tinker XYZ style atom types."
+  | otherwise   = throwM $ MolLogicException "writeMOL2" "writeTXYZ: Not all atoms have Tinker XYZ style atom types."
   where
     -- Check if all atoms have TXYZ atom types.
     ffTypeCheck = all (== TXYZ 0) . IM.map (\a -> a ^. atom_FFType) $ mol ^. molecule_Atoms
@@ -144,10 +143,10 @@ Write a simplified .mol2 file (Tripos SYBYL) from a 'Molecule', containing the a
 (single bonds only) and partial charges. This format writes atoms and bonds __only__ from the the
 first sublayer of the 'Molecule', which includes the fragment definitions.
 -}
-writeMOL2 :: Molecule -> Either String Text
+writeMOL2 :: MonadThrow m => Molecule -> m Text
 writeMOL2 mol
   | ffTypeCheck = toMOL2 <$> (checkMolecule =<< reIndex2BaseMolecule mol)
-  | otherwise   = Left "writeMOL2: Not all atoms have MOL2 style atom types."
+  | otherwise   = throwM $ MolLogicException "writeMOL2" "Not all atoms have MOL2 style atom types."
   where
     ffTypeCheck = all (== Mol2 "") . IM.map (\a -> a ^. atom_FFType) $ mol ^. molecule_Atoms
     toMOL2 :: Molecule -> Text
@@ -242,10 +241,10 @@ Writes a 'Molecule' to a PDB file. The PDB format is simplified and recounts ato
 different chains, sets dummy values for the temperature and occupation factors and cannot write
 charges (as PDB) expects integers.
 -}
-writePDB :: Molecule -> Either String Text
+writePDB :: MonadThrow m => Molecule -> m Text
 writePDB mol
   | ffTypeCheck = toPDB <$> (checkMolecule =<< reIndex2BaseMolecule mol)
-  | otherwise   = Left "writeMOL2: Not all atoms have PDB style atom types"
+  | otherwise   = throwM $ MolLogicException "writePDB" "Not all atoms have PDB style atom types."
   where
     ffTypeCheck = all (== PDB "") . IM.map (\a -> a ^. atom_FFType) $ mol ^. molecule_Atoms
     toPDB :: Molecule -> Text
