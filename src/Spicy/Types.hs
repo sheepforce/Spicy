@@ -15,7 +15,9 @@ takes care of the description of molecules (structure, topology, potential energ
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell   #-}
 module Spicy.Types
-( Strat(..)
+( MolLogicException(..)
+, DataStructureException(..)
+, Strat(..)
 , AccVector(..)
 , AccMatrix(..)
 , Element(..)
@@ -39,6 +41,7 @@ module Spicy.Types
 , Trajectory
 ) where
 import           Control.DeepSeq
+import           Control.Exception.Safe
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty
 import qualified Data.Array.Accelerate     as A
@@ -47,6 +50,7 @@ import           Data.IntMap.Lazy          (IntMap)
 import           Data.IntSet               (IntSet)
 import           Data.Sequence             (Seq)
 import           Data.Text.Lazy            (Text)
+import           Data.Typeable
 import           GHC.Generics              (Generic)
 import           Lens.Micro.Platform       hiding ((.=))
 import           Prelude                   hiding (cycle, foldl1, foldr1, head,
@@ -62,6 +66,24 @@ class NiceShow a where
   niceShow    :: a -> String -- ^ Printing the isolated object
   niceComplex :: a -> String -- ^ Printing the object in the complex form, where everything is meant
                              --   to be printed at once as overview
+
+{-|
+Exception type for operations on 'Molecule's, which lead to a logical error. This can be caused
+because some Spicy assumptions are not met for example.
+-}
+data MolLogicException = MolLogicException String String deriving Typeable
+instance Show MolLogicException where
+  show (MolLogicException f e) = "MoleculeLogicException in function \"" ++ f ++ "\":" ++ e
+instance Exception MolLogicException
+
+{-|
+Exception type for operations on data structures, which are not meeting necessary criteria for the
+operation to perform.
+-}
+data DataStructureException = DataStructureException String String deriving Typeable
+instance Show DataStructureException where
+  show (DataStructureException f e) = "DataStructureException in function \"" ++ f ++ "\":" ++ e
+instance Exception DataStructureException
 
 {-|
 Use serial or parallel processing for large data structures. This helps deciding on a per use base,
