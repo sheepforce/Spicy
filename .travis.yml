@@ -42,6 +42,7 @@ before_install:
 # Install LLVM 8.0
 - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
 - echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee -a /etc/apt/sources.list
+- sudo rm -rf /var/lib/apt/lists/*
 - sudo apt clean
 - sudo apt update
 - sudo apt install -y llvm-8-dev llvm-8-tools
