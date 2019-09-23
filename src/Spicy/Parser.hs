@@ -13,8 +13,9 @@ provided, as this is a JSON structured file, which should be parsed by
 -}
 {-# LANGUAGE OverloadedStrings #-}
 module Spicy.Parser
-( -- * Chemical Data Formats
-  parseXYZ
+( parse'
+  -- * Chemical Data Formats
+, parseXYZ
 , parseTXYZ
 , parseMOL2
 , parsePDB
