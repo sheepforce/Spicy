@@ -24,6 +24,7 @@ import           System.FilePath            hiding ((<.>))
 import           Test.Tasty
 import           Test.Tasty.Golden
 import           Test.Tasty.HUnit
+--import Control.Exception.Safe
 
 
 main :: IO ()
@@ -323,7 +324,7 @@ data MolWriterEnv = MolWriterEnv
                                                     --   'Molecule' after parsing 'writerFile'
                                                     --   again.
   , mweParser     :: Parser Molecule                -- ^ A 'Parser' for the 'Molecule'.
-  , mweWriter     :: Molecule -> Either String Text -- ^ A writer for 'Molecule'
+  , mweWriter     :: Molecule -> Either SomeException Text -- ^ A writer for 'Molecule'
   }
 
 {-|
@@ -332,23 +333,28 @@ writer format, and the writer representation as JSON again. Compares the writer 
 against the original JSON representation.
 -}
 mweParseWriteParseWrite :: ReaderT MolWriterEnv IO ()
-mweParseWriteParseWrite molWriterEnv = do
-    -- Get the environment.
-    env               <- ask
-    -- Read and parse the original (external) file
-    origMol           <- liftIO $ T.readFile (mweOrigFile env)
-
-    -- Get the writer representation of the original molecule.
-    origMolFormatText <- mweWriteFileFormat origMol
-    -- Write internal representation and writer representation of the original molecule.
-    liftIO . T.writeFile (mweGoldenJSON env) . writeSpicy $ origMol
-    liftIO . T.writeFile (mweWriterFile env) $ origMolFormatText
-    -- Parse the writer representation again.
-    writerMol         <- mweProcessFile WriterFile
-    -- Write the internal representation of the parsed writer representation.
-    liftIO $ T.writeFile (mweWriterJSON env) . writeSpicy $ writerMol
-    return writerMol
-  return ()
+mweParseWriteParseWrite = do
+  -- Get the environment.
+  env      <- ask
+  -- Read and parse the original (external) file
+  origRaw  <- liftIO $ T.readFile (mweOrigFile env)
+  -- Parse the original file.
+  origMol  <- parse' (mweParser env) origRaw
+  -- Get the text representation of the original file.
+  let origText = (mweWriter env) origMol
+  -- Write the Spicy JSON representation of the original molecule (Golden File) and the writer (to
+  -- test) representation of the original molecule.
+  liftIO . T.writeFile (mweGoldenJSON env) . writeSpicy $ origMol
+  case origText of
+    Left e  -> liftIO . T.writeFile (mweWriterFile env) . T.pack . show $ e
+    Right t -> liftIO . T.writeFile (mweWriterFile env) $ t
+  -- Parse the writer result again with the supplied parser.
+  writerRaw <- liftIO $ T.readFile (mweWriterFile env)
+  -- Parse the result from the writer.
+  writerMol <- parse' (mweParser env) writerRaw
+  -- Get the text representation of the writer molecule and write to the Spicy JSON representation
+  -- (Output file).
+  liftIO . T.writeFile (mweWriterJSON env) . writeSpicy $ writerMol
 
 {-|
 This function provides a wrapper around 'goldenVsFile', tuned for the writer tests.
@@ -359,7 +365,7 @@ mweGoldenVsFile env =
     (mweTestName env)
     (mweGoldenJSON env)
     (mweWriterJSON env)
-    (mweParseWriteParseWrite env)
+    (runReaderT mweParseWriteParseWrite env)
 
 testWriterMolecule :: TestTree
 testWriterMolecule = testGroup "Molecule Formats"
