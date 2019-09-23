@@ -23,6 +23,7 @@ module Spicy.Math
 , vAngle
 , vCross
 ) where
+import           Control.Exception.Safe
 import           Data.Array.Accelerate             (Matrix)
 import qualified Data.Foldable                     as F
 import           Data.Sequence                     (Seq)
@@ -75,20 +76,24 @@ vAngle a b = acos $ (a <.> b) / ((vLength a) * (vLength b))
 {-|
 3D cross product of 2 'Seq's.
 -}
-vCross :: Seq Double -> Seq Double -> Either String (Seq Double)
-vCross a b = do
-  a1 <- maybeToEither err $ a S.!? 0
-  a2 <- maybeToEither err $ a S.!? 1
-  a3 <- maybeToEither err $ a S.!? 2
-  b1 <- maybeToEither err $ b S.!? 0
-  b2 <- maybeToEither err $ b S.!? 1
-  b3 <- maybeToEither err $ b S.!? 2
-  let c1 = a2 * b3 - a3 * b2
-      c2 = a3 * b1 - a1 * b3
-      c3 = a1 * b2 - a2 * b1
-  return $ S.fromList [c1, c2, c3]
-  where
-    err = "vCross: Could not get an element from input sequence"
+vCross :: MonadThrow m => Seq Double -> Seq Double -> m (Seq Double)
+vCross a b =
+  let crossProduct :: Maybe (Seq Double)
+      crossProduct = do
+        a1 <- a S.!? 0
+        a2 <- a S.!? 1
+        a3 <- a S.!? 2
+        b1 <- b S.!? 0
+        b2 <- b S.!? 1
+        b3 <- b S.!? 2
+        let c1 = a2 * b3 - a3 * b2
+            c2 = a3 * b1 - a1 * b3
+            c3 = a1 * b2 - a2 * b1
+        return $ S.fromList [c1, c2, c3]
+  in  case crossProduct of
+        Nothing ->
+          throwM $ DataStructureException "vCross" "Could not get an element from input sequence"
+        Just cp -> return cp
 
 {-|
 __PROOF OF CONCEPT FOR ACCELERATE. NOT TO BE TAKEN AS FINAL FUNCION.
@@ -114,15 +119,3 @@ r3VecDihedral (a, b, c, d) = hmVecAngle (p1Normal, p2Normal)
 -- vectorProduct :: Seq Double -> Seq Double -> VS.Scalar Double
 -- vectorProduct = $( VS.runQ vectorProduct' )
 -}
-
-----------------------------------------------------------------------------------------------------
--- Helper functions, not to be exported
-{-|
-Convert a 'Maybe' value to an 'Either' value.
--}
-maybeToEither ::
-     a          -- ^ 'Left' a will be returned if 'Maybe' was 'Nothing'.
-  -> Maybe b    -- ^ 'Right' b will be returned if 'Maybe' was 'Just' b.
-  -> Either a b
-maybeToEither e Nothing  = Left e
-maybeToEither _ (Just a) = Right a

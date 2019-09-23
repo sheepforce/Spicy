@@ -102,7 +102,7 @@ testVCross =
       vecB = S.fromList [0, 1, 0]  :: Seq Double
       vecC = S.fromList [-1, 0, 0] :: Seq Double
   in  testCase "Vectors Cross Product" $
-        vCross vecA vecB @?= Right vecC
+        (vCross vecA vecB :: Maybe (Seq Double)) @?= Just vecC
 
 
 {-
