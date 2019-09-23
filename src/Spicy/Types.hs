@@ -95,12 +95,9 @@ instance Exception DataStructureException
 {-|
 Exception type for textual or binary data, that could not be parsed.
 -}
-data ParserException = ParserException
-  { pExcParser      :: String
-  , pExcType        :: String
-  } deriving Typeable
+data ParserException = ParserException String
 instance Show ParserException where
-  show (ParserException p e) = "DataStructureException in parser \"" ++ f ++ "\":" ++ e
+  show (ParserException e) = "ParserException in parser: \"" ++ e ++ "\""
 instance Exception ParserException
 
 {-|
