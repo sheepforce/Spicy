@@ -14,13 +14,9 @@ provided, as this is a JSON structured file, which should be parsed by
 {-# LANGUAGE OverloadedStrings #-}
 
 module Spicy.Molecule.Internal.Parser
-  (
-  -- * Generic Helpers
-  -- $
-    parse'
-  -- * Chemical Data Formats
-  -- $chemicalFormats
-  , parseXYZ
+  ( -- * Chemical Data Formats
+    -- $chemicalFormats
+    parseXYZ
   , parseTXYZ
   , parseMOL2
   , parsePDB
@@ -28,7 +24,6 @@ module Spicy.Molecule.Internal.Parser
 where
 
 import           Control.Applicative
-import           Control.Exception.Safe
 
 import           Data.Attoparsec.Text.Lazy
 import           Data.Char
@@ -42,7 +37,6 @@ import qualified Data.List                     as L
 import           Data.Maybe
 import           Data.Sequence                  ( Seq(..) )
 import qualified Data.Sequence                 as S
-import qualified Data.Text                     as TS
 import qualified Data.Text.Lazy                as TL
 import qualified Data.Text.Lazy.Read           as TL
 import           Data.Tuple

@@ -47,6 +47,7 @@ import           Prelude                 hiding ( cycle
                                                 , takeWhile
                                                 , (!!)
                                                 )
+import           Spicy.Generic
 import           Spicy.Molecule.Internal.Types
 import           Spicy.Molecule.Internal.Util
 import           Text.Printf
@@ -166,7 +167,7 @@ writeMOL2 mol
   toMOLECULE m =
     let nAtoms = IM.size $ m ^. molecule_Atoms
         -- Make the bonds unidirectorial first.
-        bonds  = makeBondsUnidirectorial $ m ^. molecule_Bonds
+        bonds  = makeIMISUnidirectorial $ m ^. molecule_Bonds
         -- Then get the overall number of bonds.
         nBonds = IM.foldr' (+) 0 . IM.map IS.size $ bonds
     in  T.unlines
@@ -219,7 +220,7 @@ writeMOL2 mol
   toBOND :: Molecule -> Text
   toBOND m =
     let -- Make the bonds unidirectorial first.
-        bonds     = makeBondsUnidirectorial $ m ^. molecule_Bonds
+        bonds     = makeIMISUnidirectorial $ m ^. molecule_Bonds
         -- Write a single line for each bond.
         -- Fold the keys (origins) in the IntMap to bond lines. Each origin key might give
         -- multiple lines (one per target), and the targets are folded in an inner fold.

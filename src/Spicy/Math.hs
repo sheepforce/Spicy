@@ -27,7 +27,6 @@ module Spicy.Math
 where
 
 import           Control.Exception.Safe
-import           Data.Array.Accelerate          ( Matrix )
 import qualified Data.Foldable                 as F
 import           Data.Sequence                  ( Seq )
 import qualified Data.Sequence                 as S
@@ -45,8 +44,6 @@ import           Prelude                 hiding ( cycle
                                                 , (!!)
                                                 )
 import           Spicy.Generic
-import qualified Spicy.Math.Internal           as MI
-import           Spicy.Molecule
 
 {-
 ####################################################################################################

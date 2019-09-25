@@ -14,6 +14,7 @@ substructeres to layers and creation of ghost atoms. Following conventions shall
 
     * lowest level region has index 0 and contains the complete system
 -}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module Spicy.Molecule
   ( -- * Exceptions
     MolLogicException
@@ -51,7 +52,7 @@ module Spicy.Molecule
   )
 where
 import           Spicy.Generic
-import           Spicy.Molecule.Internal.Math
+--import           Spicy.Molecule.Internal.Math
 import           Spicy.Molecule.Internal.Parser
 import           Spicy.Molecule.Internal.Types
 import           Spicy.Molecule.Internal.Util
@@ -59,6 +60,10 @@ import           Spicy.Molecule.Internal.Writer
 
 {-
 ====================================================================================================
+-}
+{-|
+As an exception allow for an orphan instance here, which very clearly belongs to the 'Molecule' type
+as defined in 'Spicy.Molecule.Internal.Types'. This avoids circular imports.
 -}
 instance Check Molecule where
   check = checkMolecule
