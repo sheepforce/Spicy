@@ -14,10 +14,9 @@ import qualified Data.Sequence                 as S
 import           Data.Text.Lazy                 ( Text )
 import qualified Data.Text.Lazy                as T
 import qualified Data.Text.Lazy.IO             as T
+import           Spicy.Generic
 import           Spicy.Math
-import           Spicy.Parser
-import           Spicy.Types
-import           Spicy.Writer.Molecule
+import           Spicy.Molecule
 import           System.FilePath         hiding ( (<.>) )
 import           Test.Tasty
 import           Test.Tasty.Golden
@@ -29,8 +28,11 @@ main = defaultMain tests
 tests :: TestTree
 tests = testGroup "All tests" [testParser, testMath, testWriter]
 
-----------------------------------------------------------------------------------------------------
--- Test cases for math routines
+{-
+####################################################################################################
+-}
+{- $math
+-}
 {-|
 These test are unit tests for Math parallel and serial computations. Parallel accelerate
 calculations are embedded by TemplateHaskell as compiled LLVM code by means of 'A.runQ'. This serves
@@ -39,6 +41,9 @@ also as a test for a correct build, as the system is somewhat sensitive with all
 testMath :: TestTree
 testMath = testGroup "Math" [testDotProduct, testVLength, testVDistance, testVAngle, testVCross]
 
+{-
+====================================================================================================
+-}
 {-|
 Dot product of 2 simple vectors.
 -}
@@ -49,6 +54,7 @@ testDotProduct =
       dotProduct = 36
   in  testCase "Vector Dot Product" $ vecA <.> vecB @?= dotProduct
 
+----------------------------------------------------------------------------------------------------
 {-|
 Length of a vector.
 -}
@@ -58,6 +64,7 @@ testVLength =
       len  = 6
   in  testCase "Vector Length" $ vLength vecA @?= len
 
+----------------------------------------------------------------------------------------------------
 {-|
 Distance between 2 points.
 -}
@@ -68,6 +75,7 @@ testVDistance =
       dist = 10
   in  testCase "Vectors Distance" $ vDistance vecA vecB @?= dist
 
+----------------------------------------------------------------------------------------------------
 {-|
 Anlge between two vectors.
 -}
@@ -78,6 +86,7 @@ testVAngle =
       angle = 0.5 * pi
   in  testCase "Vectors Angle" $ vAngle vecA vecB @?= angle
 
+----------------------------------------------------------------------------------------------------
 {-|
 Cross product between two R3 vectors.
 -}
@@ -90,13 +99,18 @@ testVCross =
 
 
 {-
-====================================================================================================
+####################################################################################################
 -}
-{- *parserTests
+{- $molecule
 These tests are golden tests within the Tasty framework. If one of these tests fail, you are in
 trouble, as all the others will rely on working parsers and are golden tests, too.
 -}
 
+{-
+====================================================================================================
+-}
+{- $moleculeParser
+-}
 {-|
 Data type to define common parameters for processing the 'Spicy.Parser' test cases.
 -}
@@ -108,6 +122,7 @@ data ParserEnv = ParserEnv
   , peParser     :: Parser Molecule
   }
 
+----------------------------------------------------------------------------------------------------
 {-|
 This provided the IO action for 'goldenVsFile' for testing of the parsers.
 -}
@@ -122,6 +137,7 @@ peParseAndWrite = do
   -- Write the internal representation of the parser result to JSON file.
   liftIO . T.writeFile (peOutputFile env) . writeSpicy $ mol
 
+----------------------------------------------------------------------------------------------------
 {-|
 Wrapper for 'goldenVsFile' for the 'Spicy.Parser' test cases.
 -}
@@ -131,6 +147,7 @@ peGoldenVsFile env = goldenVsFile (peTestName env)
                                   (peOutputFile env)
                                   (runReaderT peParseAndWrite env)
 
+----------------------------------------------------------------------------------------------------
 testParser :: TestTree
 testParser = testGroup
   "Parser"
@@ -145,6 +162,7 @@ testParser = testGroup
   , testParserSpicy1
   ]
 
+----------------------------------------------------------------------------------------------------
 testParserTXYZ1 :: TestTree
 testParserTXYZ1 =
   let testEnv = ParserEnv
@@ -158,6 +176,7 @@ testParserTXYZ1 =
         }
   in  peGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testParserXYZ1 :: TestTree
 testParserXYZ1 =
   let testEnv = ParserEnv
@@ -171,6 +190,7 @@ testParserXYZ1 =
         }
   in  peGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testParserXYZ2 :: TestTree
 testParserXYZ2 =
   let testName      = "Molden XYZ Trajectory (1)"
@@ -184,6 +204,7 @@ testParserXYZ2 =
           Fail _ _ e -> T.writeFile outputFile . T.pack $ e
   in  goldenVsFile testName goldenFile outputFile parseAndWrite
 
+----------------------------------------------------------------------------------------------------
 testParserXYZ3 :: TestTree
 testParserXYZ3 =
   let testEnv = ParserEnv
@@ -195,6 +216,7 @@ testParserXYZ3 =
         }
   in  peGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testParserPDB1 :: TestTree
 testParserPDB1 =
   let testEnv = ParserEnv
@@ -206,6 +228,7 @@ testParserPDB1 =
         }
   in  peGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testParserPDB2 :: TestTree
 testParserPDB2 =
   let testEnv = ParserEnv
@@ -217,6 +240,7 @@ testParserPDB2 =
         }
   in  peGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testParserPDB3 :: TestTree
 testParserPDB3 =
   let testEnv = ParserEnv
@@ -228,6 +252,7 @@ testParserPDB3 =
         }
   in  peGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testParserMOL21 :: TestTree
 testParserMOL21 =
   let testEnv = ParserEnv
@@ -239,6 +264,7 @@ testParserMOL21 =
         }
   in  peGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testParserSpicy1 :: TestTree
 testParserSpicy1 =
   let testName      = "Spicy JSON Parser (1)"
@@ -256,14 +282,7 @@ testParserSpicy1 =
 {-
 ====================================================================================================
 -}
-{- $writerTests
-These tests are checking writers.
--}
-testWriter :: TestTree
-testWriter = testGroup "Writer" [testWriterMolecule]
-
-----------------------------------------------------------------------------------------------------
-{- $moleculeWriterTests
+{- $moleculeWriter
 These tests are meant to check if the writers produce parsable formats. Parsing an "original" file
 (from Babel, PDB, ...), writing it again and parsing the written result, should produce the same
 'Molecule's.
@@ -279,7 +298,10 @@ The test scheme works as follows:
 {-
 "mwe" = Spicy.Writer.Molecule environment
 -}
+testWriter :: TestTree
+testWriter = testGroup "Writer" [testWriterMolecule]
 
+----------------------------------------------------------------------------------------------------
 {-|
 Data type to define common parameters for processing the 'Molecule.Writer' test cases.
 -}
@@ -302,6 +324,7 @@ data MolWriterEnv = MolWriterEnv
   , mweWriter     :: Molecule -> Either SomeException Text -- ^ A writer for 'Molecule'
   }
 
+----------------------------------------------------------------------------------------------------
 {-|
 Provides the IO action for 'goldenVsFile', writing the original representation in JSON and the
 writer format, and the writer representation as JSON again. Compares the writer JSON representation
@@ -331,6 +354,7 @@ mweParseWriteParseWrite = do
   -- (Output file).
   liftIO . T.writeFile (mweWriterJSON env) . writeSpicy $ writerMol
 
+----------------------------------------------------------------------------------------------------
 {-|
 This function provides a wrapper around 'goldenVsFile', tuned for the writer tests.
 -}
@@ -340,10 +364,12 @@ mweGoldenVsFile env = goldenVsFile (mweTestName env)
                                    (mweWriterJSON env)
                                    (runReaderT mweParseWriteParseWrite env)
 
+----------------------------------------------------------------------------------------------------
 testWriterMolecule :: TestTree
 testWriterMolecule =
   testGroup "Molecule Formats" [testWriterXYZ1, testWriterTXYZ1, testWriterMOL21, testWriterPDB1]
 
+----------------------------------------------------------------------------------------------------
 testWriterXYZ1 :: TestTree
 testWriterXYZ1 =
   let
@@ -360,6 +386,7 @@ testWriterXYZ1 =
       }
   in  mweGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testWriterTXYZ1 :: TestTree
 testWriterTXYZ1 =
   let
@@ -380,6 +407,7 @@ testWriterTXYZ1 =
       }
   in  mweGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 testWriterMOL21 :: TestTree
 testWriterMOL21 =
   let
@@ -396,6 +424,7 @@ testWriterMOL21 =
       }
   in  mweGoldenVsFile testEnv
 
+----------------------------------------------------------------------------------------------------
 {-|
 Note, that changed atom indices can occur in strange PDBs. This is normal and this is wanted. This
 test case therefore uses a "correctly" counting PDB, as 'writePDB' will reindex. Therefore you will

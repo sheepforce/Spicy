@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.MolWriter
+Module      : Spicy.Molecule.Writer
 Description : Writing chemical data formats
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3
@@ -11,7 +11,7 @@ A module which converts the internal Molecule representation to a text, which is
 file format, that can be read by Avogadro, VMD, OpenBabel etc.. The writers are not fool proof with
 respect to force field types, which should always be remembered when usings its results.
 -}
-module Spicy.Writer.Molecule
+module Spicy.Molecule.Internal.Writer
   ( writeXYZ
   , writeTXYZ
   , writeMOL2
@@ -47,8 +47,8 @@ import           Prelude                 hiding ( cycle
                                                 , takeWhile
                                                 , (!!)
                                                 )
-import           Spicy.Molecule.Util
-import           Spicy.Types
+import           Spicy.Molecule.Internal.Types
+import           Spicy.Molecule.Internal.Util
 import           Text.Printf
 
 {-|
@@ -75,6 +75,7 @@ writeXYZ mol = toXYZ <$> checkMolecule mol
                                        (fromMaybe 0.0 $ (a ^. atom_Coordinates) S.!? 1)
                                        (fromMaybe 0.0 $ (a ^. atom_Coordinates) S.!? 2)
 
+----------------------------------------------------------------------------------------------------
 {-|
 Write a Tinker XYZ from a 'Molecule'. The writer trusts the '_atom_FFType' to be
 correct (if set) and will simply write them out. Therefore it is possible, that wrong atom types can
@@ -140,8 +141,7 @@ writeTXYZ mol
   atomLineWriter :: Int -> Atom -> Molecule -> Text
   atomLineWriter k a m = (atomFirstPart k a) `T.append` (atomSecondPart k m)
 
-
-
+----------------------------------------------------------------------------------------------------
 {-|
 Write a simplified .mol2 file (Tripos SYBYL) from a 'Molecule', containing the atoms, connectivities
 (single bonds only) and partial charges. This format writes atoms and bonds __only__ from the the
@@ -245,6 +245,7 @@ writeMOL2 mol
           bonds
     in  "@<TRIPOS>BOND\n" `T.append` bondLines
 
+----------------------------------------------------------------------------------------------------
 {-|
 Writes a 'Molecule' to a PDB file. The PDB format is simplified and recounts atom, discards
 different chains, sets dummy values for the temperature and occupation factors and cannot write
@@ -276,24 +277,24 @@ writePDB mol
                 thisAtomLine =
                     T.concat
                       . map T.pack
-                      $ [ printf "%-6s" ("HETATM" :: Text)                                         -- 1-6: Record type
-                        , printf "%5d " (key + 1)                                                  -- 7-11: Atom serial number
+                      $ [ printf "%-6s" ("HETATM" :: Text)                                        -- 1-6: Record type
+                        , printf "%5d " (key + 1)                                                 -- 7-11: Atom serial number
                         , printf
                           "%-4s "
                           (if T.length (atom ^. atom_Label) <= 3
                             then " " ++ (T.unpack $ atom ^. atom_Label)
                             else T.unpack $ atom ^. atom_Label
                           )
-                        , printf "%3s " (fromMaybe "UNL" $ T.unpack . T.take 3 <$> fragmentLabel)  -- 18-20: Residue name
-                        , printf "%1s"             ("A" :: Text)                                             -- 22: Chain identifier
-                        , printf "%4d    "         (fromMaybe 0 fragmentNum)                                  -- 23-26: Residue sequence number
-                        , printf "%8.3F" (fromMaybe 0.0 $ (atom ^. atom_Coordinates) S.!? 0)        -- 31-38: X
-                        , printf "%8.3F" (fromMaybe 0.0 $ (atom ^. atom_Coordinates) S.!? 1)        -- 39-46: Y
-                        , printf "%8.3F" (fromMaybe 0.0 $ (atom ^. atom_Coordinates) S.!? 2)        -- 47-54: Z
-                        , printf "%6.2F"           (1.0 :: Double)                                            -- 55-60: Occupancy
-                        , printf "%6.2F          " (0.0 :: Double)                                            -- 61-66: Temperature factor
+                        , printf "%3s " (fromMaybe "UNL" $ T.unpack . T.take 3 <$> fragmentLabel) -- 18-20: Residue name
+                        , printf "%1s"             ("A" :: Text)                                  -- 22: Chain identifier
+                        , printf "%4d    "         (fromMaybe 0 fragmentNum)                      -- 23-26: Residue sequence number
+                        , printf "%8.3F" (fromMaybe 0.0 $ (atom ^. atom_Coordinates) S.!? 0)      -- 31-38: X
+                        , printf "%8.3F" (fromMaybe 0.0 $ (atom ^. atom_Coordinates) S.!? 1)      -- 39-46: Y
+                        , printf "%8.3F" (fromMaybe 0.0 $ (atom ^. atom_Coordinates) S.!? 2)      -- 47-54: Z
+                        , printf "%6.2F"           (1.0 :: Double)                                -- 55-60: Occupancy
+                        , printf "%6.2F          " (0.0 :: Double)                                -- 61-66: Temperature factor
                         , printf "%2s" (T.toUpper . T.pack . show $ atom ^. atom_Element)         -- 77-78: Element symbol
-                        , printf "%2s\n"           ("" :: Text)                                               -- 79-80: Charge of the atom.
+                        , printf "%2s\n"           ("" :: Text)                                   -- 79-80: Charge of the atom.
                         ]
             in  thisAtomLine `T.append` acc
           )
@@ -324,6 +325,7 @@ writePDB mol
                 )
             $ conectGroups
 
+----------------------------------------------------------------------------------------------------
 {-|
 Write Spicy format, which is an AESON generated JSON document, directly representing the data type
 of 'Molecule'.

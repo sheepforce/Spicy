@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.Parser
+Module      : Spicy.Molecule.Parser
 Description : Parsers for chemical data formats and computational chemistry output files.
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3
@@ -13,7 +13,7 @@ provided, as this is a JSON structured file, which should be parsed by
 -}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Spicy.Parser
+module Spicy.Molecule.Internal.Parser
   (
   -- * Generic Helpers
   -- $
@@ -62,62 +62,17 @@ import           Prelude                 hiding ( cycle
                                                 )
 import           Text.Read
 
-import           Spicy.Molecule.Util
-import           Spicy.Types
+import           Spicy.Generic
+import           Spicy.Molecule.Internal.Types
+import           Spicy.Molecule.Internal.Util
 
-
-{-
-====================================================================================================
--}
-{- $helperFunctions
-These are helper functions to abstract certain behaviours we need in Spicy.
--}
-
-{-|
-Make a parser optional and wrap it in a 'Maybe'.
--}
-maybeOption :: Parser a -> Parser (Maybe a)
-maybeOption p = option Nothing (Just <$> p)
-
-{-|
-Parser for skiping non line breaking space.
--}
-skipSpace' :: Parser ()
-skipSpace' = do
-  _ <- takeWhile (`elem` [' ', '\t', '\f', '\v'])
-  return ()
-
-{-|
-Convert strict text to lazy text.
--}
-textS2L :: TS.Text -> TL.Text
-textS2L = TL.pack . TS.unpack
-
-{-|
-This is a wrapper around Attoparsec's 'parse' function. Contrary to 'parse', this function fails
-with  an composable error type in 'MonadThrow'.
--}
-parse' :: MonadThrow m => Parser a -> TL.Text -> m a
-parse' p t = case parse p t of
-  Done _ r   -> return r
-  Fail _ _ e -> throwM $ ParserException e
-
-{-
-====================================================================================================
--}
-{- $chemicalFormats
-These are parsers for chemical data formats. Most of them are completetly fine with OpenBabel
-generated files but are nevertheless not fully standard compliant. The parsers for complex data
-formats, such as MOL2 or PDB are not parsing all informations these data formats provide but rather
-only the ones used by Spicy's internal representation.
--}
 {-|
 Parse a .xyz file (has no connectivity, atom types or partioal charges).
 -}
 parseXYZ :: Parser Molecule
 parseXYZ = do
-  nAtoms <- skipSpace' *> decimal <* skipSpace' <* endOfLine
-  label  <- skipSpace' *> takeWhile (not . isEndOfLine) <* endOfLine
+  nAtoms <- skipHorizontalSpace *> decimal <* skipHorizontalSpace <* endOfLine
+  label  <- skipHorizontalSpace *> takeWhile (not . isEndOfLine) <* endOfLine
   atoms  <- count nAtoms xyzLineParser
   return Molecule { _molecule_Label    = textS2L label
                   , _molecule_Atoms    = IM.fromList $ zip [1 ..] atoms
@@ -130,10 +85,10 @@ parseXYZ = do
  where
   xyzLineParser :: Parser Atom
   xyzLineParser = do
-    cElement <- skipSpace' *> many1 letter
-    x        <- skipSpace' *> double
-    y        <- skipSpace' *> double
-    z        <- skipSpace' *> double
+    cElement <- skipHorizontalSpace *> many1 letter
+    x        <- skipHorizontalSpace *> double
+    y        <- skipHorizontalSpace *> double
+    z        <- skipHorizontalSpace *> double
     skipSpace
     return Atom { _atom_Element     = fromMaybe H . readMaybe $ cElement
                 , _atom_Label       = ""
@@ -150,8 +105,8 @@ This format and therefore parser are not using any layers (recursions of 'Molecu
 -}
 parseTXYZ :: Parser Molecule
 parseTXYZ = do
-  _nAtoms     <- skipSpace' *> (decimal :: Parser Int)
-  label       <- skipSpace' *> takeWhile (not . isEndOfLine) <* skipSpace
+  _nAtoms     <- skipHorizontalSpace *> (decimal :: Parser Int)
+  label       <- skipHorizontalSpace *> takeWhile (not . isEndOfLine) <* skipSpace
   conAndAtoms <- many1 txyzLineParser
   return Molecule
     { _molecule_Label    = textS2L label
@@ -167,13 +122,13 @@ parseTXYZ = do
   -- suitable to construct the 'IntMap' is returned additional to the pure atoms.
   txyzLineParser :: Parser ((Int, IntSet), Atom)
   txyzLineParser = do
-    index           <- skipSpace' *> decimal
-    cElement        <- skipSpace' *> many1 letter
-    x               <- skipSpace' *> double
-    y               <- skipSpace' *> double
-    z               <- skipSpace' *> double
-    mFFType         <- skipSpace' *> maybeOption (decimal :: Parser Int)
-    connectivityRaw <- skipSpace' *> many' columnDecimal
+    index           <- skipHorizontalSpace *> decimal
+    cElement        <- skipHorizontalSpace *> many1 letter
+    x               <- skipHorizontalSpace *> double
+    y               <- skipHorizontalSpace *> double
+    z               <- skipHorizontalSpace *> double
+    mFFType         <- skipHorizontalSpace *> maybeOption (decimal :: Parser Int)
+    connectivityRaw <- skipHorizontalSpace *> many' columnDecimal
     endOfLine
     return
       ( (index, IS.fromList connectivityRaw)
@@ -190,7 +145,7 @@ parseTXYZ = do
       )
   -- Parse multiple non-line-breaking whitespace separated decimals.
   columnDecimal :: Parser Int
-  columnDecimal = skipSpace' *> decimal <* skipSpace'
+  columnDecimal = skipHorizontalSpace *> decimal <* skipHorizontalSpace
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -225,14 +180,19 @@ parseMOL2 = do
     -- Line 1 -> "mol_name"
     label      <- takeWhile (not . isEndOfLine) <* endOfLine
     -- Line 2 -> "num_atoms [num_bonds [num_subst [num_feat [num_sets]]]]"
-    nAtoms     <- skipSpace' *> decimal
-    nBonds     <- maybeOption $ skipSpace' *> decimal
-    _nSubMols  <- maybeOption $ skipSpace' *> (decimal :: Parser Int)
-    _nFeatures <- maybeOption $ skipSpace' *> (decimal :: Parser Int)
-    _nSets     <- maybeOption $ skipSpace' *> (decimal :: Parser Int) <* skipSpace' <* endOfLine
+    nAtoms     <- skipHorizontalSpace *> decimal
+    nBonds     <- maybeOption $ skipHorizontalSpace *> decimal
+    _nSubMols  <- maybeOption $ skipHorizontalSpace *> (decimal :: Parser Int)
+    _nFeatures <- maybeOption $ skipHorizontalSpace *> (decimal :: Parser Int)
+    _nSets     <-
+      maybeOption
+      $  skipHorizontalSpace
+      *> (decimal :: Parser Int)
+      <* skipHorizontalSpace
+      <* endOfLine
     -- Line 3 -> "mol_type"
-    _molType   <-
-      skipSpace'
+    _molType <-
+      skipHorizontalSpace
       *>  string "SMALL"
       <|> string "BIOPOLYMER"
       <|> string "PROTEIN"
@@ -255,12 +215,12 @@ parseMOL2 = do
          <|> string "MMFF94_CHARGES"
          <|> string "USER_CHARGES"
          )
-      <* skipSpace'
+      <* skipHorizontalSpace
       <* endOfLine
     -- Line 5 -> "[status_bits"
-    _statusBit <- maybeOption $ skipSpace' *> many1 letter <* skipSpace
+    _statusBit <- maybeOption $ skipHorizontalSpace *> many1 letter <* skipSpace
     -- Line 6 -> "[mol_comment]]"
-    _comment   <- maybeOption $ skipSpace' *> takeWhile (not . isEndOfLine) <* skipSpace
+    _comment   <- maybeOption $ skipHorizontalSpace *> takeWhile (not . isEndOfLine) <* skipSpace
     return (textS2L label, nAtoms, nBonds)
   --
   -- Parse the @<TRIPOS>ATOM block of MOL2. This will give:
@@ -271,25 +231,25 @@ parseMOL2 = do
     -- Parse multiple lines of ATOM data.
     atoms   <- count nAtoms $    -- atomLineParser
                               do
-      index   <- skipSpace' *> decimal
+      index   <- skipHorizontalSpace *> decimal
       -- Most often this will be the element symbol.
-      label   <- skipSpace' *> takeWhile (not . isHorizontalSpace)
+      label   <- skipHorizontalSpace *> takeWhile (not . isHorizontalSpace)
       -- x, y and z coordinates
-      x       <- skipSpace' *> double
-      y       <- skipSpace' *> double
-      z       <- skipSpace' *> double
+      x       <- skipHorizontalSpace *> double
+      y       <- skipHorizontalSpace *> double
+      z       <- skipHorizontalSpace *> double
       -- Parse the chemical element, which is actually the first part of the SYBYL atom type.
-      cElem   <- skipSpace' *> many1 letter
+      cElem   <- skipHorizontalSpace *> many1 letter
       -- A dot often separates the element from the type of this element.
       ffdot   <- maybeOption $ char '.'
       -- And after the dot the rest of the SYBYL atom type might come.
       ffType  <- maybeOption $ takeWhile (not . isHorizontalSpace)
       -- The substructure ID. This is the identifier to identify sub molecules.
-      subID   <- skipSpace' *> (decimal :: Parser Int)
+      subID   <- skipHorizontalSpace *> (decimal :: Parser Int)
       -- The substructure Name. This should be used as label for the sub molecule.
-      subName <- skipSpace' *> takeWhile (not . isHorizontalSpace)
+      subName <- skipHorizontalSpace *> takeWhile (not . isHorizontalSpace)
       -- The partial charge
-      pCharge <- skipSpace' *> double <* skipSpace
+      pCharge <- skipHorizontalSpace *> double <* skipSpace
       -- Construct the force field string for the 'MOL2' field.
       let mol2FFText =
             (TL.pack cElem)
@@ -323,13 +283,13 @@ parseMOL2 = do
     _header  <- manyTill anyChar (string "@<TRIPOS>BOND") <* endOfLine
     uniBonds <- nParser $ do
       -- Bond id, which does not matter.
-      _id    <- skipSpace' *> (decimal :: Parser Int)
+      _id    <- skipHorizontalSpace *> (decimal :: Parser Int)
       -- Origin atom index
-      origin <- skipSpace' *> (decimal :: Parser Int)
+      origin <- skipHorizontalSpace *> (decimal :: Parser Int)
       -- Target atom index
-      target <- skipSpace' *> (decimal :: Parser Int)
+      target <- skipHorizontalSpace *> (decimal :: Parser Int)
       -- Bond type, which we don't care about.
-      _type  <- skipSpace' *> takeWhile (not . isSpace) <* skipSpace
+      _type  <- skipHorizontalSpace *> takeWhile (not . isSpace) <* skipSpace
       return (origin, target)
     let
       -- Make the bonds bidirectorial
@@ -355,7 +315,7 @@ parsePDB = do
   -- Parse the COMPND field as a label. Only the first line of COMPND will be used.
   label <- maybeOption $ do
     _             <- manyTill anyChar (string "HEADER")
-    compoundLabel <- skipSpace' *> takeWhile (not . isEndOfLine)
+    compoundLabel <- skipHorizontalSpace *> takeWhile (not . isEndOfLine)
     return $ textS2L compoundLabel
   -- Parse atoms only and ignore other fiels
   atomsLabeled  <- S.fromList <$> many1 atomParser

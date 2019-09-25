@@ -15,19 +15,50 @@ substructeres to layers and creation of ghost atoms. Following conventions shall
     * lowest level region has index 0 and contains the complete system
 -}
 module Spicy.Molecule
-  ()
+  ( -- * Exceptions
+    MolLogicException
+    -- * Types
+  , Element(..)
+  , AtomLabel
+  , FFType(..)
+  , Atom(..)
+  , atom_Element
+  , atom_Label
+  , atom_IsPseudo
+  , atom_FFType
+  , atom_PCharge
+  , atom_Coordinates
+  , Molecule(..)
+  , molecule_Label
+  , molecule_Atoms
+  , molecule_Bonds
+  , molecule_SubMol
+  , molecule_Energy
+  , molecule_Gradient
+  , molecule_Hessian
+  , Trajectory
+    -- * Parser
+  , parseXYZ
+  , parseTXYZ
+  , parseMOL2
+  , parsePDB
+    -- * Writer
+  , writeXYZ
+  , writeTXYZ
+  , writeMOL2
+  , writePDB
+  , writeSpicy
+  )
 where
+import           Spicy.Generic
+import           Spicy.Molecule.Internal.Math
+import           Spicy.Molecule.Internal.Parser
+import           Spicy.Molecule.Internal.Types
+import           Spicy.Molecule.Internal.Util
+import           Spicy.Molecule.Internal.Writer
 
-import           Prelude                 hiding ( cycle
-                                                , foldl1
-                                                , foldr1
-                                                , head
-                                                , init
-                                                , last
-                                                , maximum
-                                                , minimum
-                                                , tail
-                                                , take
-                                                , takeWhile
-                                                , (!!)
-                                                )
+{-
+====================================================================================================
+-}
+instance Check Molecule where
+  check = checkMolecule

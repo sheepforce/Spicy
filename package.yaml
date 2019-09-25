@@ -98,8 +98,6 @@ when:
 library:
   source-dirs: src
   default-extensions:
-    - TypeOperators
-    - TemplateHaskell
     - BangPatterns
     - OverloadedStrings
 

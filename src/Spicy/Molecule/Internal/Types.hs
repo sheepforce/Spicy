@@ -1,34 +1,28 @@
 {-|
-Module      : Spicy.Types
-Description : Data types used in the Spicy program.
+Module      : Spicy.Molecule.Types
+Description : Handling molecular informations
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3
 Maintainer  : phillip.seeber@uni-jena.de
 Stability   : experimental
 Portability : POSIX, Windows
 
-Spicy.Types contains the definition of all classes and data types, that are used in Spicy. Mainly it
-takes care of the description of molecules (structure, topology, potential energy surface, ...).
--}
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TemplateHaskell   #-}
+This module deals with the partitioning of the system, creation of bonds, assignment of
+substructeres to layers and creation of ghost atoms. Following conventions shall apply:
 
-module Spicy.Types
-  (
-  -- * Exceptions
-  -- $exceptionTypes
+    * highest level region has highest index
+
+    * lowest level region has index 0 and contains the complete system
+-}
+{-# LANGUAGE DeriveAnyClass  #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE TemplateHaskell #-}
+module Spicy.Molecule.Internal.Types
+  ( -- * Exceptions
+    -- $exceptions
     MolLogicException(..)
-  , DataStructureException(..)
-  , ParserException(..)
-  -- * Performance- and Execution-related Types
-  -- $performanceTypes
-  , Strat(..)
-  , AccVector(..)
-  , AccMatrix(..)
-  -- * Molecules and Atoms
-  -- $moleculeTypes
+    -- * Types
+    -- $types
   , Element(..)
   , AtomLabel
   , FFType(..)
@@ -51,22 +45,11 @@ module Spicy.Types
   )
 where
 
-import           Control.DeepSeq
-import           Control.Exception.Safe
-
-import           Data.Aeson
-import           Data.Aeson.Encode.Pretty
-import qualified Data.Array.Accelerate         as A
 import qualified Data.ByteString.Lazy.UTF8     as BL
 import           Data.IntMap.Lazy               ( IntMap )
 import           Data.IntSet                    ( IntSet )
 import           Data.Sequence                  ( Seq )
 import           Data.Text.Lazy                 ( Text )
-
-import           GHC.Generics                   ( Generic )
-
-import           Lens.Micro.Platform     hiding ( (.=) )
-
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1
@@ -81,10 +64,19 @@ import           Prelude                 hiding ( cycle
                                                 , (!!)
                                                 )
 
+import           GHC.Generics                   ( Generic )
+
+import           Control.DeepSeq
+import           Control.Exception.Safe
+import           Data.Aeson
+import           Data.Aeson.Encode.Pretty
+import           Lens.Micro.Platform     hiding ( (.=) )
+import           Spicy.Generic
+
 {-
-====================================================================================================
+####################################################################################################
 -}
-{- $exceptionTypes
+{- $exceptions
 These types define composable exceptions for Spicy. The types are specific for a class of problems,
 that can occur. These exception types are meant to be used in combination with
 'Control.Exception.Safe' as described in
@@ -94,101 +86,20 @@ that can occur. These exception types are meant to be used in combination with
 Exception type for operations on 'Molecule's, which lead to a logical error. This can be caused
 because some Spicy assumptions are not met for example.
 -}
-data MolLogicException = MolLogicException { mlExcFunctionName :: String
-                                           , mlExcDescription  :: String
-                                           }
+data MolLogicException = MolLogicException
+  { mlExcFunctionName :: String
+  , mlExcDescription  :: String
+  }
 
 instance Show MolLogicException where
   show (MolLogicException f e) = "MoleculeLogicException in function \"" ++ f ++ "\":" ++ e
 
 instance Exception MolLogicException
 
-----------------------------------------------------------------------------------------------------
-{-|
-Exception type for operations on data structures, which are not meeting necessary criteria for the
-operation to perform.
--}
-data DataStructureException = DataStructureException { dsExcFunctionName :: String
-                                                     , dsExcDescription  :: String
-                                                     }
-
-instance Show DataStructureException where
-  show (DataStructureException f e) = "DataStructureException in function \"" ++ f ++ "\":" ++ e
-
-instance Exception DataStructureException
-
-----------------------------------------------------------------------------------------------------
-{-|
-Exception type for textual or binary data, that could not be parsed.
--}
-data ParserException = ParserException String
-
-instance Show ParserException where
-  show (ParserException e) = "ParserException in parser: \"" ++ e ++ "\""
-
-instance Exception ParserException
-
 {-
-====================================================================================================
+####################################################################################################
 -}
-{- $performanceTypes
-These are types related to the type of execution of Spicy. Especially 'AccVector' and 'AccMatrix'
-are convenience wrappers around Accelerate data types with some added instances.
--}
-{-|
-Use serial or parallel processing for large data structures. This helps deciding on a per use base,
-if to evaluate in serial or parallel, to avoid nested parallelism. Every method employing parallel
-operations by Control.Parallel.Strategies should provide this switch in Spicy.
--}
-data Strat = Serial | Parallel
-  deriving Eq
-
-----------------------------------------------------------------------------------------------------
-{-|
-'newtype' wrapper to Accelerate's 'A.Vector's.
--}
-newtype AccVector a = AccVector { getAccVector :: A.Vector a
-                                }
-  deriving ( Generic, Show, Eq )
-
-instance ( ToJSON a, A.Elt a ) => ToJSON (AccVector a) where
-  toJSON vec =
-    let plainVec        = getAccVector vec
-        (A.Z A.:. xDim) = A.arrayShape plainVec
-        elements        = A.toList plainVec
-    in  object ["shape" .= xDim, "elements" .= elements]
-
-instance ( FromJSON a, A.Elt a ) => FromJSON (AccVector a) where
-  parseJSON = withObject "AccVector" $ \vec -> do
-    xDim     <- vec .: "shape"
-    elements <- vec .: "elements"
-    return . AccVector $ A.fromList (A.Z A.:. xDim) elements
-
-----------------------------------------------------------------------------------------------------
-{-|
-'newtype' wrapper to Accelerate's 'A.Matrix's.
--}
-newtype AccMatrix a = AccMatrix { getAccMatrix :: A.Matrix a
-                                }
-  deriving ( Generic, Show, Eq )
-
-instance ( ToJSON a, A.Elt a ) => ToJSON (AccMatrix a) where
-  toJSON mat =
-    let plainMat                  = getAccMatrix mat
-        (A.Z A.:. xDim A.:. yDim) = A.arrayShape plainMat
-        elements                  = A.toList plainMat
-    in  object ["shape" .= (xDim, yDim), "elements" .= elements]
-
-instance ( FromJSON a, A.Elt a ) => FromJSON (AccMatrix a) where
-  parseJSON = withObject "AccVector" $ \mat -> do
-    (xDim, yDim) <- mat .: "shape"
-    elements     <- mat .: "elements"
-    return . AccMatrix $ A.fromList (A.Z A.:. xDim A.:. yDim) elements
-
-{-
-====================================================================================================
--}
-{- $moleculeTypes
+{- $types
 Types to describe a molecule from a computational geometry point of view. The representation of a
 molecule aims to be as descriptive as unambigous as possible and capture all quantities relevant for
 molecular dynamics and geometry optimisations (energies, gradients, hessians, force fiekd types,
@@ -200,125 +111,14 @@ multilayer calculations. Analysis of the results is up to postprocessing.
 All chemical elements. Have them very clear because force fields and pdb names may interfer and are
 just arbitrary strings.
 -}
-data Element
-  = H
-  | He
-  | Li
-  | Be
-  | B
-  | C
-  | N
-  | O
-  | F
-  | Ne
-  | Na
-  | Mg
-  | Al
-  | Si
-  | P
-  | S
-  | Cl
-  | Ar
-  | K
-  | Ca
-  | Sc
-  | Ti
-  | V
-  | Cr
-  | Mn
-  | Fe
-  | Co
-  | Ni
-  | Cu
-  | Zn
-  | Ga
-  | Ge
-  | As
-  | Se
-  | Br
-  | Kr
-  | Rb
-  | Sr
-  | Y
-  | Zr
-  | Nb
-  | Mo
-  | Tc
-  | Ru
-  | Rh
-  | Pd
-  | Ag
-  | Cd
-  | In
-  | Sn
-  | Sb
-  | Te
-  | I
-  | Xe
-  | Cs
-  | Ba
-  | La
-  | Ce
-  | Pr
-  | Nd
-  | Pm
-  | Sm
-  | Eu
-  | Gd
-  | Tb
-  | Dy
-  | Ho
-  | Er
-  | Tm
-  | Yb
-  | Lu
-  | Hf
-  | Ta
-  | W
-  | Re
-  | Os
-  | Ir
-  | Pt
-  | Au
-  | Hg
-  | Tl
-  | Pb
-  | Bi
-  | Po
-  | At
-  | Rn
-  | Fr
-  | Ra
-  | Ac
-  | Th
-  | Pa
-  | U
-  | Np
-  | Pu
-  | Am
-  | Cm
-  | Bk
-  | Cf
-  | Es
-  | Fm
-  | Md
-  | No
-  | Lr
-  | Rf
-  | Db
-  | Sg
-  | Bh
-  | Hs
-  | Mt
-  | Ds
-  | Rg
-  | Cn
-  | Uut
-  | Fl
-  | Uup
-  | Lv
-  | Uus
-  | Uuo
+data Element =
+  H   |                                                                                                                                                                                     He  |
+  Li  | Be                                                                                                                                                  | B   | C   | N   | O   | F   | Ne  |
+  Na  | Mg                                                                                                                                                  | Al  | Si  | P   | S   | Cl  | Ar  |
+  K   | Ca                                                                                      | Sc  | Ti  | V   | Cr  | Mn  | Fe  | Co  | Ni  | Cu  | Zn  | Ga  | Ge  | As  | Se  | Br  | Kr  |
+  Rb  | Sr                                                                                      | Y   | Zr  | Nb  | Mo  | Tc  | Ru  | Rh  | Pd  | Ag  | Cd  | In  | Sn  | Sb  | Te  | I   | Xe  |
+  Cs  | Ba  | La  | Ce  | Pr  | Nd  | Pm  | Sm  | Eu  | Gd  | Tb  | Dy  | Ho  | Er  | Tm  | Yb  | Lu  | Hf  | Ta  | W   | Re  | Os  | Ir  | Pt  | Au  | Hg  | Tl  | Pb  | Bi  | Po  | At  | Rn  |
+  Fr  | Ra  | Ac  | Th  |  Pa | U   | Np  | Pu  | Am  | Cm  | Bk  | Cf  | Es  | Fm  | Md  | No  | Lr  | Rf  | Db  | Sg  | Bh  | Hs  | Mt  | Ds  | Rg  | Cn  | Uut | Fl  | Uup | Lv  | Uus | Uuo
   deriving ( Show, Eq, Read, Ord, Enum, Generic, NFData )
 
 instance ToJSON Element where
@@ -364,18 +164,18 @@ An Atom in a 'Molecule'. Atoms are compared by their indices only and they must 
 The coordinates of the 'Atom' are defined as 'Seq', as this is extremely easy to concatenate when
 building a coordinate vector.
 -}
-data Atom =
-  Atom { _atom_Element     :: Element      -- ^ Chemical 'Element' of the atom.
-       , _atom_Label       :: AtomLabel    -- ^ Label, e.g. from a pdb, just for identification, can
-                                           --   be empty.
-       , _atom_IsPseudo    :: Bool         -- ^ Boolean, telling if this is a pseudo atom,
-                                           --   introduced because a bond was broken.
-       , _atom_FFType      :: FFType       -- ^ Label depending on the MM software used, identifying
-                                           --   topological atom.
-       , _atom_PCharge     :: Maybe Double -- ^ Possibly a partial charge.
-       , _atom_Coordinates :: Seq Double   -- ^ Coordinates of the atom, cartesian in R³. Relies on
-                                           --   the parser to fill with exactly 3 values.
-       }
+data Atom = Atom
+  { _atom_Element     :: Element      -- ^ Chemical 'Element' of the atom.
+  , _atom_Label       :: AtomLabel    -- ^ Label, e.g. from a pdb, just for identification, can
+                                     --   be empty.
+  , _atom_IsPseudo    :: Bool         -- ^ Boolean, telling if this is a pseudo atom,
+                                     --   introduced because a bond was broken.
+  , _atom_FFType      :: FFType       -- ^ Label depending on the MM software used, identifying
+                                     --   topological atom.
+  , _atom_PCharge     :: Maybe Double -- ^ Possibly a partial charge.
+  , _atom_Coordinates :: Seq Double   -- ^ Coordinates of the atom, cartesian in R³. Relies on
+                                     --   the parser to fill with exactly 3 values.
+  }
   deriving ( Eq, Generic )
 
 makeLenses ''Atom

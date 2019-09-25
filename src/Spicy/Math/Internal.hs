@@ -40,13 +40,14 @@ import           Prelude                 hiding ( cycle
                                                 , (!!)
                                                 , (/=)
                                                 )
-import           Spicy.Types
+import           Spicy.Generic
+import           Spicy.Molecule.Internal.Types
 
 {-|
 Get the 'Atom' '_atom_Coordinates' from a 'Molecule' and convert to a plain 'VS.Vector'. This is
 therefore basically a concatenation of all cartesian coordinates.
 -}
-getCoordinates :: Strat -> Molecule -> A.Vector Double
+getCoordinates :: ParallelStrategy -> Molecule -> A.Vector Double
 getCoordinates strat mol =
   let atomCoords = case strat of
         Serial -> IM.map _atom_Coordinates (mol ^. molecule_Atoms)
@@ -57,6 +58,7 @@ getCoordinates strat mol =
       vecLength   = VS.length plainVec
   in  AVS.fromVectors (A.Z A.:. vecLength) plainVec
 
+----------------------------------------------------------------------------------------------------
 {-|
 Calculate the distance matrix from the plain cartesian coordinate vector in \(R^(3 N)\) with \(N\)
 being the number of atoms. This functions cannot check, if the cartesian input vector has actually 3

@@ -9,7 +9,7 @@ Portability : POSIX, Windows
 
 This module provides functions to manipulate basic data structures of 'Molecule's, such as indexing.
 -}
-module Spicy.Molecule.Util
+module Spicy.Molecule.Internal.Util
   ( checkMolecule
   , reIndexMolecule
   , reIndex2BaseMolecule
@@ -46,7 +46,8 @@ import           Prelude                 hiding ( cycle
                                                 , takeWhile
                                                 , (!!)
                                                 )
-import           Spicy.Types
+import           Spicy.Generic
+import           Spicy.Molecule.Internal.Types
 
 {-
 "IS" = IntSet
@@ -158,7 +159,7 @@ imisBidirectorial imis = IM.foldrWithKey'
         -- Check for all in the Seq of found IntSet, if the current key is also a member.
         keyInTargets :: Seq Bool
         keyInTargets = fmap (key `IS.member`) targetIS
-    in  -- If the current key is a member of all target IntSet, we are fine. If not, we have a
+    in   -- If the current key is a member of all target IntSet, we are fine. If not, we have a
         -- problem.
         all (== True) keyInTargets && bool
   )
@@ -347,7 +348,7 @@ groupTupleSeq a =
       atomicIntMaps = traverse imisFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap   = foldl' (<>) IM.empty <$> atomicIntMaps
-  in  -- The only way this function can fail, is if keys would not properly be groupled. This cannot
+  in   -- The only way this function can fail, is if keys would not properly be groupled. This cannot
       -- happen if 'groupBy' is called correclty before 'imisFromGroupedSequence'. Therefore default
       -- to the empty IntMap if this case, that cannot happen, happens.
       case completeMap of

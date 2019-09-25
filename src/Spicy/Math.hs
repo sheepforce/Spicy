@@ -15,15 +15,17 @@ The operations here accept some insecurities (like not checking if both vectors 
 have equal lenght) and trust the caller.
 -}
 {-# LANGUAGE TemplateHaskell #-}
-
 module Spicy.Math
-  ( (<.>)
+  ( -- * Linear Algebra
+    -- $linearAlgebra
+    (<.>)
   , vLength
   , vDistance
   , vAngle
   , vCross
   )
 where
+
 import           Control.Exception.Safe
 import           Data.Array.Accelerate          ( Matrix )
 import qualified Data.Foldable                 as F
@@ -42,34 +44,45 @@ import           Prelude                 hiding ( cycle
                                                 , takeWhile
                                                 , (!!)
                                                 )
-import           Spicy.Internal.Accelerate
+import           Spicy.Generic
 import qualified Spicy.Math.Internal           as MI
-import           Spicy.Types
+import           Spicy.Molecule
 
+{-
+####################################################################################################
+-}
+{- $linearAlgebra
+Functions for common linear algebra tasks. They are implemented using 'Seq' for simple functions and
+for more heavily numerical functions with Accelerate or 'Control.Parallel.Strategies'.
+-}
 {-|
 Dot product of two 'Seq's.
 -}
 (<.>) :: (Num a) => Seq a -> Seq a -> a
 a <.> b = F.sum $ S.zipWith (*) a b
 
+----------------------------------------------------------------------------------------------------
 {-|
 Length of a 'Seq'.
 -}
 vLength :: (Floating a) => Seq a -> a
 vLength a = sqrt $ a <.> a
 
+----------------------------------------------------------------------------------------------------
 {-|
 Distance between 2 points ('Seq's).
 -}
 vDistance :: (Floating a) => Seq a -> Seq a -> a
 vDistance a b = vLength $ S.zipWith (-) a b
 
+----------------------------------------------------------------------------------------------------
 {-|
 Angle in radian between 2 'Seq's.
 -}
 vAngle :: (Floating a) => Seq a -> Seq a -> a
 vAngle a b = acos $ (a <.> b) / ((vLength a) * (vLength b))
 
+----------------------------------------------------------------------------------------------------
 {-|
 3D cross product of 2 'Seq's.
 -}
@@ -91,10 +104,3 @@ vCross a b =
         Nothing ->
           throwM $ DataStructureException "vCross" "Could not get an element from input sequence"
         Just cp -> return cp
-
-{-|
-__PROOF OF CONCEPT FOR ACCELERATE. NOT TO BE TAKEN AS FINAL FUNCION.
--}
-distMat' :: Molecule -> Matrix Double
-distMat' mol = let coordVec = MI.getCoordinates Serial mol in dM coordVec
-  where dM = $( runQ MI.distMat )
