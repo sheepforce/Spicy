@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.Molecule.Writer
+Module      : Spicy.Molecule.Internal.Writer
 Description : Writing chemical data formats
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3

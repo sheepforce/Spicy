@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.Molecule.Math
+Module      : Spicy.Molecule.Internal.Math
 Description : Numerical and mathematical calculations specific to molecules.
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3

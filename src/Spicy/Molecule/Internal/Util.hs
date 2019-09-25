@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.Molecule.Util
+Module      : Spicy.Molecule.Internal.Util
 Description : Utilities to manipulate basic molecular data structures.
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3

@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.Molecule.Types
+Module      : Spicy.Molecule.Internal.Types
 Description : Handling molecular informations
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3

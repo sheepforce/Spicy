@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.Molecule.Parser
+Module      : Spicy.Molecule.Internal.Parser
 Description : Parsers for chemical data formats and computational chemistry output files.
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3
