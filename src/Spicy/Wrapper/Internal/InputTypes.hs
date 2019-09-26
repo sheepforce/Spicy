@@ -1,5 +1,5 @@
 {-|
-Module      : Spicy.Wrapper.Internal.Types
+Module      : InputTypes
 Description : Types to define an atomic chemical computation for wrappers
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3
@@ -13,7 +13,7 @@ chemistry program/molecular mechanics program needs.
 {-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Spicy.Wrapper.Internal.Types
+module Spicy.Wrapper.Internal.InputTypes
   ( -- * Generic Types
     AtomIdentifier
     -- * Computational Chemistry Calculation

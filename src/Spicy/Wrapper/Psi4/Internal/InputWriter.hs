@@ -13,5 +13,5 @@ carefully checked to be sensible and actually doable by Psi4.
 
 module Spicy.Wrapper.Psi4.Internal.InputWriter
 () where
-import Spicy.Wrapper.Internal.Types
+import Spicy.Wrapper.Internal.InputTypes
 import Control.Lens
