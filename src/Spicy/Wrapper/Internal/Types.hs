@@ -12,6 +12,7 @@ chemistry program/molecular mechanics program needs.
 -}
 {-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE TemplateHaskell #-}
+
 module Spicy.Wrapper.Internal.Types
   ( -- * Generic Types
     AtomIdentifier
