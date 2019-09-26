@@ -167,14 +167,14 @@ building a coordinate vector.
 data Atom = Atom
   { _atom_Element     :: Element      -- ^ Chemical 'Element' of the atom.
   , _atom_Label       :: AtomLabel    -- ^ Label, e.g. from a pdb, just for identification, can
-                                     --   be empty.
+                                      --   be empty.
   , _atom_IsPseudo    :: Bool         -- ^ Boolean, telling if this is a pseudo atom,
-                                     --   introduced because a bond was broken.
+                                      --   introduced because a bond was broken.
   , _atom_FFType      :: FFType       -- ^ Label depending on the MM software used, identifying
-                                     --   topological atom.
+                                      --   topological atom.
   , _atom_PCharge     :: Maybe Double -- ^ Possibly a partial charge.
   , _atom_Coordinates :: Seq Double   -- ^ Coordinates of the atom, cartesian in R³. Relies on
-                                     --   the parser to fill with exactly 3 values.
+                                      --   the parser to fill with exactly 3 values.
   }
   deriving ( Eq, Generic )
 
