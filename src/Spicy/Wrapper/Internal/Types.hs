@@ -22,20 +22,45 @@ module Spicy.Wrapper.Internal.Types
   , wrapper_Multiplicity
   , wrapper_CalculationNiveau
   , CalculationNiveau(..)
+  , _CalculationNiveau_QuantumMechanics
+  , _CalculationNiveau_MolecularMechanics
   , Task(..)
+  , _Task_Energy
+  , _Task_Gradient
+  , _Task_Hessian
+  , _Task_Property
+  , _Task_StabilityAnalysis
   , Property(..)
+  , _Property_Charge
   , ChargeType(..)
+  , _ChargeType_RESP
     -- ** Quantum Chemistry calculation
   , QuantumMechanics(..)
+  , quantumMechanics_BasisSet
+  , quantumMechanics_QMTheory
     -- *** Basis Sets and ECP definitions
   , Basis(..)
+  , basis_Primary
+  , basis_RIJK
+  , basis_Correlation
+  , basis_ECP
   , BasisSetDefinition(..)
+  , _BasisSetDefinition_BuiltIn
+  , _BasisSetDefinition_InLine
+  , _BasisSetDefinition_FromFile
   , ECPDefiniton(..)
+  , _ECPDefiniton_BuiltIn
+  , _ECPDefiniton_InLine
+  , _ECPDefiniton_FromFile
     -- *** Hamiltonian
   , QMTheory(..)
+  , _QMTheory_HartreeFock
     -- **** Hartree-Fock
   , HartreeFock(..)
+  , hartreeFock_IntergalApproximation
   , HartreeFockIntergalApproximation(..)
+  , _HartreeFockIntergalApproximation_RIJK
+  , _HartreeFockIntergalApproximation_RIJCOSX
   )
 where
 import           Data.IntMap.Lazy               ( IntMap )
@@ -198,14 +223,14 @@ data HartreeFockIntergalApproximation
 
 ----------------------------------------------------------------------------------------------------
 makeLenses ''Wrapper
-makeLenses ''CalculationNiveau
-makeLenses ''Task
-makeLenses ''Property
-makeLenses ''ChargeType
+makePrisms ''CalculationNiveau
+makePrisms ''Task
+makePrisms ''Property
+makePrisms ''ChargeType
 makeLenses ''QuantumMechanics
 makeLenses ''Basis
-makeLenses ''BasisSetDefinition
-makeLenses ''ECPDefiniton
-makeLenses ''QMTheory
+makePrisms ''BasisSetDefinition
+makePrisms ''ECPDefiniton
+makePrisms ''QMTheory
 makeLenses ''HartreeFock
-makeLenses ''HartreeFockIntergalApproximation
+makePrisms ''HartreeFockIntergalApproximation
