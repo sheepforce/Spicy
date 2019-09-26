@@ -21,6 +21,7 @@ module Spicy.Molecule.Internal.Util
   )
 where
 import           Control.Exception.Safe
+import           Control.Lens
 import           Data.Foldable
 import           Data.IntMap.Lazy               ( IntMap )
 import qualified Data.IntMap.Lazy              as IM
@@ -32,7 +33,6 @@ import           Data.Maybe
 import           Data.Sequence                  ( Seq(..) )
 import qualified Data.Sequence                 as S
 import qualified Data.Text.Lazy                as TL
-import           Lens.Micro.Platform
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1

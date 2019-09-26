@@ -10,16 +10,41 @@ Portability : POSIX, Windows
 This module defines a complex, nested data type, which is defining the input, that a quantum
 chemistry program/molecular mechanics program needs.
 -}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Spicy.Wrapper.Internal.Types
-  ()
+  ( -- * Generic Types
+    AtomIdentifier
+    -- * Computational Chemistry Calculation
+  , Wrapper(..)
+  , wrapper_Task
+  , wrapper_Charge
+  , wrapper_Multiplicity
+  , wrapper_CalculationNiveau
+  , CalculationNiveau(..)
+  , Task(..)
+  , Property(..)
+  , ChargeType(..)
+    -- ** Quantum Chemistry calculation
+  , QuantumMechanics(..)
+    -- *** Basis Sets and ECP definitions
+  , Basis(..)
+  , BasisSetDefinition(..)
+  , ECPDefiniton(..)
+    -- *** Hamiltonian
+  , QMTheory(..)
+    -- **** Hartree-Fock
+  , HartreeFock(..)
+  , HartreeFockIntergalApproximation(..)
+  )
 where
-import           Data.IntMap.Lazy              (IntMap)
-import           Data.Map                      (Map)
+import           Data.IntMap.Lazy               ( IntMap )
+import           Data.Map                       ( Map )
 
-import           Data.Set                      (Set)
-import           Data.Text.Lazy                (Text)
-import           GHC.Generics                  (Generic)
+import           Control.Lens
+import           Data.Set                       ( Set )
+import           Data.Text.Lazy                 ( Text )
+import           GHC.Generics                   ( Generic )
 import           Spicy.Molecule.Internal.Types
 
 {-|
@@ -170,3 +195,17 @@ data HartreeFockIntergalApproximation
   = HartreeFockIntergalApproximation_RIJK
   | HartreeFockIntergalApproximation_RIJCOSX
   deriving ( Eq, Show )
+
+----------------------------------------------------------------------------------------------------
+makeLenses ''Wrapper
+makeLenses ''CalculationNiveau
+makeLenses ''Task
+makeLenses ''Property
+makeLenses ''ChargeType
+makeLenses ''QuantumMechanics
+makeLenses ''Basis
+makeLenses ''BasisSetDefinition
+makeLenses ''ECPDefiniton
+makeLenses ''QMTheory
+makeLenses ''HartreeFock
+makeLenses ''HartreeFockIntergalApproximation

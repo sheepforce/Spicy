@@ -25,6 +25,7 @@ where
 
 import           Control.Applicative
 
+import           Control.Lens            hiding ( index )
 import           Data.Attoparsec.Text.Lazy
 import           Data.Char
 import           Data.Either
@@ -40,7 +41,6 @@ import qualified Data.Sequence                 as S
 import qualified Data.Text.Lazy                as TL
 import qualified Data.Text.Lazy.Read           as TL
 import           Data.Tuple
-import           Lens.Micro.Platform
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1

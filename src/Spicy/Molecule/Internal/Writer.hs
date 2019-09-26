@@ -20,6 +20,7 @@ module Spicy.Molecule.Internal.Writer
   )
 where
 import           Control.Exception.Safe
+import           Control.Lens
 import           Data.Aeson.Encode.Pretty
 import           Data.Attoparsec.Text.Lazy      ( isEndOfLine )
 import           Data.Foldable
@@ -33,7 +34,6 @@ import qualified Data.Sequence                 as S
 import           Data.Text.Lazy                 ( Text )
 import qualified Data.Text.Lazy                as T
 import qualified Data.Text.Lazy.Encoding       as T
-import           Lens.Micro.Platform
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1

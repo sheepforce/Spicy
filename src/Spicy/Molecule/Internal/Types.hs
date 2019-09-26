@@ -68,9 +68,9 @@ import           GHC.Generics                   ( Generic )
 
 import           Control.DeepSeq
 import           Control.Exception.Safe
+import           Control.Lens            hiding ( (.=) )
 import           Data.Aeson
 import           Data.Aeson.Encode.Pretty
-import           Lens.Micro.Platform     hiding ( (.=) )
 import           Spicy.Generic
 
 {-

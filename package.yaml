@@ -42,7 +42,7 @@ flags:
 dependencies:
   - base >= 4.7 && <5
   - containers >= 0.6.0.1
-  - microlens-platform >= 0.3.9.0
+  - lens >= 4.17.1
   - attoparsec >= 0.13.1.0
   - text >= 1.2.2.0
   - split >= 0.2.3.2
