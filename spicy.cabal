@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: fbd123b1790a67280b6edc7a1291e72fd3414a946e6db8e1657fb8fac9f29472
+-- hash: 2613cc3be66dce805d9f0fb81df75ef7b7f7109a8273ce82b95b4b3bd17143f8
 
 name:           spicy
 version:        0.0.0.1
@@ -80,9 +80,8 @@ library
       Spicy.Molecule.Internal.Types
       Spicy.Molecule.Internal.Util
       Spicy.Molecule.Internal.Writer
-      Spicy.Wrapper.Internal.InputTypes
-      Spicy.Wrapper.Internal.MethodTypes
-      Spicy.Wrapper.Psi4.Internal.InputWriter
+      Spicy.Wrapper.Internal.Shallow
+      Spicy.Wrapper.Psi4.Internal.ShallowWriter
   other-modules:
       Paths_spicy
   hs-source-dirs:
@@ -104,6 +103,7 @@ library
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
     , filepath >=1.4.2
+    , ginger >=0.9.0.0
     , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , parallel >=3.2.1.0
@@ -156,6 +156,7 @@ executable benchmarks-exe
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
     , filepath >=1.4.2
+    , ginger >=0.9.0.0
     , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , parallel >=3.2.1.0
@@ -208,6 +209,7 @@ executable spicy
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
     , filepath >=1.4.2
+    , ginger >=0.9.0.0
     , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , parallel >=3.2.1.0
@@ -260,6 +262,7 @@ executable unittests-exe
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
     , filepath >=1.4.2
+    , ginger >=0.9.0.0
     , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , parallel >=3.2.1.0
@@ -316,6 +319,7 @@ test-suite unittests
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
     , filepath >=1.4.2
+    , ginger >=0.9.0.0
     , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , parallel >=3.2.1.0
@@ -373,6 +377,7 @@ benchmark benchmarks
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
     , filepath >=1.4.2
+    , ginger >=0.9.0.0
     , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
     , parallel >=3.2.1.0
