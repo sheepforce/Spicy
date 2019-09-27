@@ -18,6 +18,7 @@ module Spicy.Molecule.Internal.Util
   , makeSubMolsFromAnnoAtoms
   , findAtomInSubMols
   , groupAnnoAtomsAsSubMols
+  , getNElectrons
   )
 where
 import           Control.Exception.Safe
@@ -299,3 +300,17 @@ groupAnnoAtomsAsSubMols annoAtoms =
   groupBy (\x y -> x ^. _2 . _1 == y ^. _2 . _1)
     . S.unstableSortOn (\(_, (subID, _), _) -> subID)
     $ annoAtoms
+
+----------------------------------------------------------------------------------------------------
+{-|
+Get the number of electrons for a 'Molecule' with a given charge.
+-}
+getNElectrons
+  :: Molecule -- ^ The 'Molecule' to check.
+  -> Int      -- ^ Charge of the 'Molecule'.
+  -> Int      -- ^ Number of electrons of the 'Molecule' at the given charge.
+getNElectrons mol charge =
+  let atoms         = mol ^. molecule_Atoms
+      atomicNumbers = IM.map (\a -> fromEnum $ a ^. atom_Element) atoms
+      nElectrons    = (sum atomicNumbers) - charge
+  in  nElectrons

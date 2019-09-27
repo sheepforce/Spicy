@@ -53,6 +53,19 @@ module Spicy.Molecule
 where
 import           Spicy.Generic
 --import           Spicy.Molecule.Internal.Math
+import           Prelude                 hiding ( cycle
+                                                , foldl1
+                                                , foldr1
+                                                , head
+                                                , init
+                                                , last
+                                                , maximum
+                                                , minimum
+                                                , tail
+                                                , take
+                                                , takeWhile
+                                                , (!!)
+                                                )
 import           Spicy.Molecule.Internal.Parser
 import           Spicy.Molecule.Internal.Types
 import           Spicy.Molecule.Internal.Util
