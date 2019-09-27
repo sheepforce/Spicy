@@ -1,5 +1,5 @@
 {-|
-Module      : InputTypes
+Module      : Spicy.Wrapper.Internal.InputTypes
 Description : Types to define an atomic chemical computation for wrappers
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3
@@ -15,8 +15,11 @@ chemistry program/molecular mechanics program needs.
 
 module Spicy.Wrapper.Internal.InputTypes
   ( -- * Generic Types
-    AtomIdentifier
-    -- * Computational Chemistry Calculation
+    NumericalEfficiency(..)
+  , _Analytical
+  , _Numerical
+  , AtomIdentifier
+    -- * Computational Chemistry
   , Wrapper(..)
   , wrapper_Task
   , wrapper_Charge
@@ -35,11 +38,11 @@ module Spicy.Wrapper.Internal.InputTypes
   , _Property_Charge
   , ChargeType(..)
   , _ChargeType_RESP
-    -- ** Quantum Chemistry calculation
+    -- ** Quantum Chemistry
   , QuantumMechanics(..)
   , quantumMechanics_BasisSet
   , quantumMechanics_QMTheory
-    -- *** Basis Sets and ECP definitions
+    -- *** Basis Sets and ECPs
   , Basis(..)
   , basis_Primary
   , basis_RIJK
@@ -80,6 +83,11 @@ needs to be 0 based continous, as obtained from 'reIndex2BaseMolecule'.
 -}
 type AtomIdentifier = IntMap Element
 
+data NumericalEfficiency
+  = Analytical
+  | Numerical
+  deriving ( Eq, Show )
+
 ----------------------------------------------------------------------------------------------------
 {-|
 Complete definition of a calculation, that is supposed to be performed by a wrapper. This is the
@@ -107,11 +115,11 @@ data CalculationNiveau
 Defines tasks to be performed by the wrapper program.
 -}
 data Task
-  = Task_Energy                  -- ^ Single point energy calculation.
-  | Task_Gradient                -- ^ Gradient calculation.
-  | Task_Hessian                 -- ^ Hessian calculation.
-  | Task_Property (Set Property) -- ^ A set of properties to calculate.
-  | Task_StabilityAnalysis       -- ^ A stability analysis on the SCF solution with following.
+  = Task_Energy                       -- ^ Single point energy calculation.
+  | Task_Gradient NumericalEfficiency -- ^ Gradient calculation.
+  | Task_Hessian NumericalEfficiency  -- ^ Hessian calculation.
+  | Task_Property (Set Property)      -- ^ A set of properties to calculate.
+  | Task_StabilityAnalysis            -- ^ A stability analysis on the SCF solution with following.
   deriving ( Eq, Show )
 
 ----------------------------------------------------------------------------------------------------
@@ -223,6 +231,7 @@ data HartreeFockIntergalApproximation
   deriving ( Eq, Show )
 
 ----------------------------------------------------------------------------------------------------
+makePrisms ''NumericalEfficiency
 makeLenses ''Wrapper
 makePrisms ''CalculationNiveau
 makePrisms ''Task

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: eb5603fb4e03e84546ebc2e8202998e4fbab0b36cbd3082087fbf3e7a975450e
+-- hash: fbd123b1790a67280b6edc7a1291e72fd3414a946e6db8e1657fb8fac9f29472
 
 name:           spicy
 version:        0.0.0.1
@@ -81,6 +81,7 @@ library
       Spicy.Molecule.Internal.Util
       Spicy.Molecule.Internal.Writer
       Spicy.Wrapper.Internal.InputTypes
+      Spicy.Wrapper.Internal.MethodTypes
       Spicy.Wrapper.Psi4.Internal.InputWriter
   other-modules:
       Paths_spicy
