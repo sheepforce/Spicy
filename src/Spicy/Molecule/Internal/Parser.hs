@@ -11,11 +11,8 @@ This module provides parsers for chemical file formats. For the internal represe
 provided, as this is a JSON structured file, which should be parsed by
 [aeson](http://hackage.haskell.org/package/aeson)'s @decodeEither@.
 -}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Spicy.Molecule.Internal.Parser
   ( -- * Chemical Data Formats
-    -- $chemicalFormats
     parseXYZ
   , parseTXYZ
   , parseMOL2

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2613cc3be66dce805d9f0fb81df75ef7b7f7109a8273ce82b95b4b3bd17143f8
+-- hash: b410fe4e032fa077ef6e89bd3c0ecbf87c8cc70e7f908564fac8d8fd0cc8e1b7
 
 name:           spicy
 version:        0.0.0.1
@@ -81,6 +81,7 @@ library
       Spicy.Molecule.Internal.Util
       Spicy.Molecule.Internal.Writer
       Spicy.Wrapper.Internal.Shallow
+      Spicy.Wrapper.Psi4.Internal.Generic
       Spicy.Wrapper.Psi4.Internal.ShallowWriter
   other-modules:
       Paths_spicy
@@ -111,6 +112,7 @@ library
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
@@ -165,6 +167,7 @@ executable benchmarks-exe
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
@@ -218,6 +221,7 @@ executable spicy
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
@@ -274,6 +278,7 @@ executable unittests-exe
     , tasty-hunit
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
@@ -331,6 +336,7 @@ test-suite unittests
     , tasty-hunit
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
@@ -386,6 +392,7 @@ benchmark benchmarks
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
