@@ -17,6 +17,8 @@ actually layered in Spicy.
 {-# LANGUAGE TemplateHaskell #-}
 module Spicy.Wrapper.Internal.Shallow
   ( WrapperGenericException(..)
+    -- * Shallow Wrapper Input Types
+    -- $wrapperInput
   , WrapperInput(..)
   , wrapperInput_Molecule
   , wrapperInput_Task
@@ -32,22 +34,27 @@ module Spicy.Wrapper.Internal.Shallow
   , CalculationInput(..)
   , _CalculationInput_QuantumMechanics
   , _CalculationInput_MolecularMechanics
+    -- ** Quantum Mechanics
+    -- $quantumMechanics
   , QuantumMechanics(..)
   , quantumMechanics_Charge
   , quantumMechanics_Multiplicity
-  , quantumMechanics_WFReference
-  , quantumMechanics_Molecule
-  , WFReference(..)
-  , _RHF
-  , _ROHF
-  , _UKS
+    -- ** Molecular Mechanics
+    -- $molecularMechanics
   , MolecularMechanics(..)
   , molecularMechanics_Molecule
   , MMEngine(..)
+    -- * Mapper
+    -- $mapper
+  , quantumMechanics2HashMap
   )
 where
 import           Control.Exception.Safe
 import           Control.Lens
+import           Data.HashMap.Lazy              ( HashMap )
+import qualified Data.HashMap.Lazy             as HM
+import           Data.Text.Lazy                 ( Text )
+import qualified Data.Text.Lazy                as T
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1
@@ -64,6 +71,8 @@ import           Prelude                 hiding ( cycle
 import           Spicy.Generic
 import           Spicy.Molecule.Internal.Types
 import           Spicy.Molecule.Internal.Util
+import System.IO ( FilePath)
+
 
 {-|
 Exceptions for a computational chemistry wrapper, that are unspecific to a program.
@@ -77,7 +86,13 @@ instance Show WrapperGenericException where
 
 instance Exception WrapperGenericException
 
-----------------------------------------------------------------------------------------------------
+{-
+####################################################################################################
+-}
+{- $wrapperInput
+Defines a general scheme for input of a general shallow wrapper, may it be a quantum chemistry
+programm or a molecular mechanics program.
+-}
 {-|
 Contents, that a Spicy wrapper will replace in the input file. First, distinguish between quantum
 mechanics and molecular mechanics.
@@ -89,6 +104,9 @@ data WrapperInput = WrapperInput
   , _wrapperInput_Task             :: Task             -- ^ A 'Task' the wrapper needs to perform.
   , _wrapperInput_CalculationInput :: CalculationInput -- ^ Values specific to the calculation
                                                        --   niveau, that need to be replaced.
+  , _wrapperInput_Restart          :: FilePath         -- ^ A 'FilePath' to a file, from which
+                                                       --   restart information can be read (e.g.
+                                                       --   WF).
   }
   deriving ( Eq, Show )
 
@@ -130,19 +148,22 @@ data CalculationInput
   | CalculationInput_MolecularMechanics MolecularMechanics
   deriving ( Eq, Show )
 
-----------------------------------------------------------------------------------------------------
+{-
+====================================================================================================
+-}
+{- $quantumMechanics
+Input specific for quantum chemistry calculations.
+-}
 {-|
 Input, that needs to be replaced in a shallow wrapper input for quantum chemistry.
 -}
 data QuantumMechanics = QuantumMechanics
   { _quantumMechanics_Charge       :: Int         -- ^ Charge of the 'Molecule'.
   , _quantumMechanics_Multiplicity :: Int         -- ^ Multiplicity of the 'Molecule'.
-  , _quantumMechanics_WFReference  :: WFReference -- ^ Single determinant reference type.
-  , _quantumMechanics_Molecule     :: Molecule    -- ^ The 'Molecule', which will be put into the
-                                                  --   input.
   }
   deriving ( Eq, Show )
 
+----------------------------------------------------------------------------------------------------
 {-|
 'check' like function for the quantum mechanics part of 'WrapperInput'.
 -}
@@ -151,37 +172,26 @@ checkQM qm mol =
   let
     charge               = _quantumMechanics_Charge qm
     multiplicity         = _quantumMechanics_Multiplicity qm
-    reference            = _quantumMechanics_WFReference qm
     nElectrons           = getNElectrons mol charge
     maxMultiplicityCheck = if (nElectrons + 1 < multiplicity) then False else True
-    wfCheck              = case (even nElectrons, reference) of
-      (False, RHF) -> False
-      (_    , _  ) -> True
-    multiplicityCheck = case (even nElectrons, even multiplicity) of
+    multiplicityCheck    = case (even nElectrons, even multiplicity) of
       (True , False) -> True
       (False, True ) -> True
       (_    , _    ) -> False
   in
-    case (maxMultiplicityCheck, wfCheck, multiplicityCheck) of
-      (True, True, True) -> return qm
-      (False, _, _) ->
+    case (maxMultiplicityCheck, multiplicityCheck) of
+      (True, True) -> return qm
+      (False, _) ->
         throwM $ WrapperGenericException "Not enough electrons to have this multiplicity."
-      (_, False, _) ->
-        throwM $ WrapperGenericException "Multiplicity not possible with this wavefunction."
-      (_, _, False) ->
+      (_, False) ->
         throwM $ WrapperGenericException "Invalid combination of multiplicity and charge."
 
-----------------------------------------------------------------------------------------------------
-{-|
-Single determinant wavefunction type.
+{-
+====================================================================================================
 -}
-data WFReference
-  = RHF  -- ^ Restricted Hartree-Fock/Kohn-Sham DFT.
-  | ROHF -- ^ Restricted open shell Hartree-Fock/Kohn-Sham DFT.
-  | UKS  -- ^ Unrestricted Hartree-Fock/Kohn-Sham DFT.
-  deriving ( Eq, Show )
-
-----------------------------------------------------------------------------------------------------
+{- $molecularMechanics
+Input specific for a molecular mechanics program.
+-}
 {-|
 Informations, that need to be replaced in a shallow molecular mechanics wrapper.
 -}
@@ -204,5 +214,16 @@ makePrisms ''Task
 makePrisms ''NumericalEfficiency
 makePrisms ''CalculationInput
 makeLenses ''QuantumMechanics
-makePrisms ''WFReference
 makeLenses ''MolecularMechanics
+
+{-
+####################################################################################################
+-}
+{- $mapper
+Translator from the input type 'WrapperInput' to a 'HashMap', that can be used by Ginger.
+-}
+quantumMechanics2HashMap :: QuantumMechanics -> HashMap Text Text
+quantumMechanics2HashMap qm = HM.fromList
+  [ ("charge", tShow $ qm ^. quantumMechanics_Charge)
+  , ("mult"  , tShow $ qm ^. quantumMechanics_Multiplicity)
+  ]
