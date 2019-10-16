@@ -54,7 +54,6 @@ import           Control.Lens
 import           Data.HashMap.Lazy              ( HashMap )
 import qualified Data.HashMap.Lazy             as HM
 import           Data.Text.Lazy                 ( Text )
-import qualified Data.Text.Lazy                as T
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1
