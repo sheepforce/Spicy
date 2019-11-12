@@ -1,6 +1,8 @@
-# This is the simple GitLab-CI configuration
-
 image: haskell:latest
+
+stages:
+  - build
+  - test
 
 before_script:
   - mkdir -p /root/stack
@@ -22,4 +24,13 @@ build:
       - $HOME/.cabal
     script:
       - stack --no-terminal --install-ghc build --only-dependencies
-      - stack build --no-terminal --test
+
+test:
+  cache:
+    paths:
+      - .stack
+      - $HOME/.stack
+      - $HOME/.ghc
+      - $HOME/.cabal
+    script:
+      - stack --no-terminal test
