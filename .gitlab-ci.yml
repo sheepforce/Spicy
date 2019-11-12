@@ -1,9 +1,5 @@
 image: haskell:latest
 
-stages:
-  - build
-  - test
-
 before_script:
   - mkdir -p /root/stack
   - export STACK_ROOT=$(pwd)/.stack
@@ -16,6 +12,7 @@ before_script:
   - export PATH=$HOME/.local/bin:$PATH
 
 build:
+  stage: build
   cache:
     paths:
       - .stack
@@ -26,6 +23,7 @@ build:
       - stack --no-terminal --install-ghc build --only-dependencies
 
 test:
+  stage: test
   cache:
     paths:
       - .stack
