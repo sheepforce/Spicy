@@ -5,9 +5,9 @@ before_script:
   - export STACK_ROOT=$(pwd)/.stack
   # - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
   # - echo "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee -a /etc/apt/sources.list
-  - sudo apt clean
-  - sudo apt update
-  - sudo apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools
+  - apt clean
+  - apt update
+  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
 
