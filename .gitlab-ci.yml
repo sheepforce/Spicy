@@ -8,6 +8,7 @@ before_script:
   - apt install -y wget
   - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
   - echo "deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-8 main" | tee -a /etc/apt/sources.list
+  - apt update
   - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
