@@ -11,7 +11,11 @@ before_script:
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
 
-build:
+stages:
+  - build
+  - test
+
+buildSpicy:
   stage: build
   cache:
     paths:
@@ -19,10 +23,10 @@ build:
       - $HOME/.stack
       - $HOME/.ghc
       - $HOME/.cabal
-    script:
-      - stack --no-terminal --install-ghc build --only-dependencies
+  script:
+    - stack --no-terminal --install-ghc build --only-dependencies
 
-test:
+testSpicy:
   stage: test
   cache:
     paths:
@@ -30,5 +34,5 @@ test:
       - $HOME/.stack
       - $HOME/.ghc
       - $HOME/.cabal
-    script:
-      - stack --no-terminal test
+  script:
+    - stack --no-terminal test
