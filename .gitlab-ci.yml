@@ -1,4 +1,4 @@
-image: haskell:latest
+image: debian:buster
 
 before_script:
   - mkdir -p /root/stack
@@ -6,11 +6,11 @@ before_script:
   - apt clean
   - apt update
   - apt install -y wget
+  - wget -qO- https://get.haskellstack.org/ | sh
   - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-  - echo "deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-8 main" | tee -a /etc/apt/sources.list
-  - echo "deb http://ftp.de.debian.org/debian/ stretch-backports main" | tee -a /etc/apt/sources.list
+  - echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-8 main" | tee -a /etc/apt/sources.list
   - apt update
-  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools
+  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
 
