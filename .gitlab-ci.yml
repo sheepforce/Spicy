@@ -13,6 +13,7 @@ before_script:
   - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
+  - ln -s /usr/lib/x86_64-linux-gnu/libffi.so.6 /usr/lib/x86_64-linux-gnu/libffi.so.7
 
 stages:
   - build
