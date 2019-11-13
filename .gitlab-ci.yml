@@ -10,7 +10,7 @@ before_script:
   - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
   - echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-8 main" | tee -a /etc/apt/sources.list
   - apt update
-  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev
+  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev pkg-config
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
   - ln -s /usr/lib/x86_64-linux-gnu/libffi.so.6 /usr/lib/x86_64-linux-gnu/libffi.so.7
