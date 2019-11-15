@@ -1,4 +1,4 @@
-# Spicy [![Build Status](https://travis-ci.com/sheepforce/Spicy.svg?branch=master)](https://travis-ci.com/sheepforce/Spicy)
+# Spicy
 Spicy is a Haskell program for quantum chemistry and quantum dynamics and aims at providing a set of composable ONIOM methods, that are not widely available.
 Spicy will not implement quantum chemistry calculations itself, but rather wrap different quantum chemistry programs.
 
@@ -20,7 +20,7 @@ If you want to build with NVidia GPU support, also everything from the CUDA tool
 3. Clone the Spicy repository and build the code.
 Cabal flags are available to use, to switch to a development build (faster and warnings are not errors), or enable NVidia GPU support. The flags are `dev` and `cuda` and can be added to the stack build line with `--flag spicy:dev` and `--flag spicy:cuda`. For example:
 ```
-git clone https://github.com/sheepforce/Spicy.git
+git clone https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy.git
 cd Spicy
 stack install --flag spicy:cuda
 ```
@@ -39,4 +39,4 @@ with the same flags as used above.
 Alternatively, you can use the executables provided for point releases for linux systems, which require no Haskell libraries and dependencies but LLVM 8.0.x with shared libraries.
 
 ## Contributing and Code
-For coding style and for how to contribute, see [CONTRIBUTING.md](https://github.com/sheepforce/Spicy/blob/master/CONTRIBUTING.md).
+For coding style and for how to contribute, see [CONTRIBUTING.md](https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy/blob/develop/CONTRIBUTING.md).
