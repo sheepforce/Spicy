@@ -1,0 +1,42 @@
+image: debian:buster
+
+before_script:
+  - mkdir -p /root/stack
+  - export STACK_ROOT=$(pwd)/.stack
+  - apt clean
+  - apt update
+  - apt install -y wget
+  - wget -qO- https://get.haskellstack.org/ | sh
+  - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+  - echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-8 main" | tee -a /etc/apt/sources.list
+  - apt update
+  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev pkg-config
+  - mkdir -p ~/.local/bin
+  - export PATH=$HOME/.local/bin:$PATH
+  - ln -s /usr/lib/x86_64-linux-gnu/libffi.so.6 /usr/lib/x86_64-linux-gnu/libffi.so.7
+
+stages:
+  - build
+  - test
+
+buildSpicy:
+  stage: build
+  cache:
+    paths:
+      - .stack
+      - $HOME/.stack
+      - $HOME/.ghc
+      - $HOME/.cabal
+  script:
+    - stack --no-terminal --install-ghc build --only-dependencies
+
+testSpicy:
+  stage: test
+  cache:
+    paths:
+      - .stack
+      - $HOME/.stack
+      - $HOME/.ghc
+      - $HOME/.cabal
+  script:
+    - stack --no-terminal test
