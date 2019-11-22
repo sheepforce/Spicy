@@ -10,26 +10,26 @@ Portability : POSIX, Windows
 This module provides commong functions for the Psi4 wrapper.
 -}
 module Spicy.Wrapper.Psi4.Internal.Generic
- ( WrapperPsi4Exception(..)
+  ( WrapperPsi4Exception(..)
    -- * Mapper
    -- $mapper
- , molecule2HashMap
- )
- where
-import Control.Exception.Safe
-import Data.Text.Lazy ( Text )
-import qualified Data.Text.Lazy as T
-import Spicy.Molecule.Internal.Types
-import Spicy.Molecule.Internal.Writer
-import qualified Data.HashMap.Lazy as HM
-import Data.HashMap.Lazy (HashMap)
+  , molecule2HashMap
+  )
+where
+import           Control.Exception.Safe
+import           Data.HashMap.Lazy              ( HashMap )
+import qualified Data.HashMap.Lazy             as HM
+import qualified Data.Text                     as TS
+import           Spicy.Generic
+import           Spicy.Molecule.Internal.Types
+import           Spicy.Molecule.Internal.Writer
 
 {-|
 Psi4 specific exceptions.
 -}
 data WrapperPsi4Exception = WrapperPsi4Exception
   { wPsi4ExcFunctionName :: String
-  , wPsi4Description :: String
+  , wPsi4Description     :: String
   }
 
 instance Show WrapperPsi4Exception where
@@ -46,8 +46,8 @@ Ginger/Psi4 specific translations.
 {-|
 Convert a 'Molecule' to its Psi4-appropiate 'Text' representation and put it in a 'HashMap'.
 -}
-molecule2HashMap :: MonadThrow m => Molecule -> m (HashMap Text Text)
+molecule2HashMap :: MonadThrow m => Molecule -> m (HashMap TS.Text TS.Text)
 molecule2HashMap mol = do
   xyzText <- writeXYZ mol
-  let molRep = T.unlines . drop 2 . T.lines $ xyzText
+  let molRep = TS.unlines . drop 2 . TS.lines . textL2S $ xyzText
   return $ HM.singleton "molecule" molRep

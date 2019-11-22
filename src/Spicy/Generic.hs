@@ -37,6 +37,7 @@ module Spicy.Generic
     -- ** Text
     -- $textOperations
   , textS2L
+  , textL2S
   , tShow
     -- ** Sequence
     -- $sequenceOperations
@@ -243,6 +244,12 @@ Convert strict text to lazy text.
 -}
 textS2L :: TS.Text -> TL.Text
 textS2L = TL.pack . TS.unpack
+
+{-|
+Convert lazy text to strict text.
+-}
+textL2S :: TL.Text -> TS.Text
+textL2S = TS.pack . TL.unpack
 
 ----------------------------------------------------------------------------------------------------
 {-|

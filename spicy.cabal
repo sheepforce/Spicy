@@ -4,11 +4,11 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b410fe4e032fa077ef6e89bd3c0ecbf87c8cc70e7f908564fac8d8fd0cc8e1b7
+-- hash: a41fd4b2150138fafff0d8d12b3f68720f33df422228109b1396fa5da657765f
 
 name:           spicy
 version:        0.0.0.1
-description:    Please see the README on GitHub at <https://github.com/sheepforce/Spicy#readme>
+description:    Please see the README on GitHub at <https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy>
 homepage:       https://github.com/sheepforce/Spicy#readme
 bug-reports:    https://github.com/sheepforce/Spicy/issues
 author:         Phillip Seeber

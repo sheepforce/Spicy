@@ -23,6 +23,7 @@ module Spicy.Wrapper.Internal.Shallow
   , wrapperInput_Molecule
   , wrapperInput_Task
   , wrapperInput_CalculationInput
+  , wrapperInput_Restart
   , Task(..)
   , _Energy
   , _Gradient
@@ -53,7 +54,7 @@ import           Control.Exception.Safe
 import           Control.Lens
 import           Data.HashMap.Lazy              ( HashMap )
 import qualified Data.HashMap.Lazy             as HM
-import           Data.Text.Lazy                 ( Text )
+import qualified Data.Text                     as TS
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1
@@ -70,7 +71,7 @@ import           Prelude                 hiding ( cycle
 import           Spicy.Generic
 import           Spicy.Molecule.Internal.Types
 import           Spicy.Molecule.Internal.Util
-import System.IO ( FilePath)
+import           System.IO                      ( FilePath )
 
 
 {-|
@@ -157,8 +158,8 @@ Input specific for quantum chemistry calculations.
 Input, that needs to be replaced in a shallow wrapper input for quantum chemistry.
 -}
 data QuantumMechanics = QuantumMechanics
-  { _quantumMechanics_Charge       :: Int         -- ^ Charge of the 'Molecule'.
-  , _quantumMechanics_Multiplicity :: Int         -- ^ Multiplicity of the 'Molecule'.
+  { _quantumMechanics_Charge       :: Int -- ^ Charge of the 'Molecule'.
+  , _quantumMechanics_Multiplicity :: Int -- ^ Multiplicity of the 'Molecule'.
   }
   deriving ( Eq, Show )
 
@@ -221,8 +222,8 @@ makeLenses ''MolecularMechanics
 {- $mapper
 Translator from the input type 'WrapperInput' to a 'HashMap', that can be used by Ginger.
 -}
-quantumMechanics2HashMap :: QuantumMechanics -> HashMap Text Text
+quantumMechanics2HashMap :: QuantumMechanics -> HashMap TS.Text TS.Text
 quantumMechanics2HashMap qm = HM.fromList
-  [ ("charge", tShow $ qm ^. quantumMechanics_Charge)
-  , ("mult"  , tShow $ qm ^. quantumMechanics_Multiplicity)
+  [ ("charge", textL2S . tShow $ qm ^. quantumMechanics_Charge)
+  , ("mult"  , textL2S . tShow $ qm ^. quantumMechanics_Multiplicity)
   ]
