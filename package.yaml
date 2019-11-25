@@ -1,6 +1,6 @@
 name:                spicy
 version:             0.0.0.1
-github:              "sheepforce/Spicy"
+git:                 https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy
 license:             GPL-3
 author:              "Phillip Seeber"
 maintainer:          "phillip.seeber@uni-jena.de"
