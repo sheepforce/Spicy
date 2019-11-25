@@ -1,6 +1,6 @@
 {-|
-Module      : Spicy.Wrapper.Internal.Shallow
-Description : Simple type, used to modify template input files.
+Module      : Spicy.Wrapper.Internal.Types.Shallow
+Description : Simple types, used to modify template input files.
 Copyright   : Phillip Seeber, 2019
 License     : GPL-3
 Maintainer  : phillip.seeber@uni-jena.de
@@ -15,7 +15,7 @@ The other version is the "deep" wrapper, where all details of the computational 
 actually layered in Spicy.
 -}
 {-# LANGUAGE TemplateHaskell #-}
-module Spicy.Wrapper.Internal.Shallow
+module Spicy.Wrapper.Internal.Types.Shallow
   ( WrapperGenericException(..)
     -- * Shallow Wrapper Input Types
     -- $wrapperInput
@@ -24,11 +24,14 @@ module Spicy.Wrapper.Internal.Shallow
   , wrapperInput_Task
   , wrapperInput_CalculationInput
   , wrapperInput_Restart
+  , wrapperInput_Software
   , Task(..)
   , _Energy
   , _Gradient
   , _Hessian
   , _Property
+  , Software(..)
+  , _Psi4
   , NumericalEfficiency(..)
   , _Analytical
   , _Numerical
@@ -44,17 +47,10 @@ module Spicy.Wrapper.Internal.Shallow
     -- $molecularMechanics
   , MolecularMechanics(..)
   , molecularMechanics_Molecule
-  , MMEngine(..)
-    -- * Mapper
-    -- $mapper
-  , quantumMechanics2HashMap
   )
 where
 import           Control.Exception.Safe
 import           Control.Lens
-import           Data.HashMap.Lazy              ( HashMap )
-import qualified Data.HashMap.Lazy             as HM
-import qualified Data.Text                     as TS
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1
@@ -78,11 +74,12 @@ import           System.IO                      ( FilePath )
 Exceptions for a computational chemistry wrapper, that are unspecific to a program.
 -}
 data WrapperGenericException = WrapperGenericException
-  { wgExcDescription :: String
+  { wgExcFunction    :: String
+  , wgExcDescription :: String
   }
 
 instance Show WrapperGenericException where
-  show (WrapperGenericException e) = "WrapperGenericException: " ++ e
+  show (WrapperGenericException f e) = "WrapperGenericException: " ++ f ++ e
 
 instance Exception WrapperGenericException
 
@@ -107,17 +104,30 @@ data WrapperInput = WrapperInput
   , _wrapperInput_Restart          :: FilePath         -- ^ A 'FilePath' to a file, from which
                                                        --   restart information can be read (e.g.
                                                        --   WF).
+  , _wrapperInput_Software         :: Software         -- ^ The calculation 'Software' to be used
+                                                       --   for the calculation.
   }
   deriving ( Eq, Show )
 
 instance Check WrapperInput where
   check input =
     let mol = _wrapperInput_Molecule input
-    in  case (_wrapperInput_CalculationInput input) of
-          CalculationInput_QuantumMechanics qm -> do
-            _qm <- checkQM qm mol
-            return input
-          CalculationInput_MolecularMechanics _mm -> return input
+    in  -- Check for QM and MM informations separately
+      case _wrapperInput_CalculationInput input of
+        CalculationInput_QuantumMechanics qm -> do
+          -- Perform independent checks above the QM level of the input.
+          let isQmSoftware = (_wrapperInput_Software input) `elem` qmSoftware
+          -- Verify all checks.
+          if all (== True) [isQmSoftware]
+            then do
+              -- Check the QM part separately.
+              _qm <- checkQM qm mol
+              return input
+            else throwM $ WrapperGenericException
+              "check"
+              "Found inconsistency in your wrapper input. The QM part is not passing a check."
+        CalculationInput_MolecularMechanics _mm -> return input
+    where qmSoftware = [Psi4]
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -128,6 +138,14 @@ data Task
   | Gradient NumericalEfficiency -- ^ Gradient calculation.
   | Hessian  NumericalEfficiency -- ^ Hessian calculation.
   | Property                     -- ^ Property calculation.
+  deriving ( Eq, Show )
+
+----------------------------------------------------------------------------------------------------
+{-|
+A software, which is being wrapped.
+-}
+data Software
+  = Psi4
   deriving ( Eq, Show )
 
 ----------------------------------------------------------------------------------------------------
@@ -169,22 +187,20 @@ data QuantumMechanics = QuantumMechanics
 -}
 checkQM :: MonadThrow m => QuantumMechanics -> Molecule -> m QuantumMechanics
 checkQM qm mol =
-  let
-    charge               = _quantumMechanics_Charge qm
-    multiplicity         = _quantumMechanics_Multiplicity qm
-    nElectrons           = getNElectrons mol charge
-    maxMultiplicityCheck = if (nElectrons + 1 < multiplicity) then False else True
-    multiplicityCheck    = case (even nElectrons, even multiplicity) of
-      (True , False) -> True
-      (False, True ) -> True
-      (_    , _    ) -> False
-  in
-    case (maxMultiplicityCheck, multiplicityCheck) of
-      (True, True) -> return qm
-      (False, _) ->
-        throwM $ WrapperGenericException "Not enough electrons to have this multiplicity."
-      (_, False) ->
-        throwM $ WrapperGenericException "Invalid combination of multiplicity and charge."
+  let charge               = _quantumMechanics_Charge qm
+      multiplicity         = _quantumMechanics_Multiplicity qm
+      nElectrons           = getNElectrons mol charge
+      maxMultiplicityCheck = nElectrons + 1 < multiplicity
+      multiplicityCheck    = case (even nElectrons, even multiplicity) of
+        (True , False) -> True
+        (False, True ) -> True
+        (_    , _    ) -> False
+  in  case (maxMultiplicityCheck, multiplicityCheck) of
+        (True, True) -> return qm
+        (False, _) ->
+          throwM $ WrapperGenericException "check" "Not enough electrons to have this multiplicity."
+        (_, False) ->
+          throwM $ WrapperGenericException "check" "Invalid combination of multiplicity and charge."
 
 {-
 ====================================================================================================
@@ -201,29 +217,10 @@ data MolecularMechanics = MolecularMechanics
   deriving ( Eq, Show )
 
 ----------------------------------------------------------------------------------------------------
-{-|
-Defines a selection of MM programs in the context of force field types.
--}
-data MMEngine
-  = Tinker
-  deriving ( Eq, Show )
-
-----------------------------------------------------------------------------------------------------
 makeLenses ''WrapperInput
 makePrisms ''Task
+makePrisms ''Software
 makePrisms ''NumericalEfficiency
 makePrisms ''CalculationInput
 makeLenses ''QuantumMechanics
 makeLenses ''MolecularMechanics
-
-{-
-####################################################################################################
--}
-{- $mapper
-Translator from the input type 'WrapperInput' to a 'HashMap', that can be used by Ginger.
--}
-quantumMechanics2HashMap :: QuantumMechanics -> HashMap TS.Text TS.Text
-quantumMechanics2HashMap qm = HM.fromList
-  [ ("charge", textL2S . tShow $ qm ^. quantumMechanics_Charge)
-  , ("mult"  , textL2S . tShow $ qm ^. quantumMechanics_Multiplicity)
-  ]
