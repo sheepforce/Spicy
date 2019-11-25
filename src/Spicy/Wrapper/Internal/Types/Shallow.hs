@@ -16,7 +16,8 @@ actually layered in Spicy.
 -}
 {-# LANGUAGE TemplateHaskell #-}
 module Spicy.Wrapper.Internal.Types.Shallow
-  ( WrapperGenericException(..)
+  ( -- * Exceptions
+    WrapperGenericException(..)
     -- * Shallow Wrapper Input Types
     -- $wrapperInput
   , WrapperInput(..)
@@ -190,7 +191,7 @@ checkQM qm mol =
   let charge               = _quantumMechanics_Charge qm
       multiplicity         = _quantumMechanics_Multiplicity qm
       nElectrons           = getNElectrons mol charge
-      maxMultiplicityCheck = nElectrons + 1 < multiplicity
+      maxMultiplicityCheck = nElectrons + 1 >= multiplicity
       multiplicityCheck    = case (even nElectrons, even multiplicity) of
         (True , False) -> True
         (False, True ) -> True
