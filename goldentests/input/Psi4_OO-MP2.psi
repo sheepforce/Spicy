@@ -1,0 +1,15 @@
+memory 200 MiB
+
+molecule Spicy {
+  {{ charge }} {{ multiplicity }}
+  {{ molecule }}
+}
+
+set {
+  scf_type df
+  reference rhf
+  basis cc-pVTZ
+  molden_write true
+}
+
+{{ task }}("omp2")
