@@ -98,9 +98,10 @@ toMol wrapperInput
   | otherwise = throwM
   $ WrapperGenericException "toMol" "Cannot write a moleucle format for the software requested."
  where
-  molecule    = wrapperInput ^. wrapperInput_Molecule
-  software    = wrapperInput ^. wrapperInput_Software
-  angstromXYZ = HM.singleton "molecule" <$> (textL2S <$> writeXYZ molecule)
+  molecule        = wrapperInput ^. wrapperInput_Molecule
+  software        = wrapperInput ^. wrapperInput_Software
+  angstromXYZBody = textL2S . TL.unlines . drop 2 . TL.lines <$> writeXYZ molecule
+  angstromXYZ     = HM.singleton "molecule" <$> angstromXYZBody
 
 ----------------------------------------------------------------------------------------------------
 {-|
