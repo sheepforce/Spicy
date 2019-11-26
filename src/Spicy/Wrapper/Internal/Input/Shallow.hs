@@ -75,7 +75,7 @@ set {
   molden_write true
 }
 
-{% if restart == "Nothing" %}
+{% if restart == \"Nothing\" %}
 {{ task }}("omp2")
 {% else %}
 {{ task }}("omp2", restart_file="{{ restart }}")
