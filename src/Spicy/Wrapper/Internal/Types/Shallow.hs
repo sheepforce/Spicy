@@ -8,8 +8,9 @@ Stability   : experimental
 Portability : POSIX, Windows
 
 This module provides a container type for the most basic informations, that will be replaced in a
-computational chemistry program. This is a "shallow" wrapper to a quantum chemistry program, as a
-lot of knowledge for the input in the underlying program is required.
+computational chemistry program. This is a "shallow" wrapper to a quantum chemistry program, as
+knowledge for the input in the underlying program is required. Therefore a shallow wrapper utilises
+Ginger (Jinja syntax) input files for software.
 
 The other version is the "deep" wrapper, where all details of the computational chemistry input are
 actually layered in Spicy.
