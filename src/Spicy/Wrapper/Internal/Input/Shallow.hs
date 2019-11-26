@@ -58,18 +58,26 @@ translate2Input template rawWrapperInput = do
   -- Check if the input for the wrapper is sane.
   input <- check rawWrapperInput
   -- Build the context for Ginger.
-  let qmInput'      = input ^? wrapperInput_CalculationInput . _CalculationInput_QuantumMechanics
-      _mmInput'     = input ^? wrapperInput_CalculationInput . _CalculationInput_MolecularMechanics
-      charge'       = _quantumMechanics_Charge <$> qmInput'
-      multiplicity' = _quantumMechanics_Multiplicity <$> qmInput'
-      nOpenShells'  = (\x -> x - 1) <$> multiplicity'
+  let qmInput'       = input ^? wrapperInput_CalculationInput . _CalculationInput_QuantumMechanics
+      _mmInput'      = input ^? wrapperInput_CalculationInput . _CalculationInput_MolecularMechanics
+      charge'        = _quantumMechanics_Charge <$> qmInput'
+      multiplicity'  = _quantumMechanics_Multiplicity <$> qmInput'
+      nOpenShells'   = (\x -> x - 1) <$> multiplicity'
+      restartContext = HM.singleton "restart" $ case input ^. wrapperInput_Restart of
+        Just file -> tsShow file
+        Nothing   -> "Nothing"
   moleculeContext     <- toMol input
   chargeContext       <- HM.singleton "charge" . tsShow <$> maybe2MonadThrow charge'
   multiplicityContext <- HM.singleton "multiplicity" . tsShow <$> maybe2MonadThrow multiplicity'
   nOpenShellsContext  <- HM.singleton "openshells" . tsShow <$> maybe2MonadThrow nOpenShells'
   taskContext         <- toTask input
   let context =
-        moleculeContext <> chargeContext <> multiplicityContext <> nOpenShellsContext <> taskContext
+        moleculeContext
+          <> chargeContext
+          <> multiplicityContext
+          <> nOpenShellsContext
+          <> taskContext
+          <> restartContext
   -- Parse the Ginger template.
   parsed <- parseGinger (const . return $ Nothing) Nothing (TL.unpack template)
   -- Render the Ginger document with context.

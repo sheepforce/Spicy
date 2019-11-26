@@ -102,9 +102,9 @@ data WrapperInput = WrapperInput
   , _wrapperInput_Task             :: Task             -- ^ A 'Task' the wrapper needs to perform.
   , _wrapperInput_CalculationInput :: CalculationInput -- ^ Values specific to the calculation
                                                        --   niveau, that need to be replaced.
-  , _wrapperInput_Restart          :: FilePath         -- ^ A 'FilePath' to a file, from which
+  , _wrapperInput_Restart          :: Maybe FilePath   -- ^ A 'FilePath' to a file, from which
                                                        --   restart information can be read (e.g.
-                                                       --   WF).
+                                                       --   WF) if already present.
   , _wrapperInput_Software         :: Software         -- ^ The calculation 'Software' to be used
                                                        --   for the calculation.
   }
