@@ -13,3 +13,5 @@ set {
 }
 
 {{ task }}("omp2")
+{{ task }}("ccsd")
+energy("b3lyp")
