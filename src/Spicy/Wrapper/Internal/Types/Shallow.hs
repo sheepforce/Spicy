@@ -49,10 +49,18 @@ module Spicy.Wrapper.Internal.Types.Shallow
     -- $molecularMechanics
   , MolecularMechanics(..)
   , molecularMechanics_Molecule
+    -- ** Wrapper Output Types
+    -- $wrapperOutput
+  , WrapperOutput(..)
+  , wrapperOutput_Energy
+  , wrapperOutput_Gradient
+  , wrapperOutput_Hessian
+  , wrapperOutput_PCharges
   )
 where
 import           Control.Exception.Safe
 import           Control.Lens
+import           Data.Sequence                  ( Seq )
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1
@@ -226,3 +234,26 @@ makePrisms ''NumericalEfficiency
 makePrisms ''CalculationInput
 makeLenses ''QuantumMechanics
 makeLenses ''MolecularMechanics
+
+{-
+####################################################################################################
+-}
+{- $wrapperOutput
+Results to be expected from a wrapper calculation.
+-}
+{-|
+A collection of values, that could be obtained from a wrapper calculation.
+-}
+data WrapperOutput = WrapperOutput
+  { _wrapperOutput_Energy   :: Maybe Double             -- ^ Potentially a calculated energy given
+                                                        --   in Hartree.
+  , _wrapperOutput_Gradient :: Maybe (AccVector Double) -- ^ Potentially a calculated gradient given
+                                                        --   in Hartree/Angstrom.
+  , _wrapperOutput_Hessian  :: Maybe (AccMatrix Double) -- ^ Potentially a mass-weightes Hessian.
+  , _wrapperOutput_PCharges :: Maybe (Seq Double)       -- ^ Potentially partial charges for the
+                                                        --   atoms.
+  }
+  deriving ( Eq, Show )
+
+----------------------------------------------------------------------------------------------------
+makeLenses ''WrapperOutput
