@@ -1,8 +1,13 @@
 memory 200 MiB
+psi4_io.set_specific_retention(180, True)
 
 molecule Spicy {
+{% indent %}
+{% indent %}
   {{ charge }} {{ multiplicity }}
   {{ molecule }}
+{% endindent %}
+{% endindent %}
 }
 
 set {
@@ -12,6 +17,8 @@ set {
   molden_write true
 }
 
+{% if restart == "Nothing" %}
 {{ task }}("omp2")
-{{ task }}("ccsd")
-energy("b3lyp")
+{% else %}
+{{ task }}("omp2", restart_file="{{ restart }}")
+{% endif %}

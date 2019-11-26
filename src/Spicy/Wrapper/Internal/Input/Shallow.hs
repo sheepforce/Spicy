@@ -47,6 +47,46 @@ This function takes a template file and replaces the values. The following conte
   - @multiplicity@: spin multiplicity of the system
   - @openshells@: the number of open MO shells in an unrestricted calculations
   - @task@: a task string to tell the program which quantity to calculate
+  - @restart@: provides a path to the restart file, if present. If no restart file is present, it will
+    be the string @Nothing@ for Ginger. Therefore within the Ginger input template this should be
+    checked against @"Nothing"@.
+
+For example a Psi4 input file could look like this:
+
+@
+memory 500 MiB
+
+# Tell Psi4 not to delete the "180" scratch file, which contains the SCF orbitals.
+psi4_io.set_specific_retention(180, True)
+
+molecule Spicy {
+{% indent %}
+{% indent %}
+  {{ charge }} {{ multiplicity }}
+  {{ molecule }}
+{% endindent %}
+{% endindent %}
+}
+
+set {
+  scf_type df
+  reference rhf
+  basis cc-pVTZ
+  molden_write true
+}
+
+{% if restart == "Nothing" %}
+{{ task }}("omp2")
+{% else %}
+{{ task }}("omp2", restart_file="{{ restart }}")
+{% endif %}
+@
+
+The @{% indent %} ... {% endindent %}@ blocks are fully optional but will result in indentation in
+the Ginger render result. The @restart@ value is being checked in the Ginger template itself. If
+the restart file is a @'Nothing'@ on the Haskell side, the Ginger context @restart@ will be a
+string @Nothing@. Only in case on the Haskell side the restart information is a @'Just file'@, the
+Ginger context @restart@ will be a filepath, which can be used.
 -}
 translate2Input
   :: (MonadThrow m)
@@ -64,7 +104,7 @@ translate2Input template rawWrapperInput = do
       multiplicity'  = _quantumMechanics_Multiplicity <$> qmInput'
       nOpenShells'   = (\x -> x - 1) <$> multiplicity'
       restartContext = HM.singleton "restart" $ case input ^. wrapperInput_Restart of
-        Just file -> tsShow file
+        Just file -> TS.pack file
         Nothing   -> "Nothing"
   moleculeContext     <- toMol input
   chargeContext       <- HM.singleton "charge" . tsShow <$> maybe2MonadThrow charge'
