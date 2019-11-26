@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 962a289e326e13ef5f5462293ddcf97c931bec957bb843a29f2f51763f7fc72c
+-- hash: 8095e927e720e66698c82bb0f8b6b34983711a8f3ab0c9cfc7e074caa38738f9
 
 name:           spicy
 version:        0.0.0.1
@@ -34,6 +34,8 @@ extra-source-files:
     goldentests/input/Peptid.json
     goldentests/input/Peptid.mol2
     goldentests/input/Peptid.pdb
+    goldentests/input/Psi4_B3LYP_Gradient.out
+    goldentests/input/Psi4_MP2_Gradient.out
     goldentests/input/Psi4_OO-MP2.psi
     goldentests/input/RuKomplex.txyz
     goldentests/input/SulfateInSolution.txyz
@@ -83,6 +85,7 @@ library
       Spicy.Molecule.Internal.Writer
       Spicy.Wrapper.Internal.Input
       Spicy.Wrapper.Internal.Input.Shallow
+      Spicy.Wrapper.Internal.Output.Psi4
       Spicy.Wrapper.Internal.Types.Shallow
   other-modules:
       Paths_spicy
