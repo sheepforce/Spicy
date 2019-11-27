@@ -27,6 +27,7 @@ module Spicy.Wrapper.Internal.Types.Shallow
   , wrapperInput_CalculationInput
   , wrapperInput_Restart
   , wrapperInput_Software
+  , wrapperInput_OutName
   , Task(..)
   , _Energy
   , _Gradient
@@ -45,6 +46,7 @@ module Spicy.Wrapper.Internal.Types.Shallow
   , QuantumMechanics(..)
   , quantumMechanics_Charge
   , quantumMechanics_Multiplicity
+  , quantumMechanics_Method
     -- ** Molecular Mechanics
     -- $molecularMechanics
   , MolecularMechanics(..)
@@ -61,6 +63,7 @@ where
 import           Control.Exception.Safe
 import           Control.Lens
 import           Data.Sequence                  ( Seq )
+import           Data.Text.Lazy                 ( Text )
 import           Prelude                 hiding ( cycle
                                                 , foldl1
                                                 , foldr1
@@ -116,6 +119,8 @@ data WrapperInput = WrapperInput
                                                        --   WF) if already present.
   , _wrapperInput_Software         :: Software         -- ^ The calculation 'Software' to be used
                                                        --   for the calculation.
+  , _wrapperInput_OutName          :: FilePath         -- ^ A 'FilePath' to be used in inputs, which
+                                                       --   should be saved somewhere.
   }
   deriving ( Eq, Show )
 
@@ -186,8 +191,9 @@ Input specific for quantum chemistry calculations.
 Input, that needs to be replaced in a shallow wrapper input for quantum chemistry.
 -}
 data QuantumMechanics = QuantumMechanics
-  { _quantumMechanics_Charge       :: Int -- ^ Charge of the 'Molecule'.
-  , _quantumMechanics_Multiplicity :: Int -- ^ Multiplicity of the 'Molecule'.
+  { _quantumMechanics_Charge       :: Int  -- ^ Charge of the 'Molecule'.
+  , _quantumMechanics_Multiplicity :: Int  -- ^ Multiplicity of the 'Molecule'.
+  , _quantumMechanics_Method       :: Text -- ^ A program-specific "method-string".
   }
   deriving ( Eq, Show )
 
