@@ -17,17 +17,19 @@ module Spicy.Wrapper.Internal.Output.Psi4
   )
 where
 import           Control.Applicative
-import           Control.Lens
+import           Control.Exception.Safe
 import           Data.Attoparsec.Text.Lazy
 import           Data.Functor
+import           Data.Map.Lazy                  ( Map )
+import qualified Data.Map.Lazy                 as M
+import qualified Data.Text                     as TS
 import           Data.Text.Lazy                 ( Text )
 import qualified Data.Text.Lazy                as T
-import qualified Data.Text                     as TS
-import           Debug.Trace
-import           Spicy.Wrapper.Internal.Types.Shallow
 import           Spicy.Generic
-import           Control.Exception.Safe
+import           Spicy.Wrapper.Internal.Types.Shallow
 
+
+{-
 ----------------------------------------------------------------------------------------------------
 {-|
 A Psi4 specific parser to get informations from the output file. It parses the input from top to
@@ -96,3 +98,5 @@ getMethodStringsParser (taskP, functionName) = do
   _      <- manyTill anyChar (string $ functionName `TS.append` "(") $> task
   method <- (char '"' <|> char '\'') *> manyTill anyChar (char '"' <|> char '\'')
   return (task, T.pack method)
+
+-}
