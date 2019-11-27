@@ -94,5 +94,5 @@ getMethodStringsParser :: (Parser Task, TS.Text) -> Parser (Task, Text)
 getMethodStringsParser (taskP, functionName) = do
   task   <- taskP
   _      <- manyTill anyChar (string $ functionName `TS.append` "(") $> task
-  method <- (char '"' <|> char '\'') *> manyTill anyChar (char '"' <|> char '\'') <* char ')'
+  method <- (char '"' <|> char '\'') *> manyTill anyChar (char '"' <|> char '\'')
   return (task, T.pack method)
