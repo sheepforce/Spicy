@@ -40,24 +40,32 @@ import           Spicy.Wrapper.Internal.Types.Shallow
 import           Text.Ginger
 
 {-|
-This function takes a template file and replaces the values. The following context is provided:
+This function takes a template file and replaces the values. There are values which are not always
+provided by the wrapper input ('Maybe'). Those values will have a @Nothing@ as a Ginger context and
+appear as this in the input file. It is therefore easy to check with the Ginger language against
+those values in the template. Contexts which can behave like this will be declared as such.
 
-  - @molecule@: program specific representation of the molecule (most often cartesian in angstrom)
-  - @charge@: the molecular charge
-  - @multiplicity@: spin multiplicity of the system
-  - @openshells@: the number of open MO shells in an unrestricted calculations
-  - @task@: a task string to tell the program which quantity to calculate
-  - @restart@: provides a path to the restart file, if present. If no restart file is present, it will
-    be the string @Nothing@ for Ginger. Therefore within the Ginger input template this should be
-    checked against @"Nothing"@.
+The following context is provided (@Maybe@ declares contexts, which might not have an actual value
+and will apear as @Nothing@ in Ginger.):
+
+  - @molecule@: program specific representation of the molecule (most often cartesian in angstrom).
+  - @task@: a task string to tell the program which quantity to calculate.
+  - @charge@: @Maybe@ the molecular charge.
+  - @multiplicity@: @Maybe@ the spin multiplicity of the system.
+  - @openshells@: @Maybe@ the number of open MO shells in an unrestricted calculations.
+  - @prefix@: Is a name prefix somehow labeling the calculation. This is usually set by Spicy.
+  - @permanent@: A path to a directory where permanent files can be written to. Files that go there
+    should be allowed to be written to a shared network file system.
+  - @scratch@: A path to a directory where scratch files can be written to.
+  - @nprocs@: Number of distributet MPI/DDI/... processes to start.
+  - @nthreads@: Number of threads __per__ process.
+  - @memory@: Memory assigned to the program in MiB.
+  - @restart@: @Maybe@ a path to the restart file.
 
 For example a Psi4 input file could look like this:
 
 @
-memory 500 MiB
-
-# Tell Psi4 not to delete the "180" scratch file, which contains the SCF orbitals.
-psi4_io.set_specific_retention(180, True)
+memory {{ memory }} MiB
 
 molecule Spicy {
 {% indent %}
@@ -98,26 +106,38 @@ translate2Input template rawWrapperInput = do
   -- Check if the input for the wrapper is sane.
   input <- check rawWrapperInput
   -- Build the context for Ginger.
-  let qmInput'       = input ^? wrapperInput_CalculationInput . _CalculationInput_QuantumMechanics
-      _mmInput'      = input ^? wrapperInput_CalculationInput . _CalculationInput_MolecularMechanics
-      charge'        = _quantumMechanics_Charge <$> qmInput'
-      multiplicity'  = _quantumMechanics_Multiplicity <$> qmInput'
-      nOpenShells'   = (\x -> x - 1) <$> multiplicity'
-      restartContext = HM.singleton "restart" $ case input ^. wrapperInput_Restart of
+  let qmInput       = input ^? wrapperInput_CalculationInput . _CalculationInput_QuantumMechanics
+      _mmInput      = input ^? wrapperInput_CalculationInput . _CalculationInput_MolecularMechanics
+      charge        = maybeContext $ _quantumMechanics_Charge <$> qmInput
+      multiplicity' = _quantumMechanics_Multiplicity <$> qmInput
+      multiplicity  = maybeContext multiplicity'
+      nOpenShells   = maybeContext $ (\x -> x - 1) <$> multiplicity'
+      prefix        = TS.pack $ input ^. wrapperInput_PrefixOutName
+      permanentDir  = TS.pack $ input ^. wrapperInput_PermanentDir
+      scratchDir    = TS.pack $ input ^. wrapperInput_ScratchDir
+      nProcesses    = textL2S . tShow $ input ^. wrapperInput_NProcesses
+      nThreads      = textL2S . tShow $ input ^. wrapperInput_NThreads
+      memory        = textL2S . tShow $ input ^. wrapperInput_Memory
+      restart       = case input ^. wrapperInput_Restart of
         Just file -> TS.pack file
         Nothing   -> "Nothing"
-  moleculeContext     <- toMol input
-  chargeContext       <- HM.singleton "charge" . tsShow <$> maybe2MonadThrow charge'
-  multiplicityContext <- HM.singleton "multiplicity" . tsShow <$> maybe2MonadThrow multiplicity'
-  nOpenShellsContext  <- HM.singleton "openshells" . tsShow <$> maybe2MonadThrow nOpenShells'
-  taskContext         <- toTask input
+  molecule <- toMol input
+  task     <- toTask input
   let context =
-        moleculeContext
-          <> chargeContext
-          <> multiplicityContext
-          <> nOpenShellsContext
-          <> taskContext
-          <> restartContext
+        HM.fromList
+          [ ("molecule"   , molecule)
+          , ("task"       , task)
+          , ("charge"     , charge)
+          , ("muliplicity", multiplicity)
+          , ("nopenshells", nOpenShells)
+          , ("prefix"     , prefix)
+          , ("permanent"  , permanentDir)
+          , ("scratch"    , scratchDir)
+          , ("nprocs"     , nProcesses)
+          , ("nthreads"   , nThreads)
+          , ("memory"     , memory)
+          , ("restart"    , restart)
+          ] :: HashMap TS.Text TS.Text
   -- Parse the Ginger template.
   parsed <- parseGinger (const . return $ Nothing) Nothing (TL.unpack template)
   -- Render the Ginger document with context.
@@ -126,38 +146,37 @@ translate2Input template rawWrapperInput = do
     Left e ->
       throwM
         $  WrapperGenericException "translate2Input"
-        $  "Failed parsing the Ginger template with:"
+        $  "Failed parsing the Ginger template with: "
         ++ show e
     Right r -> return r
  where
-  maybe2MonadThrow :: MonadThrow m => Maybe a -> m a
-  maybe2MonadThrow Nothing = throwM
-    $ WrapperGenericException "translate2Input" "A value wasn't present in the wrapper input."
-  maybe2MonadThrow (Just a) = return a
+  maybeContext :: (Show a) => Maybe a -> TS.Text
+  maybeContext mVal = case mVal of
+    Just val -> textL2S . tShow $ val
+    Nothing  -> "Nothing"
 
 
 ----------------------------------------------------------------------------------------------------
 {-|
 Converts a 'Molecule' to a program specific representation.
 -}
-toMol :: MonadThrow m => WrapperInput -> m (HashMap TS.Text TS.Text)
+toMol :: MonadThrow m => WrapperInput -> m TS.Text
 toMol wrapperInput
   | software == Psi4 = angstromXYZ
   | otherwise = throwM
   $ WrapperGenericException "toMol" "Cannot write a moleucle format for the software requested."
  where
-  molecule        = wrapperInput ^. wrapperInput_Molecule
-  software        = wrapperInput ^. wrapperInput_Software
-  angstromXYZBody = textL2S . TL.unlines . drop 2 . TL.lines <$> writeXYZ molecule
-  angstromXYZ     = HM.singleton "molecule" <$> angstromXYZBody
+  molecule    = wrapperInput ^. wrapperInput_Molecule
+  software    = wrapperInput ^. wrapperInput_Software
+  angstromXYZ = textL2S . TL.unlines . drop 2 . TL.lines <$> writeXYZ molecule
 
 ----------------------------------------------------------------------------------------------------
 {-|
 Generates a "task" string specific for computational chemistry software.
 -}
-toTask :: MonadThrow m => WrapperInput -> m (HashMap TS.Text TS.Text)
+toTask :: MonadThrow m => WrapperInput -> m TS.Text
 toTask wrapperInput
-  | software == Psi4 = HM.singleton "task" <$> psi4Task
+  | software == Psi4 = psi4Task
   | otherwise = throwM
   $ WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
  where
