@@ -77,5 +77,5 @@ Spicy shall be able to handle large molecules up to protein size. Use [Criterion
 Spicy uses the GitFlow model, see [here](https://medium.com/@nuno.caneco/using-git-flow-243581525aee) for an introduction.
 The `develop`, `master` and `release` branches are protected by GitHub, with the former two requiring CI-tests to pass and reviewed pull-requests before merging, while `release` might get non pull request commits from administrators.
 
-Merging is only possible via merge commits, not with squash merge or rebasing.
+Merging is only possible via merge commits. It is OK to `squash` a branche while mergin.
 On the other hand side, to keep e.g. feature branches up to date, use `rebase` only.
