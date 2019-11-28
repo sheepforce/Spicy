@@ -32,7 +32,7 @@ module Spicy.Wrapper.Internal.Types.Shallow
   , wrapperInput_ScratchDir
   , wrapperInput_NProcesses
   , wrapperInput_NThreads
-  , wrappterInput_Memory
+  , wrapperInput_Memory
   , Task(..)
   , _Energy
   , _Gradient
@@ -139,7 +139,7 @@ data WrapperInput = WrapperInput
                                                        --   process. Might not have any effect if
                                                        --   the underlying program doesn't support
                                                        --   it.
-  , _wrappterInput_Memory          :: Int              -- ^ The memory in MB per process for the
+  , _wrapperInput_Memory           :: Int              -- ^ The memory in MB per process for the
                                                        --   program if applicable.
   }
   deriving ( Eq, Show )
