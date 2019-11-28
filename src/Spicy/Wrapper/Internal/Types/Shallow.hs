@@ -85,7 +85,7 @@ import           Prelude                 hiding ( cycle
 import           Spicy.Generic
 import           Spicy.Molecule.Internal.Types
 import           Spicy.Molecule.Internal.Util
-import           System.IO                      ( FilePath )
+import System.Path
 
 
 {-|
@@ -119,18 +119,18 @@ data WrapperInput = WrapperInput
   , _wrapperInput_Task             :: Task             -- ^ A 'Task' the wrapper needs to perform.
   , _wrapperInput_CalculationInput :: CalculationInput -- ^ Values specific to the calculation
                                                        --   niveau, that need to be replaced.
-  , _wrapperInput_Restart          :: Maybe FilePath   -- ^ A 'FilePath' to a file, from which
+  , _wrapperInput_Restart          :: Maybe AbsFile    -- ^ A 'FilePath' to a file, from which
                                                        --   restart information can be read (e.g.
                                                        --   WF) if already present.
   , _wrapperInput_Software         :: Software         -- ^ The calculation 'Software' to be used
                                                        --   for the calculation.
-  , _wrapperInput_PrefixOutName    :: FilePath         -- ^ A prefix name to 'FilePath' to be used
+  , _wrapperInput_PrefixOutName    :: String           -- ^ A prefix name to 'FilePath' to be used
                                                        --   in inputs, which should be saved
                                                        --   somewhere. Consider this somehow the
                                                        --   "project name".
-  , _wrapperInput_PermanentDir     :: FilePath         -- ^ Directory for permanent output files to
+  , _wrapperInput_PermanentDir     :: AbsDir           -- ^ Directory for permanent output files to
                                                        --   be kept.
-  , _wrapperInput_ScratchDir       :: FilePath         -- ^ Directory for scratch files, depending
+  , _wrapperInput_ScratchDir       :: AbsDir           -- ^ Directory for scratch files, depending
                                                        --   on the program context shared or
                                                        --   replicated
   , _wrapperInput_NProcesses       :: Int              -- ^ Number of processes (MPI, DDI, whatever)
