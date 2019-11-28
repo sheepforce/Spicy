@@ -27,7 +27,12 @@ module Spicy.Wrapper.Internal.Types.Shallow
   , wrapperInput_CalculationInput
   , wrapperInput_Restart
   , wrapperInput_Software
-  , wrapperInput_OutName
+  , wrapperInput_PrefixOutName
+  , wrapperInput_PermanentDir
+  , wrapperInput_ScratchDir
+  , wrapperInput_NProcesses
+  , wrapperInput_NThreads
+  , wrappterInput_Memory
   , Task(..)
   , _Energy
   , _Gradient
@@ -119,8 +124,23 @@ data WrapperInput = WrapperInput
                                                        --   WF) if already present.
   , _wrapperInput_Software         :: Software         -- ^ The calculation 'Software' to be used
                                                        --   for the calculation.
-  , _wrapperInput_OutName          :: FilePath         -- ^ A 'FilePath' to be used in inputs, which
-                                                       --   should be saved somewhere.
+  , _wrapperInput_PrefixOutName    :: FilePath         -- ^ A prefix name to 'FilePath' to be used
+                                                       --   in inputs, which should be saved
+                                                       --   somewhere. Consider this somehow the
+                                                       --   "project name".
+  , _wrapperInput_PermanentDir     :: FilePath         -- ^ Directory for permanent output files to
+                                                       --   be kept.
+  , _wrapperInput_ScratchDir       :: FilePath         -- ^ Directory for scratch files, depending
+                                                       --   on the program context shared or
+                                                       --   replicated
+  , _wrapperInput_NProcesses       :: Int              -- ^ Number of processes (MPI, DDI, whatever)
+                                                       --   to launch.
+  , _wrapperInput_NThreads         :: Int              -- ^ Number of threads to be launched per
+                                                       --   process. Might not have any effect if
+                                                       --   the underlying program doesn't support
+                                                       --   it.
+  , _wrappterInput_Memory          :: Int              -- ^ The memory in MB per process for the
+                                                       --   program if applicable.
   }
   deriving ( Eq, Show )
 
