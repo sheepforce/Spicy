@@ -37,6 +37,7 @@ import           Prelude                 hiding ( cycle
 import           Spicy.Generic
 import           Spicy.Molecule.Internal.Writer
 import           Spicy.Wrapper.Internal.Types.Shallow
+import qualified System.Path                   as Path
 import           Text.Ginger
 
 {-|
@@ -113,13 +114,13 @@ translate2Input template rawWrapperInput = do
       multiplicity  = maybeContext multiplicity'
       nOpenShells   = maybeContext $ (\x -> x - 1) <$> multiplicity'
       prefix        = TS.pack $ input ^. wrapperInput_PrefixOutName
-      permanentDir  = TS.pack $ input ^. wrapperInput_PermanentDir
-      scratchDir    = TS.pack $ input ^. wrapperInput_ScratchDir
+      permanentDir  = TS.pack . Path.toString $ input ^. wrapperInput_PermanentDir
+      scratchDir    = TS.pack . Path.toString $ input ^. wrapperInput_ScratchDir
       nProcesses    = textL2S . tShow $ input ^. wrapperInput_NProcesses
       nThreads      = textL2S . tShow $ input ^. wrapperInput_NThreads
       memory        = textL2S . tShow $ input ^. wrapperInput_Memory
       restart       = case input ^. wrapperInput_Restart of
-        Just file -> TS.pack file
+        Just file -> TS.pack . Path.toString $ file
         Nothing   -> "Nothing"
   molecule <- toMol input
   task     <- toTask input
