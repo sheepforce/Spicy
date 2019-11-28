@@ -17,7 +17,8 @@ import qualified Data.Text.Lazy.IO             as T
 import           Spicy.Generic
 import           Spicy.Math
 import           Spicy.Molecule
-import           System.FilePath         hiding ( (<.>) )
+import           System.Path                    ( (</>) )
+import qualified System.Path                   as Path
 import           Test.Tasty
 import           Test.Tasty.Golden
 import           Test.Tasty.HUnit
@@ -27,6 +28,19 @@ main = defaultMain tests
 
 tests :: TestTree
 tests = testGroup "All tests" [testParser, testMath, testWriter]
+
+----------------------------------------------------------------------------------------------------
+goldentests :: Path.RelDir
+goldentests = Path.relDir "goldentests"
+
+goldenfiles :: Path.RelDir
+goldenfiles = Path.relDir "goldenfiles"
+
+input :: Path.RelDir
+input = Path.relDir "input"
+
+output :: Path.RelDir
+output = Path.relDir "output"
 
 {-
 ####################################################################################################
@@ -116,9 +130,9 @@ Data type to define common parameters for processing the 'Spicy.Parser' test cas
 -}
 data ParserEnv = ParserEnv
   { peTestName   :: String
-  , peGoldenFile :: FilePath
-  , peInputFile  :: FilePath
-  , peOutputFile :: FilePath
+  , peGoldenFile :: Path.RelFile
+  , peInputFile  :: Path.RelFile
+  , peOutputFile :: Path.RelFile
   , peParser     :: Parser Molecule
   }
 
@@ -131,11 +145,11 @@ peParseAndWrite = do
   -- Get the environment informations.
   env <- ask
   -- Read the input file.
-  raw <- liftIO $ T.readFile (peInputFile env)
+  raw <- liftIO . T.readFile . Path.toString $ peInputFile env
   -- Parse the input file.
   mol <- parse' (peParser env) raw
   -- Write the internal representation of the parser result to JSON file.
-  liftIO . T.writeFile (peOutputFile env) . writeSpicy $ mol
+  liftIO . T.writeFile (Path.toString $ peOutputFile env) . writeSpicy $ mol
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -143,8 +157,8 @@ Wrapper for 'goldenVsFile' for the 'Spicy.Parser' test cases.
 -}
 peGoldenVsFile :: ParserEnv -> TestTree
 peGoldenVsFile env = goldenVsFile (peTestName env)
-                                  (peGoldenFile env)
-                                  (peOutputFile env)
+                                  (Path.toString $ peGoldenFile env)
+                                  (Path.toString $ peOutputFile env)
                                   (runReaderT peParseAndWrite env)
 
 ----------------------------------------------------------------------------------------------------
@@ -167,11 +181,10 @@ testParserTXYZ1 :: TestTree
 testParserTXYZ1 =
   let testEnv = ParserEnv
         { peTestName   = "Tinker TXYZ (1)"
-        , peGoldenFile = "goldentests"
-                         </> "goldenfiles"
-                         </> "RuKomplex__testParserTXYZ1.json.golden"
-        , peInputFile  = "goldentests" </> "input" </> "RuKomplex.txyz"
-        , peOutputFile = "goldentests" </> "output" </> "RuKomplex__testParserTXYZ1.json"
+        , peGoldenFile = goldentests </> goldenfiles </> Path.relFile
+                           "RuKomplex__testParserTXYZ1.json.golden"
+        , peInputFile  = goldentests </> input </> Path.relFile "RuKomplex.txyz"
+        , peOutputFile = goldentests </> output </> Path.relFile "RuKomplex__testParserTXYZ1.json"
         , peParser     = parseTXYZ
         }
   in  peGoldenVsFile testEnv
@@ -179,39 +192,41 @@ testParserTXYZ1 =
 ----------------------------------------------------------------------------------------------------
 testParserXYZ1 :: TestTree
 testParserXYZ1 =
-  let testEnv = ParserEnv
-        { peTestName   = "Molden XYZ (1)"
-        , peGoldenFile = "goldentests"
-                         </> "goldenfiles"
-                         </> "FePorphyrine__testParserXYZ1.json.golden"
-        , peInputFile  = "goldentests" </> "input" </> "FePorphyrine.xyz"
-        , peOutputFile = "goldentests" </> "output" </> "FePorphyrine__testParserXYZ1.json"
-        , peParser     = parseXYZ
-        }
+  let
+    testEnv = ParserEnv
+      { peTestName   = "Molden XYZ (1)"
+      , peGoldenFile = goldentests </> goldenfiles </> Path.relFile
+                         "FePorphyrine__testParserXYZ1.json.golden"
+      , peInputFile  = goldentests </> input </> Path.relFile "FePorphyrine.xyz"
+      , peOutputFile = goldentests </> output </> Path.relFile "FePorphyrine__testParserXYZ1.json"
+      , peParser     = parseXYZ
+      }
   in  peGoldenVsFile testEnv
 
 ----------------------------------------------------------------------------------------------------
 testParserXYZ2 :: TestTree
 testParserXYZ2 =
-  let testName      = "Molden XYZ Trajectory (1)"
-      goldenFile    = "goldentests" </> "goldenfiles" </> "HeteroTraj__testParserXYZ2.json.golden"
-      inputFile     = "goldentests" </> "input" </> "HeteroTraj.xyz"
-      outputFile    = "goldentests" </> "output" </> "HeteroTraj__testParserXYZ2.json"
+  let testName = "Molden XYZ Trajectory (1)"
+      goldenFile =
+          goldentests </> goldenfiles </> Path.relFile "HeteroTraj__testParserXYZ2.json.golden"
+      inputFile     = goldentests </> input </> Path.relFile "HeteroTraj.xyz"
+      outputFile    = goldentests </> output </> Path.relFile "HeteroTraj__testParserXYZ2.json"
       parseAndWrite = do
-        raw <- T.readFile inputFile
+        raw <- T.readFile . Path.toString $ inputFile
         case parse (many1 parseXYZ) raw of
-          Done _ mol -> T.writeFile outputFile . T.concat . map writeSpicy $ mol
-          Fail _ _ e -> T.writeFile outputFile . T.pack $ e
-  in  goldenVsFile testName goldenFile outputFile parseAndWrite
+          Done _ mol -> T.writeFile (Path.toString outputFile) . T.concat . map writeSpicy $ mol
+          Fail _ _ e -> T.writeFile (Path.toString outputFile) . T.pack $ e
+  in  goldenVsFile testName (Path.toString goldenFile) (Path.toString outputFile) parseAndWrite
 
 ----------------------------------------------------------------------------------------------------
 testParserXYZ3 :: TestTree
 testParserXYZ3 =
   let testEnv = ParserEnv
         { peTestName   = "Molden XYZ (3)"
-        , peGoldenFile = "goldentests" </> "goldenfiles" </> "Ferrocene__testParserXYZ3.json.golden"
-        , peInputFile  = "goldentests" </> "input" </> "Ferrocene.xyz"
-        , peOutputFile = "goldentests" </> "output" </> "Ferrocene__testParserXYZ3.json"
+        , peGoldenFile = goldentests </> goldenfiles </> Path.relFile
+                           "Ferrocene__testParserXYZ3.json.golden"
+        , peInputFile  = goldentests </> input </> Path.relFile "Ferrocene.xyz"
+        , peOutputFile = goldentests </> output </> Path.relFile "Ferrocene__testParserXYZ3.json"
         , peParser     = parseXYZ
         }
   in  peGoldenVsFile testEnv
@@ -221,9 +236,10 @@ testParserPDB1 :: TestTree
 testParserPDB1 =
   let testEnv = ParserEnv
         { peTestName   = "PDB 1HFE Hydrogenase (1)"
-        , peGoldenFile = "goldentests" </> "goldenfiles" </> "1hfe__testParserPDB1.json.golden"
-        , peInputFile  = "goldentests" </> "input" </> "1hfe.pdb"
-        , peOutputFile = "goldentests" </> "output" </> "1hfe__testParserPDB1.json"
+        , peGoldenFile = goldentests </> goldenfiles </> Path.relFile
+                           "1hfe__testParserPDB1.json.golden"
+        , peInputFile  = goldentests </> input </> Path.relFile "1hfe.pdb"
+        , peOutputFile = goldentests </> output </> Path.relFile "1hfe__testParserPDB1.json"
         , peParser     = parsePDB
         }
   in  peGoldenVsFile testEnv
@@ -233,9 +249,10 @@ testParserPDB2 :: TestTree
 testParserPDB2 =
   let testEnv = ParserEnv
         { peTestName   = "PDB 6CVR Aprataxin (2)"
-        , peGoldenFile = "goldentests" </> "goldenfiles" </> "6cvr__testParserPDB2.json.golden"
-        , peInputFile  = "goldentests" </> "input" </> "6cvr.pdb"
-        , peOutputFile = "goldentests" </> "output" </> "6cvr__testParserPDB2.json"
+        , peGoldenFile = goldentests </> goldenfiles </> Path.relFile
+                           "6cvr__testParserPDB2.json.golden"
+        , peInputFile  = goldentests </> input </> Path.relFile "6cvr.pdb"
+        , peOutputFile = goldentests </> output </> Path.relFile "6cvr__testParserPDB2.json"
         , peParser     = parsePDB
         }
   in  peGoldenVsFile testEnv
@@ -245,9 +262,10 @@ testParserPDB3 :: TestTree
 testParserPDB3 =
   let testEnv = ParserEnv
         { peTestName   = "PDB 4NDG Aprataxin (3)"
-        , peGoldenFile = "goldentests" </> "goldenfiles" </> "4ndg__testParserPDB3.json.golden"
-        , peInputFile  = "goldentests" </> "input" </> "4ndg.pdb"
-        , peOutputFile = "goldentests" </> "output" </> "4ndg__testParserPDB3.json"
+        , peGoldenFile = goldentests </> goldenfiles </> Path.relFile
+                           "4ndg__testParserPDB3.json.golden"
+        , peInputFile  = goldentests </> input </> Path.relFile "4ndg.pdb"
+        , peOutputFile = goldentests </> output </> Path.relFile "4ndg__testParserPDB3.json"
         , peParser     = parsePDB
         }
   in  peGoldenVsFile testEnv
@@ -257,9 +275,10 @@ testParserMOL21 :: TestTree
 testParserMOL21 =
   let testEnv = ParserEnv
         { peTestName   = "SyByl MOL2 (1)"
-        , peGoldenFile = "goldentests" </> "goldenfiles" </> "Peptid__testParserMOL21.json.golden"
-        , peInputFile  = "goldentests" </> "input" </> "Peptid.mol2"
-        , peOutputFile = "goldentests" </> "output" </> "Peptid__testParserMOL21.json"
+        , peGoldenFile = goldentests </> goldenfiles </> Path.relFile
+                           "Peptid__testParserMOL21.json.golden"
+        , peInputFile  = goldentests </> input </> Path.relFile "Peptid.mol2"
+        , peOutputFile = goldentests </> output </> Path.relFile "Peptid__testParserMOL21.json"
         , peParser     = parseMOL2
         }
   in  peGoldenVsFile testEnv
@@ -267,16 +286,17 @@ testParserMOL21 =
 ----------------------------------------------------------------------------------------------------
 testParserSpicy1 :: TestTree
 testParserSpicy1 =
-  let testName      = "Spicy JSON Parser (1)"
-      goldenFile    = "goldentests" </> "goldenfiles" </> "6cvr__testParserSpicy1.json.golden"
-      inputFile     = "goldentests" </> "input" </> "6cvr.json"
-      outputFile    = "goldentests" </> "output" </> "6cvr__testParserSpicy1.json"
+  let testName = "Spicy JSON Parser (1)"
+      goldenFile =
+          goldentests </> goldenfiles </> Path.relFile "6cvr__testParserSpicy1.json.golden"
+      inputFile     = goldentests </> input </> Path.relFile "6cvr.json"
+      outputFile    = goldentests </> output </> Path.relFile "6cvr__testParserSpicy1.json"
       parseAndWrite = do
-        raw <- B.readFile inputFile
+        raw <- B.readFile . Path.toString $ inputFile
         case eitherDecode raw of
-          Left  err   -> T.writeFile outputFile . T.pack $ err
-          Right spicy -> T.writeFile outputFile . writeSpicy $ spicy
-  in  goldenVsFile testName goldenFile outputFile parseAndWrite
+          Left  err   -> T.writeFile (Path.toString outputFile) . T.pack $ err
+          Right spicy -> T.writeFile (Path.toString outputFile) . writeSpicy $ spicy
+  in  goldenVsFile testName (Path.toString goldenFile) (Path.toString outputFile) parseAndWrite
 
 
 {-
@@ -306,21 +326,17 @@ testWriter = testGroup "Writer" [testWriterMolecule]
 Data type to define common parameters for processing the 'Molecule.Writer' test cases.
 -}
 data MolWriterEnv = MolWriterEnv
-  { mweTestName   :: String                         -- ^ Name of the test case.
-  , mweOrigFile   :: FilePath                       -- ^ Original input file of the current format,
-                                                    --   created by an external program, such as
-                                                    --   Babel.
-  , mweGoldenJSON :: FilePath                       -- ^ The file storing the internal
-                                                    --   representation of the original input file
-                                                    --   after parsing with 'parser'.
-  , mweWriterFile :: FilePath                       -- ^ The file with the representation, suitable
-                                                    --   for external programs and the writer
-                                                    --   representation of 'origInput' after
-                                                    --   parsing.
-  , mweWriterJSON :: FilePath                       -- ^ The internal representation of the
-                                                    --   'Molecule' after parsing 'writerFile'
-                                                    --   again.
-  , mweParser     :: Parser Molecule                -- ^ A 'Parser' for the 'Molecule'.
+  { mweTestName   :: String          -- ^ Name of the test case.
+  , mweOrigFile   :: Path.RelFile    -- ^ Original input file of the current format, created by an
+                                     --   external program, such as Babel.
+  , mweGoldenJSON :: Path.RelFile    -- ^ The file storing the internal representation of the
+                                     --   original input file after parsing with 'parser'.
+  , mweWriterFile :: Path.RelFile    -- ^ The file with the representation, suitable for external
+                                     --   programs and the writer representation of 'origInput'
+                                     --   after parsing.
+  , mweWriterJSON :: Path.RelFile    -- ^ The internal representation of the 'Molecule' after
+                                     --   parsing 'writerFile' again.
+  , mweParser     :: Parser Molecule -- ^ A 'Parser' for the 'Molecule'.
   , mweWriter     :: Molecule -> Either SomeException Text -- ^ A writer for 'Molecule'
   }
 
@@ -335,24 +351,24 @@ mweParseWriteParseWrite = do
   -- Get the environment.
   env     <- ask
   -- Read and parse the original (external) file
-  origRaw <- liftIO $ T.readFile (mweOrigFile env)
+  origRaw <- liftIO . T.readFile . Path.toString $ mweOrigFile env
   -- Parse the original file.
   origMol <- parse' (mweParser env) origRaw
   -- Get the text representation of the original file.
   let origText = (mweWriter env) origMol
   -- Write the Spicy JSON representation of the original molecule (Golden File) and the writer (to
   -- test) representation of the original molecule.
-  liftIO . T.writeFile (mweGoldenJSON env) . writeSpicy $ origMol
+  liftIO . T.writeFile (Path.toString $ mweGoldenJSON env) . writeSpicy $ origMol
   case origText of
-    Left  e -> liftIO . T.writeFile (mweWriterFile env) . T.pack . show $ e
-    Right t -> liftIO . T.writeFile (mweWriterFile env) $ t
+    Left  e -> liftIO . T.writeFile (Path.toString $ mweWriterFile env) . T.pack . show $ e
+    Right t -> liftIO . T.writeFile (Path.toString $ mweWriterFile env) $ t
   -- Parse the writer result again with the supplied parser.
-  writerRaw <- liftIO $ T.readFile (mweWriterFile env)
+  writerRaw <- liftIO $ T.readFile (Path.toString $ mweWriterFile env)
   -- Parse the result from the writer.
   writerMol <- parse' (mweParser env) writerRaw
   -- Get the text representation of the writer molecule and write to the Spicy JSON representation
   -- (Output file).
-  liftIO . T.writeFile (mweWriterJSON env) . writeSpicy $ writerMol
+  liftIO . T.writeFile (Path.toString $ mweWriterJSON env) . writeSpicy $ writerMol
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -360,8 +376,8 @@ This function provides a wrapper around 'goldenVsFile', tuned for the writer tes
 -}
 mweGoldenVsFile :: MolWriterEnv -> TestTree
 mweGoldenVsFile env = goldenVsFile (mweTestName env)
-                                   (mweGoldenJSON env)
-                                   (mweWriterJSON env)
+                                   (Path.toString $ mweGoldenJSON env)
+                                   (Path.toString $ mweWriterJSON env)
                                    (runReaderT mweParseWriteParseWrite env)
 
 ----------------------------------------------------------------------------------------------------
@@ -375,12 +391,13 @@ testWriterXYZ1 =
   let
     testEnv = MolWriterEnv
       { mweTestName   = "Molden XYZ (1)"
-      , mweOrigFile   = "goldentests" </> "input" </> "FePorphyrine.xyz"
-      , mweGoldenJSON = "goldentests"
-                        </> "goldenfiles"
-                        </> "FePorphyrine__testWriterXYZ1_Orig.json.golden"
-      , mweWriterFile = "goldentests" </> "output" </> "FePorphyrine__testWriterXYZ1_Writer.xyz"
-      , mweWriterJSON = "goldentests" </> "output" </> "FePorphyrine__testWriterXYZ1_Writer.json"
+      , mweOrigFile   = goldentests </> input </> Path.relFile "FePorphyrine.xyz"
+      , mweGoldenJSON = goldentests </> goldenfiles </> Path.relFile
+                          "FePorphyrine__testWriterXYZ1_Orig.json.golden"
+      , mweWriterFile = goldentests </> output </> Path.relFile
+                          "FePorphyrine__testWriterXYZ1_Writer.xyz"
+      , mweWriterJSON = goldentests </> output </> Path.relFile
+                          "FePorphyrine__testWriterXYZ1_Writer.json"
       , mweParser     = parseXYZ
       , mweWriter     = writeXYZ
       }
@@ -389,39 +406,35 @@ testWriterXYZ1 =
 ----------------------------------------------------------------------------------------------------
 testWriterTXYZ1 :: TestTree
 testWriterTXYZ1 =
-  let
-    testEnv = MolWriterEnv
-      { mweTestName   = "Tinker TXYZ (1)"
-      , mweOrigFile   = "goldentests" </> "input" </> "SulfateInSolution.txyz"
-      , mweGoldenJSON = "goldentests"
-                        </> "goldenfiles"
-                        </> "SulfateInSolution__testWriterTXYZ1_Orig.json.golden"
-      , mweWriterFile = "goldentests"
-                        </> "output"
-                        </> "SulfateInSolution__testWriterTXYZ1_Writer.txyz"
-      , mweWriterJSON = "goldentests"
-                        </> "output"
-                        </> "SulfateInSolution__testWriterTXYZ1_Writer.json"
-      , mweParser     = parseTXYZ
-      , mweWriter     = writeTXYZ
-      }
+  let testEnv = MolWriterEnv
+        { mweTestName   = "Tinker TXYZ (1)"
+        , mweOrigFile   = goldentests </> input </> Path.relFile "SulfateInSolution.txyz"
+        , mweGoldenJSON = goldentests </> goldenfiles </> Path.relFile
+                            "SulfateInSolution__testWriterTXYZ1_Orig.json.golden"
+        , mweWriterFile = goldentests </> output </> Path.relFile
+                            "SulfateInSolution__testWriterTXYZ1_Writer.txyz"
+        , mweWriterJSON = goldentests </> output </> Path.relFile
+                            "SulfateInSolution__testWriterTXYZ1_Writer.json"
+        , mweParser     = parseTXYZ
+        , mweWriter     = writeTXYZ
+        }
   in  mweGoldenVsFile testEnv
 
 ----------------------------------------------------------------------------------------------------
 testWriterMOL21 :: TestTree
 testWriterMOL21 =
-  let
-    testEnv = MolWriterEnv
-      { mweTestName   = "SyByl MOL2 (1)"
-      , mweOrigFile   = "goldentests" </> "input" </> "FePorphyrine.mol2"
-      , mweGoldenJSON = "goldentests"
-                        </> "goldenfiles"
-                        </> "FePorphyrine__testWriterMOL21_Orig.json.golden"
-      , mweWriterFile = "goldentests" </> "output" </> "FePorphyrine__testWriterMOL21_Writer.mol2"
-      , mweWriterJSON = "goldentests" </> "output" </> "FePorphyrine__testWriterMOL21_Writer.json"
-      , mweParser     = parseMOL2
-      , mweWriter     = writeMOL2
-      }
+  let testEnv = MolWriterEnv
+        { mweTestName   = "SyByl MOL2 (1)"
+        , mweOrigFile   = goldentests </> input </> Path.relFile "FePorphyrine.mol2"
+        , mweGoldenJSON = goldentests </> goldenfiles </> Path.relFile
+                            "FePorphyrine__testWriterMOL21_Orig.json.golden"
+        , mweWriterFile = goldentests </> output </> Path.relFile
+                            "FePorphyrine__testWriterMOL21_Writer.mol2"
+        , mweWriterJSON = goldentests </> output </> Path.relFile
+                            "FePorphyrine__testWriterMOL21_Writer.json"
+        , mweParser     = parseMOL2
+        , mweWriter     = writeMOL2
+        }
   in  mweGoldenVsFile testEnv
 
 ----------------------------------------------------------------------------------------------------
@@ -432,15 +445,15 @@ obtain an offset, if this PDB would not start counting from one continously.
 -}
 testWriterPDB1 :: TestTree
 testWriterPDB1 =
-  let testEnv = MolWriterEnv
-        { mweTestName   = "PDB 4NDG Aprataxin (1)"
-        , mweOrigFile   = "goldentests" </> "input" </> "Peptid.pdb"
-        , mweGoldenJSON = "goldentests"
-                          </> "goldenfiles"
-                          </> "Peptid__testWriterPDB1_Orig.json.golden"
-        , mweWriterFile = "goldentests" </> "output" </> "Peptid__testWriterPDB1_Writer.pdb"
-        , mweWriterJSON = "goldentests" </> "output" </> "Peptid__testWriterPDB1_Writer.json"
-        , mweParser     = parsePDB
-        , mweWriter     = writePDB
-        }
+  let
+    testEnv = MolWriterEnv
+      { mweTestName   = "PDB 4NDG Aprataxin (1)"
+      , mweOrigFile   = goldentests </> input </> Path.relFile "Peptid.pdb"
+      , mweGoldenJSON = goldentests </> goldenfiles </> Path.relFile
+                          "Peptid__testWriterPDB1_Orig.json.golden"
+      , mweWriterFile = goldentests </> output </> Path.relFile "Peptid__testWriterPDB1_Writer.pdb"
+      , mweWriterJSON = goldentests </> output </> Path.relFile "Peptid__testWriterPDB1_Writer.json"
+      , mweParser     = parsePDB
+      , mweWriter     = writePDB
+      }
   in  mweGoldenVsFile testEnv
