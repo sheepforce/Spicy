@@ -4,3 +4,4 @@ Test.hs
 *.so
 *.so.*
 goldentests/output/*.*
+public
