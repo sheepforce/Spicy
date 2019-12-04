@@ -67,6 +67,7 @@ module Spicy.Wrapper.Internal.Types.Shallow
 where
 import           Control.Exception.Safe
 import           Control.Lens
+import           Data.Default
 import           Data.Sequence                  ( Seq )
 import           Data.Text.Lazy                 ( Text )
 import           Prelude                 hiding ( cycle
@@ -85,7 +86,7 @@ import           Prelude                 hiding ( cycle
 import           Spicy.Generic
 import           Spicy.Molecule.Internal.Types
 import           Spicy.Molecule.Internal.Util
-import System.Path
+import           System.Path
 
 
 {-|
@@ -280,6 +281,13 @@ data WrapperOutput = WrapperOutput
                                                         --   atoms.
   }
   deriving ( Eq, Show )
+
+instance Default WrapperOutput where
+  def = WrapperOutput { _wrapperOutput_Energy   = Nothing
+                      , _wrapperOutput_Gradient = Nothing
+                      , _wrapperOutput_Hessian  = Nothing
+                      , _wrapperOutput_PCharges = Nothing
+                      }
 
 ----------------------------------------------------------------------------------------------------
 makeLenses ''WrapperOutput

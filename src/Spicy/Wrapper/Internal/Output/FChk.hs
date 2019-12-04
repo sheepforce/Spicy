@@ -11,14 +11,59 @@ This module provides parsers for FChk outputs.
 -}
 {-# LANGUAGE TemplateHaskell #-}
 module Spicy.Wrapper.Internal.Output.FChk
-  ()
+  ( -- * Analyser
+    getResultsFromFChk
+    -- * Parser
+  , fChk
+    -- * Types
+  , ScalarVal(..)
+  , _ScalarInt
+  , _ScalarDouble
+  , _ScalarText
+  , _ScalarLogical
+  , ArrayVal(..)
+  , _ArrayInt
+  , _ArrayDouble
+  , _ArrayText
+  , _ArrayLogical
+  , CalcType(..)
+  , _SP
+  , _FOPT
+  , _POPT
+  , _FTS
+  , _PTS
+  , _FSADDLE
+  , _PSADDLE
+  , _FORCE
+  , _FREQ
+  , _SCAN
+  , _GUESS
+  , _LST
+  , _STABILITY
+  , _REARCHIVE
+  , _MSRESTART
+  , _MIXED
+  , Content(..)
+  , _Scalar
+  , scalarLabel
+  , scalarValue
+  , _Array
+  , arrayLabel
+  , arrayValue
+  , FChk(..)
+  , title
+  , calcType
+  , basis
+  , method
+  , blocks
+  )
 where
 import           Control.Applicative
 import           Control.Exception.Safe
-import           Control.Lens
+import           Control.Lens            hiding ( Empty )
 import qualified Data.Array.Accelerate         as A
 import           Data.Attoparsec.Text.Lazy
-import           Data.Sequence                  ( Seq )
+import           Data.Sequence                  ( Seq(..) )
 import qualified Data.Sequence                 as S
 import qualified Data.Text                     as TS
 import           Data.Text.Lazy                 ( Text )
@@ -94,6 +139,11 @@ data CalcType
 makePrisms ''CalcType
 
 ----------------------------------------------------------------------------------------------------
+{-|
+In the FChk format after 2 lines of header an arbitrary amount of contents will follow. These are
+either scalar values or arrays of values. The arrays are always printed as vectors but might
+actually refer to matrices. The meaning of the content blocks must be obtained by the label fields.
+-}
 data Content
   = Scalar
       { _scalarLabel :: Text
@@ -113,11 +163,11 @@ makePrisms ''Content
 A format fully representing the contents of an formatted checkpoint file version 3.
 -}
 data FChk = FChk
-  { _title    :: Text
-  , _calcType :: CalcType
-  , _basis    :: Text
-  , _method   :: Text
-  , _blocks   :: Seq Content
+  { _title    :: Text        -- ^ Short title from the header of the FChk.
+  , _calcType :: CalcType    -- ^ Calculation type from the header.
+  , _basis    :: Text        -- ^ Primary orbital basis from the FChk header.
+  , _method   :: Text        -- ^ Calculation method (such as CCSD, HF, MP2) from the header.
+  , _blocks   :: Seq Content -- ^ Blocks of 'Content'.
   }
   deriving ( Eq, Show )
 
@@ -126,23 +176,55 @@ makeLenses ''FChk
 {-
 ####################################################################################################
 -}
-
+{-|
+A function that uses information from FChk files to obtain 'WrapperOutput'. The function will not
+fill in a value ('Just') if it cannot be found in the FChk and fail if the FChk cannot be parsed or
+a block occurs multiple times.
+-}
 getResultsFromFChk :: MonadThrow m => Text -> m WrapperOutput
-getResultsFromFChk content = undefined
+getResultsFromFChk content = do
+  -- Parse the complete FChk.
+  fchk <- case parse fChk content of
+    Done _ result -> return result
+    Fail _ _ err  -> throwM . ParserException $ "Cannot parse contents of FChk file with: " <> err
+  let fchkBlocks     = fchk ^. blocks
+      energyBlocks   = filterBlocks "Total Energy" (^? scalarLabel) fchkBlocks
+      gradientBlocks = filterBlocks "Cartesian Gradient" (^? arrayLabel) fchkBlocks
+      hessianBlocks  = filterBlocks "Cartesian Force Constants" (^? arrayLabel) fchkBlocks
+  energy     <- checkResults energyBlocks
+  gradient   <- checkResults gradientBlocks
+  hessianVec <- checkResults hessianBlocks
+  return WrapperOutput { _wrapperOutput_Energy   = energy ^? _Just . _Scalar . _2 . _ScalarDouble
+                       , _wrapperOutput_Gradient = gradient ^? _Just . _Array . _2 . _ArrayDouble
+                       , _wrapperOutput_Hessian  = undefined -- hessian ^? _Just . _Scalar . _2. _ArrayDouble
+                       , _wrapperOutput_PCharges = Nothing
+                       }
+ where
+  filterBlocks :: Text -> (Content -> Maybe Text) -> Seq Content -> Seq Content
+  filterBlocks filterString lensFunc block = S.filter (\b -> lensFunc b == Just filterString) block
+  checkResults :: MonadThrow m => Seq a -> m (Maybe a)
+  checkResults res = case res of
+    S.Empty     -> return Nothing
+    e :<| Empty -> return . Just $ e
+    _ :<| _     -> throwM $ WrapperGenericException "getResultsFromFChk"
+                                                    "FChk contains multiple defintions of a block."
 
+
+{-
+####################################################################################################
+-}
 {-|
 Parser for Gaussian Formatted Checkpoint files version 3. See
 <http://wild.life.nctu.edu.tw/~jsyu/compchem/g09/g09ur/f_formchk.htm> for details.
 -}
-
 fChk :: Parser FChk
 fChk = do
   -- Line 1: "Initial 72 characters of the title section"
-  initTitle  <- (takeWhile $ not <$> isEndOfLine) <* endOfLine
+  initTitle  <- takeWhile (not <$> isEndOfLine) <* endOfLine
 
   -- Line2: "Type, Method, Basis"
   -- Calculation type (format: A10)
-  typeString <- TS.strip <$> take 10
+  typeString <- TS.toUpper . TS.strip <$> take 10
   readType   <- case typeString of
     "SP"                   -> return SP
     "FOPT"                 -> return FOPT
@@ -181,7 +263,7 @@ Parser for 'Scalar' fields in FChk files.
 -}
 scalar :: Parser Content
 scalar = do
-  label    <- take 40 <* count 3 (char ' ')
+  label    <- TS.strip <$> take 40 <* count 3 (char ' ')
   typeChar <- take 1 <* count 5 (char ' ')
   value    <- case typeChar of
     "I" -> ScalarInt <$> (skipHorizontalSpace *> decimal)
@@ -208,7 +290,7 @@ Parser for 'Array' fields in FChk files.
 -- This format makes me wanna cry ...
 array :: Parser Content
 array = do
-  label     <- take 40 <* count 3 (char ' ')
+  label     <- TS.strip <$> take 40 <* count 3 (char ' ')
   typeChar  <- (char 'I' <|> char 'R' <|> char 'C' <|> char 'H' <|> char 'L') <* count 3 (char ' ')
   _         <- string "N="
   nElements <- skipHorizontalSpace *> decimal <* endOfLine

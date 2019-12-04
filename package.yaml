@@ -59,6 +59,7 @@ dependencies:
   - ginger >= 0.9.0.0
   - unordered-containers >= 0.2.10.0
   - pathtype >= 0.8.1
+  - data-default >= 0.7.1.1
   # Accelerate
   - accelerate >= 1.3.0.0 && <= 1.4.0.0
   - accelerate-llvm >= 1.3.0.0 && <= 1.4.0.0
