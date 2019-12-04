@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 760454723cab70c9abbcd4b062fb6cc0f5b5fb292c475f7e2dba8d7e8a9dbf35
+-- hash: 5a8a0662275be7fe8abc87d3700011d853d852a94190d7e1249ae18a16a83045
 
 name:           spicy
 version:        0.0.0.1
@@ -65,7 +65,12 @@ flag cuda
   default: False
 
 flag dev
-  description: Build quickly without optimisations.
+  description: Will not turn compiler warnings into errors and disable optimisations.
+  manual: True
+  default: False
+
+flag llvm
+  description: Will compile Spicy with the LLVM backend.
   manual: True
   default: False
 
@@ -122,7 +127,9 @@ library
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -178,7 +185,9 @@ executable benchmarks-exe
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -233,7 +242,9 @@ executable spicy
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -291,7 +302,9 @@ executable unittests-exe
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -350,7 +363,9 @@ test-suite unittests
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -407,7 +422,9 @@ benchmark benchmarks
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate

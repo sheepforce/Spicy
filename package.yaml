@@ -31,7 +31,11 @@ description: Please see the README on GitLab at <https://gitlab.com/theoretical-
 
 flags:
   dev:
-    description: "Build quickly without optimisations."
+    description: "Will not turn compiler warnings into errors and disable optimisations."
+    manual: true
+    default: false
+  llvm:
+    description: "Will compile Spicy with the LLVM backend."
     manual: true
     default: false
   cuda:
@@ -86,8 +90,10 @@ when:
     else:
       ghc-options:
         - -Werror
-        - -fllvm
         - -O2
+  - condition: flag(llvm)
+    ghc-options:
+      - -fllvm
   - condition: flag(cuda)
     then:
       dependencies:
