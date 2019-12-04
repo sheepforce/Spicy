@@ -193,7 +193,7 @@ getResultsFromFChk content = do
       hessianBlocks  = filterBlocks "Cartesian Force Constants" (^? arrayLabel) fchkBlocks
   energy     <- checkResults energyBlocks
   gradient   <- checkResults gradientBlocks
-  hessianVec <- checkResults hessianBlocks
+  _hessianVec <- checkResults hessianBlocks
   return WrapperOutput { _wrapperOutput_Energy   = energy ^? _Just . _Scalar . _2 . _ScalarDouble
                        , _wrapperOutput_Gradient = gradient ^? _Just . _Array . _2 . _ArrayDouble
                        , _wrapperOutput_Hessian  = undefined -- hessian ^? _Just . _Scalar . _2. _ArrayDouble
