@@ -28,7 +28,7 @@ buildSpicy:
       - $HOME/.ghc
       - $HOME/.cabal
   script:
-    - stack --no-terminal --install-ghc build --only-dependencies
+    - stack --no-terminal --install-ghc build --only-dependencies --flag spicy:llvm
 
 testSpicy:
   stage: test
@@ -39,4 +39,4 @@ testSpicy:
       - $HOME/.ghc
       - $HOME/.cabal
   script:
-    - stack --no-terminal test
+    - stack --no-terminal test --flag spicy:llvm
