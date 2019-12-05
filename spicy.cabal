@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b65b71e3d4ebe928f4576bbbd832aa1724efb5e608fdf1ca0f28282b9d0c1a0d
+-- hash: 5a8a0662275be7fe8abc87d3700011d853d852a94190d7e1249ae18a16a83045
 
 name:           spicy
 version:        0.0.0.1
@@ -32,6 +32,9 @@ extra-source-files:
     goldentests/input/Peptid.json
     goldentests/input/Peptid.mol2
     goldentests/input/Peptid.pdb
+    goldentests/input/Psi4_B3LYP_Gradient.out
+    goldentests/input/Psi4_MP2_Gradient.out
+    goldentests/input/Psi4_OO-MP2.psi
     goldentests/input/RuKomplex.txyz
     goldentests/input/SulfateInSolution.txyz
     goldentests/input/SulfateInSolution.xyz
@@ -62,25 +65,37 @@ flag cuda
   default: False
 
 flag dev
-  description: Build quickly without optimisations.
+  description: Will not turn compiler warnings into errors and disable optimisations.
+  manual: True
+  default: False
+
+flag llvm
+  description: Will compile Spicy with the LLVM backend.
   manual: True
   default: False
 
 library
   exposed-modules:
       Spicy.Data
+      Spicy.Generic
       Spicy.Math
       Spicy.Math.Internal
       Spicy.Molecule
-      Spicy.Molecule.Util
-      Spicy.Parser
-      Spicy.Types
-      Spicy.Writer.Molecule
+      Spicy.Molecule.Internal.Math
+      Spicy.Molecule.Internal.Parser
+      Spicy.Molecule.Internal.Types
+      Spicy.Molecule.Internal.Util
+      Spicy.Molecule.Internal.Writer
+      Spicy.Wrapper.Internal.Input.Shallow
+      Spicy.Wrapper.Internal.Output
+      Spicy.Wrapper.Internal.Output.FChk
+      Spicy.Wrapper.Internal.Output.Psi4
+      Spicy.Wrapper.Internal.Types.Shallow
   other-modules:
       Paths_spicy
   hs-source-dirs:
       src
-  default-extensions: TypeOperators TemplateHaskell BangPatterns OverloadedStrings
+  default-extensions: BangPatterns OverloadedStrings
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       accelerate >=1.3.0.0 && <=1.4.0.0
@@ -94,22 +109,27 @@ library
     , base >=4.7 && <5
     , bytestring >=0.10.8
     , containers >=0.6.0.1
+    , data-default >=0.7.1.1
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
-    , filepath >=1.4.2
+    , ginger >=0.9.0.0
+    , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , pathtype >=0.8.1
     , safe-exceptions >=0.1.7.0
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -146,23 +166,28 @@ executable benchmarks-exe
     , bytestring >=0.10.8
     , containers >=0.6.0.1
     , criterion >=1.4.1.0
+    , data-default >=0.7.1.1
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
-    , filepath >=1.4.2
+    , ginger >=0.9.0.0
+    , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , pathtype >=0.8.1
     , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -198,23 +223,28 @@ executable spicy
     , base >=4.7 && <5
     , bytestring >=0.10.8
     , containers >=0.6.0.1
+    , data-default >=0.7.1.1
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
-    , filepath >=1.4.2
+    , ginger >=0.9.0.0
+    , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , pathtype >=0.8.1
     , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -250,12 +280,14 @@ executable unittests-exe
     , base >=4.7 && <5
     , bytestring >=0.10.8
     , containers >=0.6.0.1
+    , data-default >=0.7.1.1
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
-    , filepath >=1.4.2
+    , ginger >=0.9.0.0
+    , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , pathtype >=0.8.1
     , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
@@ -264,12 +296,15 @@ executable unittests-exe
     , tasty-hunit
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -306,12 +341,14 @@ test-suite unittests
     , base >=4.7 && <5
     , bytestring >=0.10.8
     , containers >=0.6.0.1
+    , data-default >=0.7.1.1
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
-    , filepath >=1.4.2
+    , ginger >=0.9.0.0
+    , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , pathtype >=0.8.1
     , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
@@ -320,12 +357,15 @@ test-suite unittests
     , tasty-hunit
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate
@@ -363,23 +403,28 @@ benchmark benchmarks
     , bytestring >=0.10.8
     , containers >=0.6.0.1
     , criterion >=1.4.1.0
+    , data-default >=0.7.1.1
     , deepseq >=1.4.2.0
     , directory >=1.3.3.0
-    , filepath >=1.4.2
+    , ginger >=0.9.0.0
+    , lens >=4.17.1
     , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , microlens-platform >=0.3.9.0
     , parallel >=3.2.1.0
+    , pathtype >=0.8.1
     , safe-exceptions >=0.1.7.0
     , spicy
     , split >=0.2.3.2
     , text >=1.2.2.0
     , transformers >=0.5.6.2
+    , unordered-containers >=0.2.10.0
     , utf8-string >=1.0.1
     , vector >=0.12.0.0
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -fllvm -O2
+    ghc-options: -Werror -O2
+  if flag(llvm)
+    ghc-options: -fllvm
   if flag(cuda)
     other-modules:
         Spicy.Internal.Accelerate

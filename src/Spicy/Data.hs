@@ -31,7 +31,7 @@ import           Prelude                 hiding ( cycle
                                                 , (!!)
                                                 )
 
-import           Spicy.Types
+import           Spicy.Molecule.Internal.Types
 
 {-|
 Covalent radii of elements in Angstrom taken from

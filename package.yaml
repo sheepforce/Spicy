@@ -31,7 +31,11 @@ description: Please see the README on GitLab at <https://gitlab.com/theoretical-
 
 flags:
   dev:
-    description: "Build quickly without optimisations."
+    description: "Will not turn compiler warnings into errors and disable optimisations."
+    manual: true
+    default: false
+  llvm:
+    description: "Will compile Spicy with the LLVM backend."
     manual: true
     default: false
   cuda:
@@ -42,13 +46,12 @@ flags:
 dependencies:
   - base >= 4.7 && <5
   - containers >= 0.6.0.1
-  - microlens-platform >= 0.3.9.0
+  - lens >= 4.17.1
   - attoparsec >= 0.13.1.0
   - text >= 1.2.2.0
   - split >= 0.2.3.2
   - deepseq >= 1.4.2.0
   - parallel >= 3.2.1.0
-  - filepath >= 1.4.2
   - directory >= 1.3.3.0
   - utf8-string >= 1.0.1
   - bytestring >= 0.10.8
@@ -57,6 +60,10 @@ dependencies:
   - vector >= 0.12.0.0
   - transformers >= 0.5.6.2
   - safe-exceptions >= 0.1.7.0
+  - ginger >= 0.9.0.0
+  - unordered-containers >= 0.2.10.0
+  - pathtype >= 0.8.1
+  - data-default >= 0.7.1.1
   # Accelerate
   - accelerate >= 1.3.0.0 && <= 1.4.0.0
   - accelerate-llvm >= 1.3.0.0 && <= 1.4.0.0
@@ -83,8 +90,10 @@ when:
     else:
       ghc-options:
         - -Werror
-        - -fllvm
         - -O2
+  - condition: flag(llvm)
+    ghc-options:
+      - -fllvm
   - condition: flag(cuda)
     then:
       dependencies:
@@ -98,8 +107,6 @@ when:
 library:
   source-dirs: src
   default-extensions:
-    - TypeOperators
-    - TemplateHaskell
     - BangPatterns
     - OverloadedStrings
 

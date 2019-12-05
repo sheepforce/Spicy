@@ -1,0 +1,24 @@
+memory 200 MiB
+psi4_io.set_specific_retention(180, True)
+
+molecule Spicy {
+{% indent %}
+{% indent %}
+  {{ charge }} {{ multiplicity }}
+  {{ molecule }}
+{% endindent %}
+{% endindent %}
+}
+
+set {
+  scf_type df
+  reference rhf
+  basis cc-pVTZ
+  molden_write true
+}
+
+{% if restart == "Nothing" %}
+{{ task }}("omp2")
+{% else %}
+{{ task }}("omp2", restart_file="{{ restart }}")
+{% endif %}

@@ -64,11 +64,11 @@ before_install:
 
 install:
 # Build dependencies
-- stack --no-terminal --install-ghc build --only-dependencies
+- stack --no-terminal --install-ghc build --only-dependencies --flag spicy:llvm
 
 script:
 # Build the package, its tests, and its docs and run the tests
-- stack build --no-terminal --test
+- stack build --no-terminal --test --flag spicy:llvm
 # Cant test. Needs compile time execution of CUDA code and Travis has no GPUs
 #- export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda-10.1/nvvm/lib64
 #- stack build --no-terminal --flag spicy:cuda --test
