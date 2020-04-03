@@ -5,3 +5,5 @@ Test.hs
 *.so.*
 goldentests/output/*.*
 public
+
+*.fchk

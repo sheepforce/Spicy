@@ -1,7 +1,7 @@
 {-|
 Module      : Spicy.Data
 Description : Data to lookup for chemical systems
-Copyright   : Phillip Seeber, 2019
+Copyright   : Phillip Seeber, 2020
 License     : GPL-3
 Maintainer  : phillip.seeber@uni-jena.de
 Stability   : experimental
@@ -11,27 +11,13 @@ This module provides scientific constants, conversion factors and element data.
 -}
 module Spicy.Data
   ( covalentRadii
+  , defCovScaling
   )
 where
 
-import           Data.Map                       ( Map )
-import qualified Data.Map                      as Map
-
-import           Prelude                 hiding ( cycle
-                                                , foldl1
-                                                , foldr1
-                                                , head
-                                                , init
-                                                , last
-                                                , maximum
-                                                , minimum
-                                                , tail
-                                                , take
-                                                , takeWhile
-                                                , (!!)
-                                                )
-
-import           Spicy.Molecule.Internal.Types
+import           RIO
+import qualified RIO.Map                       as Map
+import           Spicy.Class
 
 {-|
 Covalent radii of elements in Angstrom taken from
@@ -136,3 +122,10 @@ covalentRadii = Map.fromList
   , (Am, 1.80)
   , (Cm, 1.69)
   ]
+
+----------------------------------------------------------------------------------------------------
+{-|
+Default scaling factor for search of covalent bonds in a molecule.
+-}
+defCovScaling :: Double
+defCovScaling = 1.3

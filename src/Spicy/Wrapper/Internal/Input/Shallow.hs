@@ -1,7 +1,7 @@
 {-|
 Module      : Spicy.Wrapper.Input.Shallow
 Description : Provides writers for shallow wrappers to quantum chemistry and molecular mechanics software.
-Copyright   : Phillip Seeber, 2019
+Copyright   : Phillip Seeber, 2020
 License     : GPL-3
 Maintainer  : phillip.seeber@uni-jena.de
 Stability   : experimental
@@ -15,45 +15,40 @@ module Spicy.Wrapper.Internal.Input.Shallow
   ( translate2Input
   )
 where
-import           Control.Exception.Safe
-import           Control.Lens
-import           Data.HashMap.Lazy              ( HashMap )
-import qualified Data.HashMap.Lazy             as HM
-import qualified Data.Text                     as TS
-import qualified Data.Text.Lazy                as TL
-import           Prelude                 hiding ( cycle
-                                                , foldl1
-                                                , foldr1
-                                                , head
-                                                , init
-                                                , last
-                                                , maximum
-                                                , minimum
-                                                , tail
-                                                , take
-                                                , takeWhile
-                                                , (!!)
-                                                )
+import           Control.Lens            hiding ( (.=) )
+import           Data.Aeson
+import           RIO                     hiding ( (^.) )
+import qualified RIO.Text                      as Text
+import qualified RIO.Text.Lazy                 as Text
+                                                ( toStrict )
+import           Spicy.Class
 import           Spicy.Generic
+import           Spicy.Molecule.Internal.Util
 import           Spicy.Molecule.Internal.Writer
-import           Spicy.Wrapper.Internal.Types.Shallow
 import qualified System.Path                   as Path
-import           Text.Ginger
+import           Text.Mustache
 
 {-|
-This function takes a template file and replaces the values. There are values which are not always
-provided by the wrapper input ('Maybe'). Those values will have a @Nothing@ as a Ginger context and
-appear as this in the input file. It is therefore easy to check with the Ginger language against
-those values in the template. Contexts which can behave like this will be declared as such.
+This function takes a Mustache template file and replaces the values. There are values which are not
+always provided by the wrapper input ('Maybe'). Those values will have a @Nothing@ as a value in
+the context and appear as this in the input file. As the Mustache templating cannot extract those,
+values that might be present, have an associated context, prefixed with @has_@. For example the
+context @restart@ might not always be available, but this can be checked with the corresponding
+@has_restart@ context.
 
 The following context is provided (@Maybe@ declares contexts, which might not have an actual value
-and will apear as @Nothing@ in Ginger.):
+and will apear as @Nothing@ in Mustache and can be checked with the corresponding @has_@.):
 
   - @molecule@: program specific representation of the molecule (most often cartesian in angstrom).
   - @task@: a task string to tell the program which quantity to calculate.
-  - @charge@: @Maybe@ the molecular charge.
-  - @multiplicity@: @Maybe@ the spin multiplicity of the system.
+  - @doEnergy@: boolean, that tells if an energy calculation shall be performed. Also true for
+    hessian and gradient calculations.
+  - @doGradient@: boolean, that tells if a gradient calculation shall be performed.
+  - @doHessian@: boolean, that tells if a hessian calculation shall be perfomed.
+  - @charge@: @Maybe@ the molecular charge. (@has_charge@)
+  - @multiplicity@: @Maybe@ the spin multiplicity of the system. (@has_multiplicity@)
   - @openshells@: @Maybe@ the number of open MO shells in an unrestricted calculations.
+    (@has_nopenshells@)
   - @prefix@: Is a name prefix somehow labeling the calculation. This is usually set by Spicy.
   - @permanent@: A path to a directory where permanent files can be written to. Files that go there
     should be allowed to be written to a shared network file system.
@@ -61,130 +56,131 @@ and will apear as @Nothing@ in Ginger.):
   - @nprocs@: Number of distributet MPI/DDI/... processes to start.
   - @nthreads@: Number of threads __per__ process.
   - @memory@: Memory assigned to the program in MiB.
-  - @restart@: @Maybe@ a path to the restart file.
+  - @restart@: @Maybe@ a path to the restart file. (@has_restart@)
 
-For example a Psi4 input file could look like this:
+See `goldentests/input` for some examples:
 
-@
-memory {{ memory }} MiB
-
-molecule Spicy {
-{% indent %}
-{% indent %}
-  {{ charge }} {{ multiplicity }}
-  {{ molecule }}
-{% endindent %}
-{% endindent %}
-}
-
-set {
-  scf_type df
-  reference rhf
-  basis cc-pVTZ
-  molden_write true
-}
-
-{% if restart == \"Nothing\" %}
-{{ task }}("omp2")
-{% else %}
-{{ task }}("omp2", restart_file="{{ restart }}")
-{% endif %}
-@
-
-The @{% indent %} ... {% endindent %}@ blocks are fully optional but will result in indentation in
-the Ginger render result. The @restart@ value is being checked in the Ginger template itself. If
-the restart file is a @'Nothing'@ on the Haskell side, the Ginger context @restart@ will be a
-string @Nothing@. Only in case on the Haskell side the restart information is a @'Just file'@, the
-Ginger context @restart@ will be a filepath, which can be used.
+- **Psi4:** The calculation is expected to at least produce a formatted checkpoint file with the
+  name `{{ prefix }}.fchk`. Hessian information need to be saved by numpy as plain text array, as
+  they don't make it to the FChk for some reason in Psi4.
 -}
 translate2Input
-  :: (MonadThrow m)
-  => TL.Text      -- ^ A template file for the computational chemistry code ('Software') with ginger
-                  --   placeholders.
-  -> WrapperInput -- ^ Data structure with the relevant informations.
-  -> m TL.Text    -- ^ Output file.
-translate2Input template rawWrapperInput = do
-  -- Check if the input for the wrapper is sane.
-  input <- check rawWrapperInput
-  -- Build the context for Ginger.
-  let qmInput       = input ^? wrapperInput_CalculationInput . _CalculationInput_QuantumMechanics
-      _mmInput      = input ^? wrapperInput_CalculationInput . _CalculationInput_MolecularMechanics
-      charge        = maybeContext $ _quantumMechanics_Charge <$> qmInput
-      multiplicity' = _quantumMechanics_Multiplicity <$> qmInput
-      multiplicity  = maybeContext multiplicity'
-      nOpenShells   = maybeContext $ (\x -> x - 1) <$> multiplicity'
-      prefix        = TS.pack $ input ^. wrapperInput_PrefixOutName
-      permanentDir  = TS.pack . Path.toString $ input ^. wrapperInput_PermanentDir
-      scratchDir    = TS.pack . Path.toString $ input ^. wrapperInput_ScratchDir
-      nProcesses    = textL2S . tShow $ input ^. wrapperInput_NProcesses
-      nThreads      = textL2S . tShow $ input ^. wrapperInput_NThreads
-      memory        = textL2S . tShow $ input ^. wrapperInput_Memory
-      restart       = case input ^. wrapperInput_Restart of
-        Just file -> TS.pack . Path.toString $ file
-        Nothing   -> "Nothing"
-  molecule <- toMol input
-  task     <- toTask input
-  let context =
-        HM.fromList
-          [ ("molecule"   , molecule)
-          , ("task"       , task)
-          , ("charge"     , charge)
-          , ("muliplicity", multiplicity)
-          , ("nopenshells", nOpenShells)
-          , ("prefix"     , prefix)
-          , ("permanent"  , permanentDir)
-          , ("scratch"    , scratchDir)
-          , ("nprocs"     , nProcesses)
-          , ("nthreads"   , nThreads)
-          , ("memory"     , memory)
-          , ("restart"    , restart)
-          ] :: HashMap TS.Text TS.Text
+  :: MonadThrow m
+  => Molecule     -- ^ The complete molecule construct from top level on.
+  -> CalcID       -- ^ The ID of the calculation to perform on the molecule.
+  -> m Text       -- ^ Processed template.
+translate2Input mol calcID = do
+  -- Get the appropiate molecule layer and calculation context.
+  (calcContext, molContext) <- getCalcByID mol calcID
+
+  let -- Generat the context for Mustache.
+    calcInput          = calcContext ^. calcContext_Input
+    program'           = calcInput ^. calcInput_Software
+    task'              = calcInput ^. calcInput_Task
+    multiplicity       = calcInput ^? calcInput_QMMMSpec . _QM . qmContext_Mult
+    charge'            = calcInput ^? calcInput_QMMMSpec . _QM . qmContext_Charge
+    contextCharge      = maybeContext charge'
+    contextHasCharge   = isJust charge'
+    contextMult        = maybeContext multiplicity
+    contextHasMult     = isJust multiplicity
+    nOShells           = (\x -> x - 1) <$> multiplicity
+    contextNOShells    = maybeContext nOShells
+    contextHasNOShells = isJust nOShells
+    contextPrefix      = Text.pack $ calcInput ^. calcInput_PrefixName
+    contextPermaDir    = Text.pack . Path.toString . getDirPathAbs $ calcInput ^. calcInput_PermaDir
+    contextScratchDir =
+      Text.pack . Path.toString . getDirPathAbs $ calcInput ^. calcInput_ScratchDir
+    contextNProcs     = calcInput ^. calcInput_NProcs
+    contextNThreads   = calcInput ^. calcInput_NThreads
+    contextMemory     = calcInput ^. calcInput_Memory
+    restart = Text.pack . Path.toString . getFilePathAbs <$> calcInput ^. calcInput_RestartFile
+    contextRestart    = maybeContext restart
+    contextHasRestart = isJust restart
+    contextDoEnergy   = case task' of
+      WTEnergy   -> True
+      WTGradient -> True
+      WTHessian  -> True
+    contextDoGradient = case task' of
+      WTGradient -> True
+      _          -> False
+    contextDoHessian = case task' of
+      WTHessian -> True
+      _         -> False
+  contextMolecule <- toMolRepr molContext program'
+  contextTask     <- toTask task' program'
+  let context = object
+        [ "molecule" .= contextMolecule
+        , "task" .= contextTask
+        , "doEnergy" .= contextDoEnergy
+        , "doGradient" .= contextDoGradient
+        , "doHessian" .= contextDoHessian
+        , "charge" .= contextCharge
+        , "has_charge" .= contextHasCharge
+        , "multiplicity" .= contextMult
+        , "has_multiplicity" .= contextHasMult
+        , "nopenshells" .= contextNOShells
+        , "has_nopenshells" .= contextHasNOShells
+        , "prefix" .= contextPrefix
+        , "permanent" .= contextPermaDir
+        , "scratch" .= contextScratchDir
+        , "nprocs" .= contextNProcs
+        , "nthreads" .= contextNThreads
+        , "memory" .= contextMemory
+        , "restart" .= contextRestart
+        , "has_restart" .= contextHasRestart
+        ]
+
   -- Parse the Ginger template.
-  parsed <- parseGinger (const . return $ Nothing) Nothing (TL.unpack template)
-  -- Render the Ginger document with context.
-  let gingerResult = textS2L . easyRender context <$> parsed
-  case gingerResult of
-    Left e ->
+  let template       = calcInput ^. calcInput_Template
+      parsedTemplate = compileMustacheText
+        (PName $ tShow program' <> " template for CalcID" <> tShow calcID)
+        template
+
+  -- Render the Mustache document with context.
+  let mustacheResultWithWarnings = flip renderMustacheW context <$> parsedTemplate
+
+  case mustacheResultWithWarnings of
+    Left err ->
       throwM
-        $  WrapperGenericException "translate2Input"
-        $  "Failed parsing the Ginger template with: "
-        ++ show e
-    Right r -> return r
+        . WrapperGenericException "translate2Input"
+        $ (  "Could not parse the mustache template for CalcID "
+          <> show calcID
+          <> " with: "
+          <> show err
+          <> "."
+          )
+    Right (_warnings, mustacheResult) -> return . Text.toStrict $ mustacheResult
  where
-  maybeContext :: (Show a) => Maybe a -> TS.Text
-  maybeContext mVal = case mVal of
-    Just val -> textL2S . tShow $ val
-    Nothing  -> "Nothing"
-
+  maybeContext :: Show a => Maybe a -> Text
+  maybeContext a = fromMaybe "Nothing" $ tShow <$> a
 
 ----------------------------------------------------------------------------------------------------
 {-|
-Converts a 'Molecule' to a program specific representation.
+This gives a 'Molecule' in the program specific representation for a wrapper calculation.
 -}
-toMol :: MonadThrow m => WrapperInput -> m TS.Text
-toMol wrapperInput
-  | software == Psi4 = angstromXYZ
+toMolRepr
+  :: MonadThrow m
+  => Molecule  -- ^ The __current__ 'Molecule' layer for which to perform the calculation.
+  -> Program   -- ^ The 'Program' for which the representation shall be generated.
+  -> m Text    -- ^ Molecule representation inf the program format.
+toMolRepr mol program'
+  | program' == Psi4 = simpleCartesianAngstrom
+  | program' == Nwchem = simpleCartesianAngstrom
   | otherwise = throwM
-  $ WrapperGenericException "toMol" "Cannot write a moleucle format for the software requested."
- where
-  molecule    = wrapperInput ^. wrapperInput_Molecule
-  software    = wrapperInput ^. wrapperInput_Software
-  angstromXYZ = textL2S . TL.unlines . drop 2 . TL.lines <$> writeXYZ molecule
+  $ WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
+  where simpleCartesianAngstrom = Text.unlines . drop 2 . Text.lines <$> writeXYZ mol
 
 ----------------------------------------------------------------------------------------------------
 {-|
-Generates a "task" string specific for computational chemistry software.
+Generates a "task" string specific for computational chemistry 'Program'.
 -}
-toTask :: MonadThrow m => WrapperInput -> m TS.Text
-toTask wrapperInput
-  | software == Psi4 = psi4Task
+toTask :: MonadThrow m => WrapperTask -> Program -> m Text
+toTask task' program'
+  | program' == Psi4 = psi4Task
   | otherwise = throwM
   $ WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
  where
-  software = wrapperInput ^. wrapperInput_Software
-  task     = wrapperInput ^. wrapperInput_Task
-  psi4Task = case task of
-    Energy     -> return "energy"
-    Gradient _ -> return "gradient"
-    Hessian  _ -> return "hessian"
-    _          -> throwM $ WrapperGenericException "toTask" "Cannot handle Psi4 property jobs yet."
+  psi4Task = case task' of
+    WTEnergy   -> return "energy"
+    WTGradient -> return "gradient"
+    WTHessian  -> return "hessian"

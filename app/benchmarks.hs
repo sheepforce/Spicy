@@ -1,21 +1,12 @@
 {-
 Benchmarks of Spicy functions
 -}
-{-
 import           Criterion.Main
-import           Data.Attoparsec.Text.Lazy (many1, parse)
-import qualified Data.IntMap               as I
-import           Data.Maybe
-import           Data.Text.Lazy            (Text)
-import qualified Data.Text.Lazy            as T
-import           Lens.Micro.Platform
-import           Spicy.MolWriter
-import           Spicy.Parser
-import           Spicy.Types
--}
+import           RIO
 
 main :: IO ()
-main = return ()
+main = defaultMain []
+
 {-
 main = defaultMain
   [ benchmarkMath

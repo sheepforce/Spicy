@@ -4,7 +4,7 @@ git:                 https://gitlab.com/theoretical-chemistry-jena/quantum-chemi
 license:             GPL-3
 author:              "Phillip Seeber"
 maintainer:          "phillip.seeber@uni-jena.de"
-copyright:           "2019 Phillip Seeber"
+copyright:           "2020 Phillip Seeber"
 
 build-type: Simple
 #build-type: Custom
@@ -38,40 +38,35 @@ flags:
     description: "Will compile Spicy with the LLVM backend."
     manual: true
     default: false
-  cuda:
-    description: "Enable Nvidia GPU backend for Accelerate. This disables the CPU backend."
-    manual: true
-    default: false
 
 dependencies:
   - base >= 4.7 && <5
-  - containers >= 0.6.0.1
-  - lens >= 4.17.1
-  - attoparsec >= 0.13.1.0
-  - text >= 1.2.2.0
-  - split >= 0.2.3.2
-  - deepseq >= 1.4.2.0
-  - parallel >= 3.2.1.0
-  - directory >= 1.3.3.0
-  - utf8-string >= 1.0.1
-  - bytestring >= 0.10.8
-  - aeson >= 1.4.4.0
-  - aeson-pretty >= 0.8.7
-  - vector >= 0.12.0.0
-  - transformers >= 0.5.6.2
-  - safe-exceptions >= 0.1.7.0
-  - ginger >= 0.9.0.0
-  - unordered-containers >= 0.2.10.0
-  - pathtype >= 0.8.1
-  - data-default >= 0.7.1.1
-  # Accelerate
-  - accelerate >= 1.3.0.0 && <= 1.4.0.0
-  - accelerate-llvm >= 1.3.0.0 && <= 1.4.0.0
-  - accelerate-llvm-native >= 1.3.0.0 && <= 1.4.0.0
-  - lens-accelerate >= 0.3.0.0 && <= 0.4.0.0
-  - accelerate-io >= 1.3.0.0 && <= 1.4.0.0
-  - accelerate-io-vector >= 0.1.0.0 && <= 0.2.0.0
-
+  - lens >= 4.18.1 && < 4.19
+  - attoparsec >= 0.13.1.0 && < 0.14
+  - deepseq >= 1.4.2.0 && < 1.5
+  - parallel >= 3.2.1.0 && < 3.3
+  - aeson >= 1.4.4.0 && < 1.5
+  - aeson-pretty >= 0.8.7 && < 0.9
+  - mtl >= 2.2.2 && < 2.3
+  - stache >= 2.1.0 && < 2.2
+  - pathtype >= 0.8.1 && < 0.9
+  - data-default >= 0.7.1.1 && < 0.8
+  - arithmoi >= 0.10.0.0 && < 0.11
+  - algebraic-graphs >= 0.5 && < 0.6
+  - yaml >= 0.11.2.0 && < 0.12
+  - text >= 1.2.3.1 && < 1.3
+  - containers >= 0.6.0.1 && <0.7
+  - split >= 0.2.3.3 && < 0.3
+  - bytestring >= 0.10.8.2 && < 0.11
+  - file-embed >= 0.0.11.1 && < 0.1
+  - ansi-terminal >= 0.10.3 && < 0.11
+  - githash >= 0.1.3.3 && < 0.2
+  - cmdargs >= 0.10.20 && < 0.11
+  - formatting >= 6.3.7 && < 6.4
+  - massiv >= 0.5.0.0 && < 0.6
+  - tasty >= 1.2.3 && < 1.3
+  - tasty-golden >= 2.3.3 && < 2.4
+  - rio >= 0.1.13.0 && < 0.2
 ghc-options:
   - -Wall
   - -Wno-unused-top-binds
@@ -94,21 +89,15 @@ when:
   - condition: flag(llvm)
     ghc-options:
       - -fllvm
-  - condition: flag(cuda)
-    then:
-      dependencies:
-        - accelerate-llvm-ptx >= 1.3.0.0 && <= 1.4.0.0
-      source-dirs: src-internal/PTX
-    else:
-      dependencies:
-        - accelerate-llvm-native >= 1.3.0.0 && <= 1.4.0.0
-      source-dirs: src-internal/CPU
 
 library:
   source-dirs: src
   default-extensions:
     - BangPatterns
     - OverloadedStrings
+    - NoImplicitPrelude
+    - FlexibleContexts
+    - ScopedTypeVariables
 
 executables:
   spicy:
@@ -116,9 +105,14 @@ executables:
     source-dirs: app
     dependencies:
       - spicy
+    default-extensions:
+      - BangPatterns
+      - OverloadedStrings
+      - NoImplicitPrelude
     ghc-options:
       - -threaded
       - -rtsopts
+      - -with-rtsopts=-N
 
   benchmarks-exe:
     main: benchmarks.hs
@@ -126,6 +120,11 @@ executables:
     dependencies:
       - spicy
       - criterion >= 1.4.1.0
+    default-extensions:
+      - BangPatterns
+      - OverloadedStrings
+      - NoImplicitPrelude
+      - DataKinds
     ghc-options:
       - -threaded
       - -rtsopts
@@ -138,6 +137,10 @@ executables:
       - tasty >= 0.11.3
       - tasty-hunit -any
       - tasty-golden >= 2.3.1
+    default-extensions:
+      - BangPatterns
+      - OverloadedStrings
+      - NoImplicitPrelude
     ghc-options:
       - -threaded
       - -rtsopts
@@ -148,9 +151,9 @@ tests:
     source-dirs: app
     dependencies:
       - spicy
-      - tasty >= 0.11.3
-      - tasty-hunit -any
-      - tasty-golden >= 2.3.1
+      - tasty >= 1.2.3 && < 1.3
+      - tasty-hunit >= 0.10.0.2 && < 0.11
+      - tasty-golden >= 2.3.1 && < 2.4
     ghc-options:
       - -threaded
       - -rtsopts
@@ -161,7 +164,7 @@ benchmarks:
     source-dirs: app
     dependencies:
       - spicy
-      - criterion >= 1.4.1.0
+      - criterion >= 1.5.6.1 && < 1.7
     ghc-options:
       - -threaded
       - -rtsopts

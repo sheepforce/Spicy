@@ -4,14 +4,14 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5a8a0662275be7fe8abc87d3700011d853d852a94190d7e1249ae18a16a83045
+-- hash: 5388634498ec3306a8a4ad3d6ae6067818c1dc556b0abb53baafca3feac44dc0
 
 name:           spicy
 version:        0.0.0.1
 description:    Please see the README on GitLab at <https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy>
 author:         Phillip Seeber
 maintainer:     phillip.seeber@uni-jena.de
-copyright:      2019 Phillip Seeber
+copyright:      2020 Phillip Seeber
 license:        GPL-3
 license-file:   LICENSE
 build-type:     Simple
@@ -20,49 +20,31 @@ extra-source-files:
     LICENSE
     goldentests/input/1hfe.pdb
     goldentests/input/4ndg.pdb
-    goldentests/input/6cvr.json
     goldentests/input/6cvr.pdb
     goldentests/input/FePorphyrine.mol2
     goldentests/input/FePorphyrine.txyz
     goldentests/input/FePorphyrine.xyz
     goldentests/input/Ferrocene.xyz
+    goldentests/input/Ferrocene_WrapperOnly.yaml
     goldentests/input/HeteroTraj.xyz
     goldentests/input/N2_bonded.xyz
     goldentests/input/N2_nonbonded.xyz
-    goldentests/input/Peptid.json
     goldentests/input/Peptid.mol2
     goldentests/input/Peptid.pdb
-    goldentests/input/Psi4_B3LYP_Gradient.out
-    goldentests/input/Psi4_MP2_Gradient.out
-    goldentests/input/Psi4_OO-MP2.psi
+    goldentests/input/Psi4_HF_STO-3G.psi
     goldentests/input/RuKomplex.txyz
     goldentests/input/SulfateInSolution.txyz
     goldentests/input/SulfateInSolution.xyz
     goldentests/input/TolueneCl2.txyz
     goldentests/input/TolueneCl2.xyz
-    goldentests/goldenfiles/1hfe__testParserPDB1.json.golden
-    goldentests/goldenfiles/4ndg__testParserPDB3.json.golden
-    goldentests/goldenfiles/6cvr__testParserPDB2.json.golden
-    goldentests/goldenfiles/6cvr__testParserSpicy1.json.golden
-    goldentests/goldenfiles/FePorphyrine__testParserXYZ1.json.golden
-    goldentests/goldenfiles/FePorphyrine__testWriterMOL21_Orig.json.golden
-    goldentests/goldenfiles/FePorphyrine__testWriterXYZ1.json.golden
-    goldentests/goldenfiles/FePorphyrine__testWriterXYZ1_Orig.json.golden
-    goldentests/goldenfiles/Ferrocene__testParserXYZ3.json.golden
-    goldentests/goldenfiles/HeteroTraj__testParserXYZ2.json.golden
-    goldentests/goldenfiles/Peptid__testParserMOL21.json.golden
-    goldentests/goldenfiles/Peptid__testWriterPDB1_Orig.json.golden
-    goldentests/goldenfiles/RuKomplex__testParserTXYZ1.json.golden
-    goldentests/goldenfiles/SulfateInSolution__testWriterTXYZ1_Orig.json.golden
+    goldentests/input/TolueneCl2_ONIOM-n.yml
+    goldentests/input/TolueneCl2_ONIOM-n_ChargeTransfer.yml
+    goldentests/input/TolueneCl2_ONIOM-n_RealSystem.yml
+    goldentests/input/TolueneCl2_ONIOM-n_SolvationShell.yml
 
 source-repository head
   type: git
   location: https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy
-
-flag cuda
-  description: Enable Nvidia GPU backend for Accelerate. This disables the CPU backend.
-  manual: True
-  default: False
 
 flag dev
   description: Will not turn compiler warnings into errors and disable optimisations.
@@ -76,74 +58,69 @@ flag llvm
 
 library
   exposed-modules:
+      Spicy.Aeson
+      Spicy.Class
       Spicy.Data
       Spicy.Generic
+      Spicy.Initiator
+      Spicy.JobDriver
+      Spicy.Logger
       Spicy.Math
-      Spicy.Math.Internal
+      Spicy.Math.SparseArray
       Spicy.Molecule
-      Spicy.Molecule.Internal.Math
       Spicy.Molecule.Internal.Parser
-      Spicy.Molecule.Internal.Types
       Spicy.Molecule.Internal.Util
       Spicy.Molecule.Internal.Writer
+      Spicy.ONIOM.AtomicDriver
+      Spicy.ONIOM.Collector
+      Spicy.ONIOM.Layout
+      Spicy.Wrapper
+      Spicy.Wrapper.Internal.Executor
+      Spicy.Wrapper.Internal.Generic
       Spicy.Wrapper.Internal.Input.Shallow
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.FChk
-      Spicy.Wrapper.Internal.Output.Psi4
-      Spicy.Wrapper.Internal.Types.Shallow
+      Spicy.Wrapper.Internal.Output.Generic
   other-modules:
       Paths_spicy
   hs-source-dirs:
       src
-  default-extensions: BangPatterns OverloadedStrings
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
-      accelerate >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io-vector >=0.1.0.0 && <=0.2.0.0
-    , accelerate-llvm >=1.3.0.0 && <=1.4.0.0
-    , accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
-    , aeson >=1.4.4.0
-    , aeson-pretty >=0.8.7
-    , attoparsec >=0.13.1.0
+      aeson >=1.4.4.0 && <1.5
+    , aeson-pretty >=0.8.7 && <0.9
+    , algebraic-graphs >=0.5 && <0.6
+    , ansi-terminal >=0.10.3 && <0.11
+    , arithmoi >=0.10.0.0 && <0.11
+    , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8
-    , containers >=0.6.0.1
-    , data-default >=0.7.1.1
-    , deepseq >=1.4.2.0
-    , directory >=1.3.3.0
-    , ginger >=0.9.0.0
-    , lens >=4.17.1
-    , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , parallel >=3.2.1.0
-    , pathtype >=0.8.1
-    , safe-exceptions >=0.1.7.0
-    , split >=0.2.3.2
-    , text >=1.2.2.0
-    , transformers >=0.5.6.2
-    , unordered-containers >=0.2.10.0
-    , utf8-string >=1.0.1
-    , vector >=0.12.0.0
+    , bytestring >=0.10.8.2 && <0.11
+    , cmdargs >=0.10.20 && <0.11
+    , containers >=0.6.0.1 && <0.7
+    , data-default >=0.7.1.1 && <0.8
+    , deepseq >=1.4.2.0 && <1.5
+    , file-embed >=0.0.11.1 && <0.1
+    , formatting >=6.3.7 && <6.4
+    , githash >=0.1.3.3 && <0.2
+    , lens >=4.18.1 && <4.19
+    , massiv >=0.5.0.0 && <0.6
+    , mtl >=2.2.2 && <2.3
+    , parallel >=3.2.1.0 && <3.3
+    , pathtype >=0.8.1 && <0.9
+    , rio >=0.1.13.0 && <0.2
+    , split >=0.2.3.3 && <0.3
+    , stache >=2.1.0 && <2.2
+    , tasty >=1.2.3 && <1.3
+    , tasty-golden >=2.3.3 && <2.4
+    , text >=1.2.3.1 && <1.3
+    , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
     ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
-  if flag(cuda)
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/PTX
-    build-depends:
-        accelerate-llvm-ptx >=1.3.0.0 && <=1.4.0.0
-  else
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/CPU
-    build-depends:
-        accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
   default-language: Haskell2010
 
 executable benchmarks-exe
@@ -152,56 +129,44 @@ executable benchmarks-exe
       Paths_spicy
   hs-source-dirs:
       app
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude DataKinds
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
   build-depends:
-      accelerate >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io-vector >=0.1.0.0 && <=0.2.0.0
-    , accelerate-llvm >=1.3.0.0 && <=1.4.0.0
-    , accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
-    , aeson >=1.4.4.0
-    , aeson-pretty >=0.8.7
-    , attoparsec >=0.13.1.0
+      aeson >=1.4.4.0 && <1.5
+    , aeson-pretty >=0.8.7 && <0.9
+    , algebraic-graphs >=0.5 && <0.6
+    , ansi-terminal >=0.10.3 && <0.11
+    , arithmoi >=0.10.0.0 && <0.11
+    , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8
-    , containers >=0.6.0.1
+    , bytestring >=0.10.8.2 && <0.11
+    , cmdargs >=0.10.20 && <0.11
+    , containers >=0.6.0.1 && <0.7
     , criterion >=1.4.1.0
-    , data-default >=0.7.1.1
-    , deepseq >=1.4.2.0
-    , directory >=1.3.3.0
-    , ginger >=0.9.0.0
-    , lens >=4.17.1
-    , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , parallel >=3.2.1.0
-    , pathtype >=0.8.1
-    , safe-exceptions >=0.1.7.0
+    , data-default >=0.7.1.1 && <0.8
+    , deepseq >=1.4.2.0 && <1.5
+    , file-embed >=0.0.11.1 && <0.1
+    , formatting >=6.3.7 && <6.4
+    , githash >=0.1.3.3 && <0.2
+    , lens >=4.18.1 && <4.19
+    , massiv >=0.5.0.0 && <0.6
+    , mtl >=2.2.2 && <2.3
+    , parallel >=3.2.1.0 && <3.3
+    , pathtype >=0.8.1 && <0.9
+    , rio >=0.1.13.0 && <0.2
     , spicy
-    , split >=0.2.3.2
-    , text >=1.2.2.0
-    , transformers >=0.5.6.2
-    , unordered-containers >=0.2.10.0
-    , utf8-string >=1.0.1
-    , vector >=0.12.0.0
+    , split >=0.2.3.3 && <0.3
+    , stache >=2.1.0 && <2.2
+    , tasty >=1.2.3 && <1.3
+    , tasty-golden >=2.3.3 && <2.4
+    , text >=1.2.3.1 && <1.3
+    , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
     ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
-  if flag(cuda)
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/PTX
-    build-depends:
-        accelerate-llvm-ptx >=1.3.0.0 && <=1.4.0.0
-  else
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/CPU
-    build-depends:
-        accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
   default-language: Haskell2010
 
 executable spicy
@@ -210,55 +175,43 @@ executable spicy
       Paths_spicy
   hs-source-dirs:
       app
-  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude
+  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      accelerate >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io-vector >=0.1.0.0 && <=0.2.0.0
-    , accelerate-llvm >=1.3.0.0 && <=1.4.0.0
-    , accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
-    , aeson >=1.4.4.0
-    , aeson-pretty >=0.8.7
-    , attoparsec >=0.13.1.0
+      aeson >=1.4.4.0 && <1.5
+    , aeson-pretty >=0.8.7 && <0.9
+    , algebraic-graphs >=0.5 && <0.6
+    , ansi-terminal >=0.10.3 && <0.11
+    , arithmoi >=0.10.0.0 && <0.11
+    , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8
-    , containers >=0.6.0.1
-    , data-default >=0.7.1.1
-    , deepseq >=1.4.2.0
-    , directory >=1.3.3.0
-    , ginger >=0.9.0.0
-    , lens >=4.17.1
-    , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , parallel >=3.2.1.0
-    , pathtype >=0.8.1
-    , safe-exceptions >=0.1.7.0
+    , bytestring >=0.10.8.2 && <0.11
+    , cmdargs >=0.10.20 && <0.11
+    , containers >=0.6.0.1 && <0.7
+    , data-default >=0.7.1.1 && <0.8
+    , deepseq >=1.4.2.0 && <1.5
+    , file-embed >=0.0.11.1 && <0.1
+    , formatting >=6.3.7 && <6.4
+    , githash >=0.1.3.3 && <0.2
+    , lens >=4.18.1 && <4.19
+    , massiv >=0.5.0.0 && <0.6
+    , mtl >=2.2.2 && <2.3
+    , parallel >=3.2.1.0 && <3.3
+    , pathtype >=0.8.1 && <0.9
+    , rio >=0.1.13.0 && <0.2
     , spicy
-    , split >=0.2.3.2
-    , text >=1.2.2.0
-    , transformers >=0.5.6.2
-    , unordered-containers >=0.2.10.0
-    , utf8-string >=1.0.1
-    , vector >=0.12.0.0
+    , split >=0.2.3.3 && <0.3
+    , stache >=2.1.0 && <2.2
+    , tasty >=1.2.3 && <1.3
+    , tasty-golden >=2.3.3 && <2.4
+    , text >=1.2.3.1 && <1.3
+    , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
     ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
-  if flag(cuda)
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/PTX
-    build-depends:
-        accelerate-llvm-ptx >=1.3.0.0 && <=1.4.0.0
-  else
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/CPU
-    build-depends:
-        accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
   default-language: Haskell2010
 
 executable unittests-exe
@@ -267,58 +220,44 @@ executable unittests-exe
       Paths_spicy
   hs-source-dirs:
       app
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
   build-depends:
-      accelerate >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io-vector >=0.1.0.0 && <=0.2.0.0
-    , accelerate-llvm >=1.3.0.0 && <=1.4.0.0
-    , accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
-    , aeson >=1.4.4.0
-    , aeson-pretty >=0.8.7
-    , attoparsec >=0.13.1.0
+      aeson >=1.4.4.0 && <1.5
+    , aeson-pretty >=0.8.7 && <0.9
+    , algebraic-graphs >=0.5 && <0.6
+    , ansi-terminal >=0.10.3 && <0.11
+    , arithmoi >=0.10.0.0 && <0.11
+    , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8
-    , containers >=0.6.0.1
-    , data-default >=0.7.1.1
-    , deepseq >=1.4.2.0
-    , directory >=1.3.3.0
-    , ginger >=0.9.0.0
-    , lens >=4.17.1
-    , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , parallel >=3.2.1.0
-    , pathtype >=0.8.1
-    , safe-exceptions >=0.1.7.0
+    , bytestring >=0.10.8.2 && <0.11
+    , cmdargs >=0.10.20 && <0.11
+    , containers >=0.6.0.1 && <0.7
+    , data-default >=0.7.1.1 && <0.8
+    , deepseq >=1.4.2.0 && <1.5
+    , file-embed >=0.0.11.1 && <0.1
+    , formatting >=6.3.7 && <6.4
+    , githash >=0.1.3.3 && <0.2
+    , lens >=4.18.1 && <4.19
+    , massiv >=0.5.0.0 && <0.6
+    , mtl >=2.2.2 && <2.3
+    , parallel >=3.2.1.0 && <3.3
+    , pathtype >=0.8.1 && <0.9
+    , rio >=0.1.13.0 && <0.2
     , spicy
-    , split >=0.2.3.2
+    , split >=0.2.3.3 && <0.3
+    , stache >=2.1.0 && <2.2
     , tasty >=0.11.3
     , tasty-golden >=2.3.1
     , tasty-hunit
-    , text >=1.2.2.0
-    , transformers >=0.5.6.2
-    , unordered-containers >=0.2.10.0
-    , utf8-string >=1.0.1
-    , vector >=0.12.0.0
+    , text >=1.2.3.1 && <1.3
+    , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
     ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
-  if flag(cuda)
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/PTX
-    build-depends:
-        accelerate-llvm-ptx >=1.3.0.0 && <=1.4.0.0
-  else
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/CPU
-    build-depends:
-        accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
   default-language: Haskell2010
 
 test-suite unittests
@@ -330,56 +269,41 @@ test-suite unittests
       app
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
   build-depends:
-      accelerate >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io-vector >=0.1.0.0 && <=0.2.0.0
-    , accelerate-llvm >=1.3.0.0 && <=1.4.0.0
-    , accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
-    , aeson >=1.4.4.0
-    , aeson-pretty >=0.8.7
-    , attoparsec >=0.13.1.0
+      aeson >=1.4.4.0 && <1.5
+    , aeson-pretty >=0.8.7 && <0.9
+    , algebraic-graphs >=0.5 && <0.6
+    , ansi-terminal >=0.10.3 && <0.11
+    , arithmoi >=0.10.0.0 && <0.11
+    , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8
-    , containers >=0.6.0.1
-    , data-default >=0.7.1.1
-    , deepseq >=1.4.2.0
-    , directory >=1.3.3.0
-    , ginger >=0.9.0.0
-    , lens >=4.17.1
-    , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , parallel >=3.2.1.0
-    , pathtype >=0.8.1
-    , safe-exceptions >=0.1.7.0
+    , bytestring >=0.10.8.2 && <0.11
+    , cmdargs >=0.10.20 && <0.11
+    , containers >=0.6.0.1 && <0.7
+    , data-default >=0.7.1.1 && <0.8
+    , deepseq >=1.4.2.0 && <1.5
+    , file-embed >=0.0.11.1 && <0.1
+    , formatting >=6.3.7 && <6.4
+    , githash >=0.1.3.3 && <0.2
+    , lens >=4.18.1 && <4.19
+    , massiv >=0.5.0.0 && <0.6
+    , mtl >=2.2.2 && <2.3
+    , parallel >=3.2.1.0 && <3.3
+    , pathtype >=0.8.1 && <0.9
+    , rio >=0.1.13.0 && <0.2
     , spicy
-    , split >=0.2.3.2
-    , tasty >=0.11.3
-    , tasty-golden >=2.3.1
-    , tasty-hunit
-    , text >=1.2.2.0
-    , transformers >=0.5.6.2
-    , unordered-containers >=0.2.10.0
-    , utf8-string >=1.0.1
-    , vector >=0.12.0.0
+    , split >=0.2.3.3 && <0.3
+    , stache >=2.1.0 && <2.2
+    , tasty >=1.2.3 && <1.3
+    , tasty-golden >=2.3.1 && <2.4
+    , tasty-hunit >=0.10.0.2 && <0.11
+    , text >=1.2.3.1 && <1.3
+    , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
     ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
-  if flag(cuda)
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/PTX
-    build-depends:
-        accelerate-llvm-ptx >=1.3.0.0 && <=1.4.0.0
-  else
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/CPU
-    build-depends:
-        accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
   default-language: Haskell2010
 
 benchmark benchmarks
@@ -391,52 +315,39 @@ benchmark benchmarks
       app
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
   build-depends:
-      accelerate >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io >=1.3.0.0 && <=1.4.0.0
-    , accelerate-io-vector >=0.1.0.0 && <=0.2.0.0
-    , accelerate-llvm >=1.3.0.0 && <=1.4.0.0
-    , accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
-    , aeson >=1.4.4.0
-    , aeson-pretty >=0.8.7
-    , attoparsec >=0.13.1.0
+      aeson >=1.4.4.0 && <1.5
+    , aeson-pretty >=0.8.7 && <0.9
+    , algebraic-graphs >=0.5 && <0.6
+    , ansi-terminal >=0.10.3 && <0.11
+    , arithmoi >=0.10.0.0 && <0.11
+    , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8
-    , containers >=0.6.0.1
-    , criterion >=1.4.1.0
-    , data-default >=0.7.1.1
-    , deepseq >=1.4.2.0
-    , directory >=1.3.3.0
-    , ginger >=0.9.0.0
-    , lens >=4.17.1
-    , lens-accelerate >=0.3.0.0 && <=0.4.0.0
-    , parallel >=3.2.1.0
-    , pathtype >=0.8.1
-    , safe-exceptions >=0.1.7.0
+    , bytestring >=0.10.8.2 && <0.11
+    , cmdargs >=0.10.20 && <0.11
+    , containers >=0.6.0.1 && <0.7
+    , criterion >=1.5.6.1 && <1.7
+    , data-default >=0.7.1.1 && <0.8
+    , deepseq >=1.4.2.0 && <1.5
+    , file-embed >=0.0.11.1 && <0.1
+    , formatting >=6.3.7 && <6.4
+    , githash >=0.1.3.3 && <0.2
+    , lens >=4.18.1 && <4.19
+    , massiv >=0.5.0.0 && <0.6
+    , mtl >=2.2.2 && <2.3
+    , parallel >=3.2.1.0 && <3.3
+    , pathtype >=0.8.1 && <0.9
+    , rio >=0.1.13.0 && <0.2
     , spicy
-    , split >=0.2.3.2
-    , text >=1.2.2.0
-    , transformers >=0.5.6.2
-    , unordered-containers >=0.2.10.0
-    , utf8-string >=1.0.1
-    , vector >=0.12.0.0
+    , split >=0.2.3.3 && <0.3
+    , stache >=2.1.0 && <2.2
+    , tasty >=1.2.3 && <1.3
+    , tasty-golden >=2.3.3 && <2.4
+    , text >=1.2.3.1 && <1.3
+    , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
     ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
-  if flag(cuda)
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/PTX
-    build-depends:
-        accelerate-llvm-ptx >=1.3.0.0 && <=1.4.0.0
-  else
-    other-modules:
-        Spicy.Internal.Accelerate
-    hs-source-dirs:
-        src-internal/CPU
-    build-depends:
-        accelerate-llvm-native >=1.3.0.0 && <=1.4.0.0
   default-language: Haskell2010

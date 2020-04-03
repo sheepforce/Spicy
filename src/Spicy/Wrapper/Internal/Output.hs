@@ -1,7 +1,7 @@
 {-|
 Module      : Spicy.Wrapper.Internal.Output
 Description : Parsers for calculation output
-Copyright   : Phillip Seeber, 2019
+Copyright   : Phillip Seeber, 2020
 License     : GPL-3
 Maintainer  : phillip.seeber@uni-jena.de
 Stability   : experimental
