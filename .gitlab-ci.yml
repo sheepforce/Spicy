@@ -10,7 +10,7 @@ before_script:
   - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
   - echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-8 main" | tee -a /etc/apt/sources.list
   - apt update
-  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev pkg-config
+  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev pkg-config libopenblas-dev
   - mkdir -p ~/.local/bin
   - export PATH=$HOME/.local/bin:$PATH
   - ln -s /usr/lib/x86_64-linux-gnu/libffi.so.6 /usr/lib/x86_64-linux-gnu/libffi.so.7
@@ -29,7 +29,7 @@ buildSpicy:
       - $HOME/.ghc
       - $HOME/.cabal
   script:
-    - stack --no-terminal --install-ghc build --only-dependencies --flag spicy:llvm
+    - stack --no-terminal --install-ghc build --only-dependencies
 
 testSpicy:
   stage: test
@@ -40,7 +40,7 @@ testSpicy:
       - $HOME/.ghc
       - $HOME/.cabal
   script:
-    - stack --no-terminal test --flag spicy:llvm
+    - stack --no-terminal test
 
 pages:
   stage: deploy

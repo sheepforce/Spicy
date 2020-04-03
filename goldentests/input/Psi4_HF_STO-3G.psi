@@ -1,0 +1,31 @@
+memory {{ memory }} MiB
+
+molecule Spicy {
+{{ charge }} {{ multiplicity }}
+{{ molecule }}
+}
+
+set {
+  scf_type df
+  reference rhf
+  basis sto-3g
+  molden_write true
+}
+
+{{#doEnergy}}
+object, wfn = energy("hf", return_wfn=True)
+{{/doEnergy}}
+{{#doGradient}}
+object, wfn = gradient("hf", return_wfn=True)
+{{/doGradient}}
+{{#doHessian}}
+object, wfn = hessian("hf", return_wfn=True)
+{{/doHessian}}
+
+fchk_writer = psi4.core.FCHKWriter(wfn)
+fchk_writer.write('{{ prefix }}.fchk')
+
+{{#doHessian}}
+hess_arr = np.array(object)
+np.savetxt("{{ prefix }}.hess", hess_arr)
+{{/doHessian}}

@@ -1,0 +1,4 @@
+ignore:
+  - nixpkgs
+  - .stack-work
+  - public

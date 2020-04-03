@@ -1,0 +1,14 @@
+permanent:
+  dirpath: Tests/permanent
+scratch:
+  dirpath: Tests/scratch
+molecule:
+  path:
+    filepath: goldentests/input/TolueneCl2.xyz
+  fileType: xyz
+model:
+  theoryLayer: !include ./TolueneCl2_ONIOM-n_RealSystem.yml
+  embedding: mechanical
+task:
+- optimise
+- frequency

@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-14.16
+resolver: lts-15.3
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -40,35 +40,22 @@ packages:
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
-  # Accelerate
-  - github: AccelerateHS/accelerate
-    commit: a9c46204c076e4ac916dda13a0b3d8e2b1f93d7e
+  - massiv-0.5.1.0
 
-  - github: AccelerateHS/accelerate-llvm
-    commit: f8aeee621e5aa3de92e4da12441964120ec4f75c
-    subdirs:
-      - accelerate-llvm
-      - accelerate-llvm-native
-      - accelerate-llvm-ptx
-
-  # Lens-Accelerate
-  - github: tmcdonell/lens-accelerate
-    commit: b74eb8098735b1ad6cff3c5655af03d3f29b9f8e
-
-  # Accelerate-IO
-  - github: AccelerateHS/accelerate-io
-    commit: e83461b194bb046a6f129a6be7f0e865653ed365
-    subdirs:
-      - accelerate-io
-      - accelerate-io-vector
-
-  - hedgehog-1.0
-  - tasty-hedgehog-1.0.0.1
+# nix:
+#   enable: true
+#   pure: true
+#   path: [ ./nixpkgs ]
+#   packages:
+#     - llvm_8
+#     - openblas
+#     - pkg-config
+#     - libffi
+#     - fftw
+#     - cudatoolkit_10
 
 # Override default flag values for local packages and extra-deps
-flags:
-  accelerate-llvm-ptx:
-   nvvm: false
+flags: {}
 
 # Extra package databases containing global packages
 # extra-package-dbs: []
@@ -86,7 +73,7 @@ flags:
 #
 # Extra directories used by stack for building
 # extra-include-dirs: [/path/to/dir]
-extra-lib-dirs: [ . ]
+extra-lib-dirs: [ ]
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
