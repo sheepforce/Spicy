@@ -1518,3 +1518,71 @@ fragmentDetectionDetached mol = do
           -- The atoms already have been fully consumed and therefore no new fragments could be
           -- found.
           _ -> fragAcc
+
+----------------------------------------------------------------------------------------------------
+{-|
+This function takes a starting atom in given layer and starts moving away from it along the bonds.
+Atoms of the same bond distance will be grouped. Therefore all atoms 1 bond away from the start will
+form a group, all bonds 2 bonds away from the starting atom will form a group and so on. Atoms will
+only belong to one group always, which is relevant for cyclic structures. They will always be
+assigned to the group with the lowest distance.
+
+The function takes a maximum distance in bonds to search. The search ends, if either no new atoms
+can be found or the search would extend beyond the maximum search distance.
+-}
+bondDistanceGroups
+  :: MonadThrow m
+  => Molecule       -- ^ The molecule layer which to use for the search. Sublayers are ignored.
+  -> Int            -- ^ Key of the starting atom.
+  -> Int            -- ^ The maximum distance for search in bonds. Must therefore be equal or
+                    --   greater than 0.
+  -> m (Seq IntSet) -- ^ A sequence of atoms in a given distance. At the sequence index 0 will be
+                    --   the starting atom index. At sequence index n will be the set of atom
+                    --   indices n bonds away from the start.
+bondDistanceGroups mol startAtomInd maxBondSteps = do
+  -- Check the molecule, as the bond matrix could otherwise be damaged and create strange results.
+  _ <- checkMolecule mol
+
+  let bondMat = mol ^. molecule_Bonds
+      groups  = stepAndGroup bondMat maxBondSteps (Seq.singleton . IntSet.singleton $ startAtomInd)
+  return groups
+ where
+  stepAndGroup
+    :: BondMatrix -- ^ The bond matrix through which to step. During the recursion this will
+                  --   shrink, as the atoms already assigned will be removed as and targets.
+    -> Int        -- ^ The maximum distance in bonds.
+    -> Seq IntSet -- ^ Accumulator of the groups.
+    -> Seq IntSet
+  stepAndGroup bondMat' maxDist groupAcc
+    | currentDist > maxDist
+    = groupAcc
+    | otherwise
+    = let
+        searchOrigins = case groupAcc of
+          Empty           -> IntSet.singleton startAtomInd
+          _ :|> lastGroup -> lastGroup
+        groupAccAdjusted = case groupAcc of
+          Empty -> Seq.singleton . IntSet.singleton $ startAtomInd
+          _     -> groupAcc
+        nextSphereAtoms =
+          IntSet.unions $ fmap (getAtomBondPartners bondMat') (IntSet.toList searchOrigins)
+        newBondMat = HashMap.filterWithKey
+          (\(ixO, ixT) val ->
+            not (ixO `IntSet.member` searchOrigins)
+              && not (ixT `IntSet.member` searchOrigins)
+              && val
+          )
+          bondMat'
+        newGroupAcc = groupAccAdjusted |> nextSphereAtoms
+      in
+        stepAndGroup newBondMat maxDist newGroupAcc
+    where currentDist = Seq.length groupAcc
+
+  -- Get all bond partners of an atom.
+  getAtomBondPartners :: BondMatrix -> Int -> IntSet
+  getAtomBondPartners bondMat' atom =
+    IntSet.fromList
+      . fmap snd
+      . HashMap.keys
+      . HashMap.filterWithKey (\(ixO, _) val -> ixO == atom && val)
+      $ bondMat'
