@@ -17,6 +17,7 @@ module Spicy.Molecule
   , molMap
   , molMapWithMolID
   , molTraverse
+  , molTraverseWithID
   , molFoldl
   , molFoldlWithMolID
   , molIDLensGen
