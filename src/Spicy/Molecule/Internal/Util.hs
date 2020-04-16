@@ -1588,17 +1588,14 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
   -- scaling.
   let searchDistance = Seq.length poleScalings
       cappedOrigins =
-        IntMap.keys
-          .  IntMap.filter (^. atom_IsCapped)
-          $  layerOfInterest
-          ^. molecule_Atoms
+        IntMap.keys . IntMap.filter (^. atom_IsCapped) $ layerOfInterest ^. molecule_Atoms
   distanceGroups <- mapM
     (\startAtom -> bondDistanceGroups layerOfPolarisationCloud startAtom searchDistance)
     cappedOrigins
   let distanceGroupsJoined = combineDistanceGroups distanceGroups
 
   -- Apply the scaling to the polarisation centres.
-  let polarisationCentresScaled = Seq.foldlWithIndex
+  let polarisationCentresScaled = IntMap.map (& atom_IsDummy .~ True) $ Seq.foldlWithIndex
         (\atomMapAcc currentDist scaleAtDist ->
           let atomsIndsAtThisDistance =
                   fromMaybe IntSet.empty $ distanceGroupsJoined Seq.!? (currentDist + 1)
