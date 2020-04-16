@@ -1233,10 +1233,10 @@ instance HumanShow EnergyDerivatives where
               Massiv.map (display . format (left 16 ' ' %. fixed 8)) <$> massiv3NMatrix
             massivBuilderVector :: Maybe (Vector Massiv.D Utf8Builder)
             massivBuilderVector = Massiv.map ("  " <>) . Massiv.foldInner <$> massivTextMatrix
-            gradientUtf8 = fromMaybe "*Unexpected size of the gradient vector. Cannot print.*"
-                                     (Massiv.fold <$> massivBuilderVector)
+            gradientUtf8 = fromMaybe ["*Unexpected size of the gradient vector. Cannot print.*"]
+                                     (Massiv.toList <$> massivBuilderVector)
           in
-            ["Gradient / Hartree Angstrom⁻¹ =", gradientUtf8]
+            "Gradient / Hartree Angstrom⁻¹ =" : gradientUtf8
 
       -- Print the hessian in blocks of 5 columns.
       hessianPrint :: [Utf8Builder]
