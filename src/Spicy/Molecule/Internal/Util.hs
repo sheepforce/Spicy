@@ -46,6 +46,7 @@ module Spicy.Molecule.Internal.Util
   , guessBondMatrixSimple
   , guessBondMatrix
   , fragmentDetectionDetached
+  , bondDistanceGroups
   )
 where
 import           Control.Lens            hiding ( (:>)
@@ -655,13 +656,13 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
 
   let -- Identify top level atoms, that are part of a capped bond. (Works thanks to the Foldable
       -- instance of IntMap ...)
-      tlAtomsCapped = HashSet.map snd cutAtomPairs
+      slAtomsCapped = HashSet.map fst cutAtomPairs
+      -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom as capped.
+      subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithPseudoAdded slAtomsCapped
       -- Mark the top layer atoms, that are part of a capped bond as capped and add the newly
       -- constructed submolecule to this molecule.
       markedMolWithNewSublayer =
-        markAtomsAsCapped mol tlAtomsCapped
-          &  molecule_SubMol
-          %~ IntMap.insert newSubLayerIndex subLayerWithPseudoAdded
+        mol & molecule_SubMol %~ IntMap.insert newSubLayerIndex subLayerMarkedAsCapped
 
   return markedMolWithNewSublayer
  where
