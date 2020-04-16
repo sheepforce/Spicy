@@ -31,6 +31,7 @@ module Spicy.Molecule
   , neighbourList
   , guessBondMatrix
   , fragmentDetectionDetached
+  , getPolarisationCloudFromAbove
     -- * Writer
   , writeXYZ
   , writeTXYZ
