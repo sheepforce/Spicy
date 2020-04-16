@@ -158,6 +158,7 @@ translate2Input mol calcID = do
 {-|
 This gives a 'Molecule' in the program specific representation for a wrapper calculation.
 -}
+-- TODO (phillip|p=100|#Wrong) - This works only if no multipoles are inherited. The writers here are not aware of dummy types and how to insert multipoles.
 toMolRepr
   :: MonadThrow m
   => Molecule  -- ^ The __current__ 'Molecule' layer for which to perform the calculation.
