@@ -1501,9 +1501,8 @@ Identifier for a calculation context supposed to be used as key in the '_molecul
 field.
 -}
 data CalcK
-  = ONIOMKey MolID ONIOMHierarchy -- ^ An ONIOM calculation. The 'Int' gives the layer with the real
-                                  --   system starting at 0 and the 'ONIOMHierarchy' defines if this
-                                  --   calculation has been inherited or not.
+  = ONIOMKey ONIOMHierarchy -- ^ An ONIOM calculation. The 'ONIOMHierarchy' defines if this
+                            --   calculation has been inherited or not.
   deriving ( Eq, Show, Ord, Generic, FromJSONKey, ToJSONKey )
 
 instance ToJSON CalcK where

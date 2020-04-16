@@ -105,7 +105,7 @@ oniomNLayout = do
   let molRealSystem =
         molRealSystemNoContext
           &  molecule_CalcContext
-          .~ Map.singleton (ONIOMKey Empty Original) calcContextTop
+          .~ Map.singleton (ONIOMKey Original) calcContextTop
 
   -- Now step through the deeper ONIOM layers recursively and do the layout for everything.
   let deeperLayers = theoryLayers ^. deeperLayer
@@ -233,8 +233,8 @@ oniomNLayout = do
 
       -- Add calculation context information to the new sublayer.
       let subMolCalcContext = Map.fromList
-            [ (ONIOMKey idAcc Original , calcContextThis)
-            , (ONIOMKey idAcc Inherited, calcContextInherited)
+            [ (ONIOMKey Original , calcContextThis)
+            , (ONIOMKey Inherited, calcContextInherited)
             ]
           subMolWithContext = newSubMolOnly & molecule_CalcContext .~ subMolCalcContext
 
