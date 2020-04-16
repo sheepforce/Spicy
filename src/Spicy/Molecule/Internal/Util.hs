@@ -15,6 +15,7 @@ module Spicy.Molecule.Internal.Util
   , molMap
   , molMapWithMolID
   , molTraverse
+  , molTraverseWithID
   , molFoldl
   , molFoldlWithMolID
   , reIndexMolecule
@@ -236,6 +237,33 @@ molTraverse f mol = do
         subMols
       let newMol = topUpdated & molecule_SubMol .~ newSubMols
       return newMol
+
+----------------------------------------------------------------------------------------------------
+{-|
+Like a 'mapM' through the 'Molecule' data structure. Applies a function to each molecule. To keep
+this non-mind-blowing, it is best to only use functions, which only act on the current molecule
+layer and not on the deeper ones as the update function.
+
+This functions works top down through the molecule. The worker function has access to the MolID of
+the molecule currently processed.
+-}
+molTraverseWithID :: Monad m => (MolID -> Molecule -> m Molecule) -> Molecule -> m Molecule
+molTraverseWithID f mol = go Empty f mol
+ where
+  go molIDAcc func mol' = do
+    let subMols = mol' ^. molecule_SubMol
+    thisLayerApplied <- func molIDAcc mol'
+    if IntMap.null subMols
+      then return thisLayerApplied
+      else do
+        newSubMols <- IntMap.traverseWithKey
+          (\key deepMol -> if IntMap.null (deepMol ^. molecule_SubMol)
+            then (func $ molIDAcc |> key) deepMol
+            else go (molIDAcc |> key) func deepMol
+          )
+          subMols
+        let newMol = thisLayerApplied & molecule_SubMol .~ newSubMols
+        return newMol
 
 ----------------------------------------------------------------------------------------------------
 {-|
