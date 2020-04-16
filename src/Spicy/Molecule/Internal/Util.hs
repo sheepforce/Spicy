@@ -1559,24 +1559,38 @@ bondDistanceGroups mol startAtomInd maxBondSteps = do
     = groupAcc
     | otherwise
     = let
-        searchOrigins = case groupAcc of
-          Empty           -> IntSet.singleton startAtomInd
-          _ :|> lastGroup -> lastGroup
-        groupAccAdjusted = case groupAcc of
-          Empty -> Seq.singleton . IntSet.singleton $ startAtomInd
-          _     -> groupAcc
-        nextSphereAtoms =
-          IntSet.unions $ fmap (getAtomBondPartners bondMat') (IntSet.toList searchOrigins)
-        newBondMat = HashMap.filterWithKey
-          (\(ixO, ixT) val ->
-            not (ixO `IntSet.member` searchOrigins)
-              && not (ixT `IntSet.member` searchOrigins)
-              && val
-          )
-          bondMat'
-        newGroupAcc = groupAccAdjusted |> nextSphereAtoms
-      in
-        stepAndGroup newBondMat maxDist newGroupAcc
+        -- The currently most distant atoms from the start and therefore the origin for the next
+        -- search.
+          searchOrigins = case groupAcc of
+            Empty           -> IntSet.singleton startAtomInd
+            _ :|> lastGroup -> lastGroup
+
+          -- Make sure the group accumulator always contains the start atom at distance 0.
+          groupAccAdjusted = case groupAcc of
+            Empty -> Seq.singleton . IntSet.singleton $ startAtomInd
+            _     -> groupAcc
+
+          -- The next more distant sphere of atoms. Potentially, in case of a ring closure, the new
+          -- sphere might contain atoms of this sphere, due to how the bond matrix is updated in the
+          -- recursion. To avoid this, remove the origins from the next sphere.
+          nextSphereAtoms = (`IntSet.difference` searchOrigins) . IntSet.unions $ fmap
+            (getAtomBondPartners bondMat')
+            (IntSet.toList searchOrigins)
+
+          -- The bond matrix for the next iteration will have this iterations search origins removed
+          -- both as origin as well as target. This should make sure, that stepping back is not
+          -- possible.
+          newBondMat = HashMap.filterWithKey
+            (\(ixO, ixT) val ->
+              not (ixO `IntSet.member` searchOrigins)
+                && not (ixT `IntSet.member` searchOrigins)
+                && val
+            )
+            bondMat'
+
+          -- The new accumulator will contain the results as a new entry to the sequence.
+          newGroupAcc = groupAccAdjusted |> nextSphereAtoms
+      in  stepAndGroup newBondMat maxDist newGroupAcc
     where currentDist = Seq.length groupAcc
 
   -- Get all bond partners of an atom.
