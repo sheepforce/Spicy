@@ -3,7 +3,7 @@ program: psi4
 charge: 0
 mult: 1
 templateFile:
-  filepath: ...
+  filepath: goldentests/input/Psi4_HF_STO-3G.psi
 execution:
   nProcesses: 1
   nThreads: 8
