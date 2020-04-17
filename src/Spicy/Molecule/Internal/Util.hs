@@ -15,6 +15,7 @@ module Spicy.Molecule.Internal.Util
   , molMap
   , molMapWithMolID
   , molTraverse
+  , molTraverseWithID
   , molFoldl
   , molFoldlWithMolID
   , reIndexMolecule
@@ -46,6 +47,8 @@ module Spicy.Molecule.Internal.Util
   , guessBondMatrixSimple
   , guessBondMatrix
   , fragmentDetectionDetached
+  , getPolarisationCloudFromAbove
+  , bondDistanceGroups
   )
 where
 import           Control.Lens            hiding ( (:>)
@@ -64,6 +67,7 @@ import           Data.Massiv.Array             as Massiv
                                                 , index
                                                 , sum
                                                 , toList
+                                                , mapM
                                                 )
 import           Data.Massiv.Core.Operations    ( Numeric )
 import           Data.Maybe
@@ -233,6 +237,33 @@ molTraverse f mol = do
         subMols
       let newMol = topUpdated & molecule_SubMol .~ newSubMols
       return newMol
+
+----------------------------------------------------------------------------------------------------
+{-|
+Like a 'mapM' through the 'Molecule' data structure. Applies a function to each molecule. To keep
+this non-mind-blowing, it is best to only use functions, which only act on the current molecule
+layer and not on the deeper ones as the update function.
+
+This functions works top down through the molecule. The worker function has access to the MolID of
+the molecule currently processed.
+-}
+molTraverseWithID :: Monad m => (MolID -> Molecule -> m Molecule) -> Molecule -> m Molecule
+molTraverseWithID f mol = go Empty f mol
+ where
+  go molIDAcc func mol' = do
+    let subMols = mol' ^. molecule_SubMol
+    thisLayerApplied <- func molIDAcc mol'
+    if IntMap.null subMols
+      then return thisLayerApplied
+      else do
+        newSubMols <- IntMap.traverseWithKey
+          (\key deepMol -> if IntMap.null (deepMol ^. molecule_SubMol)
+            then (func $ molIDAcc |> key) deepMol
+            else go (molIDAcc |> key) func deepMol
+          )
+          subMols
+        let newMol = thisLayerApplied & molecule_SubMol .~ newSubMols
+        return newMol
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -473,9 +504,9 @@ getMolByID mol (i :<| is) =
           \ Key not found in the submolecule map."
 
 ----------------------------------------------------------------------------------------------------
-{-|
-This generator takes a 'MolID' and generates an Lens to access this molecule. Dont be confused by the
-type signature, it is a normal lens to be used with '(^?)'. Read the type signature more as:
+{-| This generator takes a 'MolID' and generates an Lens to access this molecule. Dont be confused
+by the type signature, it is a normal lens to be used with '(^?)' as lookup (for setters sometimes
+it helps do redefine the lens locally in the setter). Read the type signature more as:
 @
     molIDLensGen :: MolID -> Lens' Molecule' Molecule'
 @
@@ -655,13 +686,13 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
 
   let -- Identify top level atoms, that are part of a capped bond. (Works thanks to the Foldable
       -- instance of IntMap ...)
-      tlAtomsCapped = HashSet.map snd cutAtomPairs
+      slAtomsCapped          = HashSet.map fst cutAtomPairs
+      -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom as capped.
+      subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithPseudoAdded slAtomsCapped
       -- Mark the top layer atoms, that are part of a capped bond as capped and add the newly
       -- constructed submolecule to this molecule.
       markedMolWithNewSublayer =
-        markAtomsAsCapped mol tlAtomsCapped
-          &  molecule_SubMol
-          %~ IntMap.insert newSubLayerIndex subLayerWithPseudoAdded
+        mol & molecule_SubMol %~ IntMap.insert newSubLayerIndex subLayerMarkedAsCapped
 
   return markedMolWithNewSublayer
  where
@@ -1518,3 +1549,236 @@ fragmentDetectionDetached mol = do
           -- The atoms already have been fully consumed and therefore no new fragments could be
           -- found.
           _ -> fragAcc
+
+----------------------------------------------------------------------------------------------------
+{-|
+This function adds multipole centres to a given molecule layer. In the context of ONIOM, this means,
+that the multipoles of a real system are used as a polarisation cloud of the deeper layer.
+Polarisation centres, that are real atoms in the model system, will be removed. A sequence of values
+gives scaling factors for the multipoles in bond distances.
+
+If the atoms of the real system above do not contain multipole information, you will have useless
+dummy atoms in the model system.
+
+Be aware of a nasty corner case:
+@
+  b--c--d
+ /       \
+A         E
+@
+The atoms @A@ and @E@ belong to the model system, which shall be polarised, while @b@, @c@ and @d@
+belong to the real system, which provides the polarisation cloud. If scaling factors for up to three
+bonds are given, atom @b@ has a distance of 1 from atom @A@ but a distance of 3 from atom @E@. This
+introduces some ambiguity to the scaling. This will use the smallest distance found to select the
+scaling factor. Therefore @b@ and @d@ will both be treated as being in a distance of 1 bond, not @b@
+having a distance of 1 with respect to @A@ and a distance of 3 to @E@.
+-}
+getPolarisationCloudFromAbove
+  :: (MonadThrow m)
+  => Molecule   -- ^ The whole molecular system with the multipoles at least in the layer above the
+                --   specified one.
+  -> MolID      -- ^ Specificaiton of the molecule layer, which should get a polarisation cloud from
+                --   the layer above. The layer above is also determined from the MolID by removing
+                --   its last element.
+  -> Seq Double -- ^ Scaling factors for the multipole moments in bond distances. The first value in
+                --   the sequence would be used to scale the multipoles of atoms 1 bond away the
+                --   non-pseudoatom model system atoms, the second value in the sequence multipoles
+                --   2 bonds away and so on.
+  -> m Molecule -- ^ The specified layer of the molecule only with polarisation centres added. All
+                --   submolecules or fragments this layer may have had are removed.
+getPolarisationCloudFromAbove mol layerID poleScalings = do
+  -- Check for the sanity of the molecule, as otherwise the assumptions regarding bonds make no
+  -- sense.
+  _          <- checkMolecule mol
+
+  -- Check if we are at least 1 layer deep into the ONIOM structure, otherwise asking for a
+  -- polarisation cloud makes no sense. If we are at least one layer deep, we can also get the ID of
+  -- one layer above, which provides the polarisation cloud.
+  molIdAbove <- case layerID of
+    Empty -> throwM $ MolLogicException
+      "getPolarisationCloudFromAbove"
+      "Requested to obtain a polarisation cloud for the real system, but this makes no sense."
+    above :|> _ -> return above
+
+  -- Get the layer, that shall be polarised and the layer above this one.
+  layerOfInterest          <- getMolByID mol layerID
+  layerOfPolarisationCloud <- getMolByID mol molIdAbove
+
+  -- Get the atoms, that will be used for polarisation. This excludes atoms, which are also part of
+  -- the model system and also atoms, that were already dummy atoms in the real system.
+  let atomIndicesModelSystem = IntMap.keysSet $ layerOfInterest ^. molecule_Atoms
+      polarisationCentresUnscaled =
+        IntMap.withoutKeys (layerOfPolarisationCloud ^. molecule_Atoms) atomIndicesModelSystem
+
+  -- Get polarisation centres n bonds away from the capped model-system atoms. This distance is used
+  -- to scale the multipole moments. Potential problems arise, when an atom of the real system is
+  -- in a different distance to capped atoms. In this case, the smallest distance will be used for
+  -- scaling.
+  let searchDistance = Seq.length poleScalings
+      cappedOrigins =
+        IntMap.keys . IntMap.filter (^. atom_IsCapped) $ layerOfInterest ^. molecule_Atoms
+  distanceGroups <- mapM
+    (\startAtom -> bondDistanceGroups layerOfPolarisationCloud startAtom searchDistance)
+    cappedOrigins
+  let distanceGroupsJoined = combineDistanceGroups distanceGroups
+
+  -- Apply the scaling to the polarisation centres.
+  let polarisationCentresScaled = IntMap.map (& atom_IsDummy .~ True) $ Seq.foldlWithIndex
+        (\atomMapAcc currentDist scaleAtDist ->
+          let atomsIndsAtThisDistance =
+                  fromMaybe IntSet.empty $ distanceGroupsJoined Seq.!? (currentDist + 1)
+              atomsWithPolesAtThisDistScaled = IntMap.mapWithKey
+                (\key atom -> if key `IntSet.member` atomsIndsAtThisDistance
+                  then atom & atom_Multipoles %~ scaleMultipoles scaleAtDist
+                  else atom
+                )
+                atomMapAcc
+          in  atomsWithPolesAtThisDistScaled
+        )
+        polarisationCentresUnscaled
+        poleScalings
+
+  -- Add the scaled polarisation centres to the model system.
+  let polarisedModelSystem =
+        layerOfInterest & molecule_Atoms %~ flip IntMap.union polarisationCentresScaled
+  return polarisedModelSystem
+ where
+  -- Getting the distance of real system atoms to the capped atoms of the model system, gives
+  -- multiple distances of a given real system atom to the model system atoms in bond distances.
+  -- This function joins the real system atoms, which are grouped by bond distance from a given
+  -- capped model system atom, in a way to ensure that a real system atom always only appears at
+  -- the lowest possible distance to the model system.
+  combineDistanceGroups :: [Seq IntSet] -> Seq IntSet
+  combineDistanceGroups distGroups =
+    let -- Join all the distance groups of different capped atoms. An atom of the real system might
+        -- appear here mutliple times with different distances.
+        combinationWithAmbigousAssignments = List.foldl'
+          (\acc thisGroup ->
+            let lengthAcc    = Seq.length acc
+                lengthThis   = Seq.length thisGroup
+
+                -- Adjust the length of the accumulator and this group, to match the longer one of both.
+                lengthAdjAcc = if lengthThis > lengthAcc
+                  then acc Seq.>< Seq.replicate (lengthThis - lengthAcc) IntSet.empty
+                  else acc
+                lengthAdjThis = if lengthAcc > lengthThis
+                  then thisGroup Seq.>< Seq.replicate (lengthAcc - lengthThis) IntSet.empty
+                  else thisGroup
+
+                -- Join this group with the accumulator.
+                newAcc = Seq.zipWith IntSet.union lengthAdjAcc lengthAdjThis
+            in  newAcc
+          )
+          Seq.empty
+          distGroups
+        -- Make sure, that a given atom always only appears at the lower distance and remove its
+        -- occurence at a higher distance, if already found at a lower distance.
+        combinationUnambigous = foldl
+          (\(atomsAtLowerDist, unambDistSeqAcc) thisDistanceAtoms ->
+            let thisWithLowerRemoved = thisDistanceAtoms IntSet.\\ atomsAtLowerDist
+                newAtomsAtLowerDist  = thisWithLowerRemoved `IntSet.union` atomsAtLowerDist
+                newUnambDistSeqAcc   = unambDistSeqAcc |> thisWithLowerRemoved
+            in  (newAtomsAtLowerDist, newUnambDistSeqAcc)
+          )
+          (IntSet.empty, Seq.empty)
+          combinationWithAmbigousAssignments
+    in  snd combinationUnambigous
+
+  -- Apply a scaling factor to all multipole moments.
+  scaleMultipoles :: Double -> Multipoles -> Multipoles
+  scaleMultipoles scalingFactor poles =
+    poles
+      &  multipole_Monopole
+      %~ fmap (* scalingFactor)
+      &  multipole_Dipole
+      %~ fmap (VectorS . massivScale scalingFactor . getVectorS)
+      &  multipole_Quadrupole
+      %~ fmap (MatrixS . massivScale scalingFactor . getMatrixS)
+      &  mutlipole_Octopole
+      %~ fmap (Array3S . massivScale scalingFactor . getArray3S)
+      &  mutlipole_Hexadecapole
+      %~ fmap (Array4S . massivScale scalingFactor . getArray4S)
+    where massivScale a = Massiv.computeS . (.* a) . Massiv.delay
+
+
+----------------------------------------------------------------------------------------------------
+{-|
+This function takes a starting atom in given layer and starts moving away from it along the bonds.
+Atoms of the same bond distance will be grouped. Therefore all atoms 1 bond away from the start will
+form a group, all bonds 2 bonds away from the starting atom will form a group and so on. Atoms will
+only belong to one group always, which is relevant for cyclic structures. They will always be
+assigned to the group with the lowest distance.
+
+The function takes a maximum distance in bonds to search. The search ends, if either no new atoms
+can be found or the search would extend beyond the maximum search distance.
+-}
+bondDistanceGroups
+  :: MonadThrow m
+  => Molecule       -- ^ The molecule layer which to use for the search. Sublayers are ignored.
+  -> Int            -- ^ Key of the starting atom.
+  -> Int            -- ^ The maximum distance for search in bonds. Must therefore be equal or
+                    --   greater than 0.
+  -> m (Seq IntSet) -- ^ A sequence of atoms in a given distance. At the sequence index 0 will be
+                    --   the starting atom index. At sequence index n will be the set of atom
+                    --   indices n bonds away from the start.
+bondDistanceGroups mol startAtomInd maxBondSteps = do
+  -- Check the molecule, as the bond matrix could otherwise be damaged and create strange results.
+  _ <- checkMolecule mol
+
+  let bondMat = mol ^. molecule_Bonds
+      groups  = stepAndGroup bondMat maxBondSteps (Seq.singleton . IntSet.singleton $ startAtomInd)
+  return groups
+ where
+  stepAndGroup
+    :: BondMatrix -- ^ The bond matrix through which to step. During the recursion this will
+                  --   shrink, as the atoms already assigned will be removed as and targets.
+    -> Int        -- ^ The maximum distance in bonds.
+    -> Seq IntSet -- ^ Accumulator of the groups.
+    -> Seq IntSet
+  stepAndGroup bondMat' maxDist groupAcc
+    | currentDist > maxDist
+    = groupAcc
+    | otherwise
+    = let
+        -- The currently most distant atoms from the start and therefore the origin for the next
+        -- search.
+          searchOrigins = case groupAcc of
+            Empty           -> IntSet.singleton startAtomInd
+            _ :|> lastGroup -> lastGroup
+
+          -- Make sure the group accumulator always contains the start atom at distance 0.
+          groupAccAdjusted = case groupAcc of
+            Empty -> Seq.singleton . IntSet.singleton $ startAtomInd
+            _     -> groupAcc
+
+          -- The next more distant sphere of atoms. Potentially, in case of a ring closure, the new
+          -- sphere might contain atoms of this sphere, due to how the bond matrix is updated in the
+          -- recursion. To avoid this, remove the origins from the next sphere.
+          nextSphereAtoms = (`IntSet.difference` searchOrigins) . IntSet.unions $ fmap
+            (getAtomBondPartners bondMat')
+            (IntSet.toList searchOrigins)
+
+          -- The bond matrix for the next iteration will have this iterations search origins removed
+          -- both as origin as well as target. This should make sure, that stepping back is not
+          -- possible.
+          newBondMat = HashMap.filterWithKey
+            (\(ixO, ixT) val ->
+              not (ixO `IntSet.member` searchOrigins)
+                && not (ixT `IntSet.member` searchOrigins)
+                && val
+            )
+            bondMat'
+
+          -- The new accumulator will contain the results as a new entry to the sequence.
+          newGroupAcc = groupAccAdjusted |> nextSphereAtoms
+      in  stepAndGroup newBondMat maxDist newGroupAcc
+    where currentDist = Seq.length groupAcc
+
+  -- Get all bond partners of an atom.
+  getAtomBondPartners :: BondMatrix -> Int -> IntSet
+  getAtomBondPartners bondMat' atom =
+    IntSet.fromList
+      . fmap snd
+      . HashMap.keys
+      . HashMap.filterWithKey (\(ixO, _) val -> ixO == atom && val)
+      $ bondMat'

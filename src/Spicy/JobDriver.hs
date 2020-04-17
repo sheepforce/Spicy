@@ -74,7 +74,7 @@ spicyExecMain = do
 
   -- Perform the specified tasks on the input file.
   -- TODO (phillip|p=100|#Unfinished) - This is here for testing purposes. The real implementation should use a more abstract driver, that composes atomic tasks.
-  _molProcessed <- local (& moleculeL .~ molLayouted) (multicentreOniomNDriver WTHessian)
+  _molProcessed <- local (& moleculeL .~ molLayouted) (multicentreOniomNDriver WTGradient)
 
   return ()
 

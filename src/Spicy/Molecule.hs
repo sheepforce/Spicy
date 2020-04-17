@@ -17,6 +17,7 @@ module Spicy.Molecule
   , molMap
   , molMapWithMolID
   , molTraverse
+  , molTraverseWithID
   , molFoldl
   , molFoldlWithMolID
   , molIDLensGen
@@ -30,6 +31,7 @@ module Spicy.Molecule
   , neighbourList
   , guessBondMatrix
   , fragmentDetectionDetached
+  , getPolarisationCloudFromAbove
     -- * Writer
   , writeXYZ
   , writeTXYZ

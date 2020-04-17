@@ -18,13 +18,16 @@ module Spicy.ONIOM.AtomicDriver
   ( multicentreOniomNDriver
   )
 where
-import           Control.Lens
+import           Control.Lens            hiding ( Empty )
 import           Data.Default
 import           RIO                     hiding ( view
                                                 , (^.)
                                                 )
+import qualified RIO.Map                       as Map
 import           RIO.Process
+import           RIO.Seq                        ( Seq(..) )
 import           Spicy.Class
+import           Spicy.Data
 import           Spicy.Logger
 import           Spicy.Molecule
 import           Spicy.ONIOM.Collector
@@ -70,10 +73,111 @@ multicentreOniomNDriver atomicTask = do
 
   -- Perform all the wrapper tasks.
   logInfoF "Performing wrapper calculations on molecule ..."
-  -- TODO (phillip|p=100|#Unfinished) - Running calculations like this is only possible, if they do not depend on each other. For electronic embedding, the layers need to communicate top down.
-  molWithOutputs <- local (& moleculeL .~ molWithTasks) runAllCalculations
+  -- Apply the calculations top down. The results from the layer above can be used to polarise.
+  molWithOutputs <- molTraverseWithID
+    (\currentMolID currentMol -> do
+      -- Generate a lens for the current layer.
+      let currentMolLens = molIDLensGen currentMolID
 
-  -- Collect all the results from the calculation outputs and combine bottom up all the results
+      -- Some logging information about the current layer.
+      logInfoF $ "ONIOM " <> (display . molID2OniomHumandID $ currentMolID)
+      logInfoF $ "  Embedding type: " <> "electronic"
+
+      -- Polarise the layer if applicable and requested by electronic embedding
+      thisLayerMaybeWithPolarisation <- if currentMolID == Empty
+        then return currentMol
+        -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
+        else do
+          let embeddingOfThisOrignalLayer =
+                currentMol
+                  ^? molecule_CalcContext
+                  .  ix (ONIOMKey Original)
+                  .  calcContext_Input
+                  .  calcInput_Embedding
+          case embeddingOfThisOrignalLayer of
+            Just (Electronic scalingFactors) -> getPolarisationCloudFromAbove
+              molWithTasks
+              currentMolID
+              (fromMaybe defElectronicScalingFactors scalingFactors)
+            Just Mechanical -> return currentMol
+            Nothing         -> throwM $ MolLogicException
+              "multicentreOniomNDriver"
+              "The calculation input does not contain any embedding information for a high level calculation on a model system or this no ONIOM calculation was specified."
+
+      -- DEBUG
+      logDebug $ "Polarised local molecule: " <> displayShow thisLayerMaybeWithPolarisation
+      -- END DEBUG
+
+      -- The calculation is performed on the local molecule (no other layer present than the current
+      -- one). Therefore a local context of calculation keys is provided, to carry out the calculation
+      -- on the local molecule of this traverse.
+      -- All ONIOM calculations will be performed.
+      -- TODO (phillip|p=200|#Unfinished) - use the correct CalcID so that runCalculation does not get confused. Lenses will help.
+      currentLayerOutputs <- Map.traverseWithKey
+        (\calcK _ -> case calcK of
+          ONIOMKey Inherited -> do
+            molUpdatedCtxt <- local (& moleculeL .~ molWithTasks) $ runCalculation
+              (CalcID { _calcID_MolID = currentMolID, _calcID_calcKey = ONIOMKey Inherited })
+            return
+              . join
+              $ (  molUpdatedCtxt
+                ^? currentMolLens
+                .  molecule_CalcContext
+                .  ix calcK
+                .  calcContext_Output
+                )
+          ONIOMKey Original -> do
+            let molWithPolarisedLayer =
+                  molWithTasks & molIDLensGen currentMolID .~ thisLayerMaybeWithPolarisation
+            molUpdatedCtxt <- local (& moleculeL .~ molWithPolarisedLayer) $ runCalculation
+              (CalcID { _calcID_MolID = currentMolID, _calcID_calcKey = ONIOMKey Original })
+            return
+              . join
+              $ (  molUpdatedCtxt
+                ^? currentMolLens
+                .  molecule_CalcContext
+                .  ix calcK
+                .  calcContext_Output
+                )
+          {-
+          -- Will become necessary if other calculation types should be implemented at some point.
+          _ -> throwM $ MolLogicException
+            "multicentreOniomNDriver"
+            "This layer does not only contain ONIOM-type calculation contexts,\
+            \ but this is the ONIOM atomic driver. Cannot continue."
+          -}
+        )
+        (currentMol ^. molecule_CalcContext)
+
+      -- The calculation on the current layer has been performed now. This should provide
+      -- 'CalcOutput' for both the high and the low calculation on the current layer. Extract this
+      -- output and update the only the calcoutput of the traverse-local molecule.
+      let oldCalcContext = currentMol ^. molecule_CalcContext
+          -- currentUpdatedCalcOutput =
+          --   Map.map (^. calcContext_Output) $ currentLayerDone ^. molecule_CalcContext
+          newCalcContext = Map.foldlWithKey'
+            (\contextAcc key outputVal ->
+              Map.adjust (& calcContext_Output .~ outputVal) key contextAcc
+            )
+            oldCalcContext
+            currentLayerOutputs
+          currentMolWithOutput = currentMol & molecule_CalcContext .~ newCalcContext
+
+      -- Finally check if for all calculation contexts of the traverse-local current molecule an
+      -- output has been obtained. Return this layer updated if everything is fine, throw an
+      -- exception otherwise.
+      let layerHasAllOutput =
+            all isJust $ currentMolWithOutput ^.. molecule_CalcContext . each . calcContext_Output
+      if layerHasAllOutput
+        then return currentMolWithOutput
+        else throwM $ MolLogicException
+          "multicentreOniomNDriver"
+          "All calculations of the current layer should have been performed but this seems\
+          \ not to be the case. Some calculation output is missing."
+    )
+    molWithTasks
+
+  -- Collect all the results from the calculation outputs and combine bottom up all the results.
   logInfoF "Collecting the results from individual calculations ..."
   molCollectedResult <- local (& moleculeL .~ molWithOutputs) multicentreOniomNCollector
 

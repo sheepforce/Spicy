@@ -46,7 +46,7 @@ oniomNLayout = do
 
   -- Step through the theorylayers of the input file and create new layers accordingly. Fail if no
   -- ONIOMn method is specified.
-  theoryLayers     <- case inputFile ^? model . _ONIOMn . _1 of
+  theoryLayers     <- case inputFile ^? model . _ONIOMn of
     Just layers -> return layers
     Nothing     -> throwM $ SpicyIndirectionException
       "oniomNLayout"
@@ -77,6 +77,7 @@ oniomNLayout = do
                                                  (theoryLayers ^. charge)
                                                  (theoryLayers ^. mult)
       , _calcInput_Template    = template
+      , _calcInput_Embedding   = theoryLayers ^. embedding
       }
     calcContextTop = CalcContext { _calcContext_Input = calcInput, _calcContext_Output = Nothing }
 
@@ -105,7 +106,7 @@ oniomNLayout = do
   let molRealSystem =
         molRealSystemNoContext
           &  molecule_CalcContext
-          .~ Map.singleton (ONIOMKey Empty Original) calcContextTop
+          .~ Map.singleton (ONIOMKey Original) calcContextTop
 
   -- Now step through the deeper ONIOM layers recursively and do the layout for everything.
   let deeperLayers = theoryLayers ^. deeperLayer
@@ -190,6 +191,7 @@ oniomNLayout = do
                                                      (currentTheoLayer ^. charge)
                                                      (currentTheoLayer ^. mult)
           , _calcInput_Template    = template
+          , _calcInput_Embedding   = currentTheoLayer ^. embedding
           }
         calcContextThis =
           CalcContext { _calcContext_Input = calcInputThis, _calcContext_Output = Nothing }
@@ -233,8 +235,8 @@ oniomNLayout = do
 
       -- Add calculation context information to the new sublayer.
       let subMolCalcContext = Map.fromList
-            [ (ONIOMKey idAcc Original , calcContextThis)
-            , (ONIOMKey idAcc Inherited, calcContextInherited)
+            [ (ONIOMKey Original , calcContextThis)
+            , (ONIOMKey Inherited, calcContextInherited)
             ]
           subMolWithContext = newSubMolOnly & molecule_CalcContext .~ subMolCalcContext
 
