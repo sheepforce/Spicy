@@ -107,12 +107,27 @@ multicentreOniomNDriver atomicTask = do
           ONIOMKey Inherited -> do
             molUpdatedCtxt <- local (& moleculeL .~ molWithTasks) $ runCalculation
               (CalcID { _calcID_MolID = currentMolID, _calcID_calcKey = ONIOMKey Inherited })
-            return . join $ (molUpdatedCtxt ^? currentMolLens . molecule_CalcContext . ix calcK . calcContext_Output)
+            return
+              . join
+              $ (  molUpdatedCtxt
+                ^? currentMolLens
+                .  molecule_CalcContext
+                .  ix calcK
+                .  calcContext_Output
+                )
           ONIOMKey Original -> do
-            let molWithPolarisedLayer = molWithTasks & molIDLensGen currentMolID .~ thisLayerMaybeWithPolarisation
+            let molWithPolarisedLayer =
+                  molWithTasks & molIDLensGen currentMolID .~ thisLayerMaybeWithPolarisation
             molUpdatedCtxt <- local (& moleculeL .~ molWithPolarisedLayer) $ runCalculation
               (CalcID { _calcID_MolID = currentMolID, _calcID_calcKey = ONIOMKey Original })
-            return . join $ (molUpdatedCtxt ^? currentMolLens . molecule_CalcContext . ix calcK . calcContext_Output)
+            return
+              . join
+              $ (  molUpdatedCtxt
+                ^? currentMolLens
+                .  molecule_CalcContext
+                .  ix calcK
+                .  calcContext_Output
+                )
           {-
           -- Will become necessary if other calculation types should be implemented at some point.
           _ -> throwM $ MolLogicException
