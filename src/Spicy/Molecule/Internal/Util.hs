@@ -504,9 +504,9 @@ getMolByID mol (i :<| is) =
           \ Key not found in the submolecule map."
 
 ----------------------------------------------------------------------------------------------------
-{-|
-This generator takes a 'MolID' and generates an Lens to access this molecule. Dont be confused by the
-type signature, it is a normal lens to be used with '(^?)'. Read the type signature more as:
+{-| This generator takes a 'MolID' and generates an Lens to access this molecule. Dont be confused
+by the type signature, it is a normal lens to be used with '(^?)' as lookup (for setters sometimes
+it helps do redefine the lens locally in the setter). Read the type signature more as:
 @
     molIDLensGen :: MolID -> Lens' Molecule' Molecule'
 @

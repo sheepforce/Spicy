@@ -73,9 +73,12 @@ multicentreOniomNDriver atomicTask = do
 
   -- Perform all the wrapper tasks.
   logInfoF "Performing wrapper calculations on molecule ..."
-  -- Apply the calculations top down. The results from the layer above
+  -- Apply the calculations top down. The results from the layer above can be used to polarise.
   molWithOutputs <- molTraverseWithID
     (\currentMolID currentMol -> do
+      -- Generate a lens for the current layer.
+      let currentMolLens = molIDLensGen currentMolID
+
       -- Some logging information about the current layer.
       logInfoF $ "ONIOM " <> (display . molID2OniomHumandID $ currentMolID)
       logInfoF $ "  Embedding type: " <> "electronic"
@@ -85,6 +88,7 @@ multicentreOniomNDriver atomicTask = do
         then return currentMol
         -- TODO (phillip|p=100|#Unfinished) - These values are here just for testing. We need to get them from the reader context somehow.
         -- TODO (phillip|p=100|#Unfinished) - Electronic embedding now happens always but shouldn't. Instead obtain somehow from a reader context.
+        -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
         else getPolarisationCloudFromAbove molWithTasks
                                            currentMolID
                                            (Seq.fromList [0.2, 0.4, 0.6, 0.8])
@@ -97,16 +101,18 @@ multicentreOniomNDriver atomicTask = do
       -- one). Therefore a local context of calculation keys is provided, to carry out the calculation
       -- on the local molecule of this traverse.
       -- All ONIOM calculations will be performed.
+      -- TODO (phillip|p=200|#Unfinished) - use the correct CalcID so that runCalculation does not get confused. Lenses will help.
       currentLayerOutputs <- Map.traverseWithKey
         (\calcK _ -> case calcK of
           ONIOMKey Inherited -> do
-            molUpdatedCtxt <- local (& moleculeL .~ currentMol) $ runCalculation
-              (CalcID { _calcID_MolID = Empty, _calcID_calcKey = ONIOMKey Inherited })
-            return . join $ (molUpdatedCtxt ^? molecule_CalcContext . ix calcK . calcContext_Output)
+            molUpdatedCtxt <- local (& moleculeL .~ molWithTasks) $ runCalculation
+              (CalcID { _calcID_MolID = currentMolID, _calcID_calcKey = ONIOMKey Inherited })
+            return . join $ (molUpdatedCtxt ^? currentMolLens . molecule_CalcContext . ix calcK . calcContext_Output)
           ONIOMKey Original -> do
-            molUpdatedCtxt <- local (& moleculeL .~ thisLayerMaybeWithPolarisation) $ runCalculation
-              (CalcID { _calcID_MolID = Empty, _calcID_calcKey = ONIOMKey Original })
-            return . join $ (molUpdatedCtxt ^? molecule_CalcContext . ix calcK . calcContext_Output)
+            let molWithPolarisedLayer = molWithTasks & molIDLensGen currentMolID .~ thisLayerMaybeWithPolarisation
+            molUpdatedCtxt <- local (& moleculeL .~ molWithPolarisedLayer) $ runCalculation
+              (CalcID { _calcID_MolID = currentMolID, _calcID_calcKey = ONIOMKey Original })
+            return . join $ (molUpdatedCtxt ^? currentMolLens . molecule_CalcContext . ix calcK . calcContext_Output)
           {-
           -- Will become necessary if other calculation types should be implemented at some point.
           _ -> throwM $ MolLogicException
