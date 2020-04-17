@@ -12,12 +12,14 @@ This module provides scientific constants, conversion factors and element data.
 module Spicy.Data
   ( covalentRadii
   , defCovScaling
+  , defElectronicScalingFactors
   )
 where
 
 import           RIO
 import qualified RIO.Map                       as Map
 import           Spicy.Class
+import qualified RIO.Seq as Seq
 
 {-|
 Covalent radii of elements in Angstrom taken from
@@ -129,3 +131,13 @@ Default scaling factor for search of covalent bonds in a molecule.
 -}
 defCovScaling :: Double
 defCovScaling = 1.3
+
+----------------------------------------------------------------------------------------------------
+{-|
+Default scaling factors for electronic embedding in ONIOM as given in the literature. The first
+value in the sequence will be used to scale the multipoles one bond away from a capped atom, the
+second entry multipoles two bonds away and so on.
+-}
+-- TODO (phillip|p=50|#Wrong) - These are just some made up values. Lookup the real ones in literature.
+defElectronicScalingFactors :: Seq Double
+defElectronicScalingFactors = Seq.fromList [0.2,0.4,0.6,0.8]

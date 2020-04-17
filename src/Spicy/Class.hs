@@ -77,7 +77,6 @@ module Spicy.Class
   , Model(..)
   , _ONIOMn
   , theoryLayer
-  , embedding
   , TheoryLayer(..)
   , name
   , templateFile
@@ -87,6 +86,7 @@ module Spicy.Class
   , charge
   , mult
   , execution
+  , embedding
   , Program(..)
   , _Psi4
   , _Nwchem
@@ -169,6 +169,7 @@ module Spicy.Class
   , calcInput_Memory
   , calcInput_QMMMSpec
   , calcInput_Template
+  , calcInput_Embedding
   , CalcOutput(..)
   , calcOutput_EnergyDerivatives
   , calcOutput_Multipoles
@@ -815,7 +816,6 @@ data Model
                                     --   theory layer can contain an arbitrary stack of deeper
                                     --   layers and on the same level multiple layers may exists, to
                                     --   describe multi-centre ONIOM.
-      , _embedding   :: Embedding   -- ^ Defines the embedding type for all layers.
       }
   deriving ( Eq, Show, Generic )
 
@@ -841,6 +841,7 @@ data TheoryLayer = TheoryLayer
   , _execution    :: Execution       -- ^ Information about the execution of the computational
                                      --   chemistry software, that is not relevant for system
                                      --   description.
+  , _embedding   :: Embedding        -- ^ Defines the embedding type for the current layer.
   }
   deriving ( Eq, Show, Generic )
 
@@ -858,8 +859,9 @@ data Program
 Available embedding methods for layer interaction in ONIOM.
 -}
 data Embedding
-  = Mechanical -- ^ Mechanical embedding.
-  | Electronic -- ^ Electrostatic embedding without detailed QM/MM gradients.
+  = Mechanical                      -- ^ Mechanical embedding.
+  | Electronic (Maybe (Seq Double)) -- ^ Electrostatic embedding. Scaling factors of charges in a
+                                    --   given distance to a capped atom can be given.
   deriving ( Eq, Show, Generic )
 
 ----------------------------------------------------------------------------------------------------
@@ -1345,7 +1347,7 @@ instance FromJSON QMMMSpec
 ----------------------------------------------------------------------------------------------------
 {-|
 The context for a wrapper calculation. These are information used by the system call to the wrapper
-and the Jinja/Ginger template engine for the wrapper input file.
+and the Mustache template engine for the wrapper input file as well as some Spicy internals on
 -}
 data CalcInput = CalcInput
   { _calcInput_Task        :: !WrapperTask          -- ^ A 'Task' the wrapper needs to perform.
@@ -1369,6 +1371,10 @@ data CalcInput = CalcInput
   , _calcInput_QMMMSpec    :: !QMMMSpec             -- ^ Information specific to either a QM or MM
                                                     --   calculation.
   , _calcInput_Template    :: !Text                 -- ^ A Mustache template for the program.
+  , _calcInput_Embedding   :: !Embedding            -- ^ The embedding type for this calculation
+                                                    --   part. Might be ignored for Inherited
+                                                    --   calculations in ONIOM (low calculation
+                                                    --   level on model system).
   }
   deriving ( Eq, Show, Generic )
 

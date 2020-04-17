@@ -26,8 +26,8 @@ import           RIO                     hiding ( view
 import qualified RIO.Map                       as Map
 import           RIO.Process
 import           RIO.Seq                        ( Seq(..) )
-import qualified RIO.Seq                       as Seq
 import           Spicy.Class
+import           Spicy.Data
 import           Spicy.Logger
 import           Spicy.Molecule
 import           Spicy.ONIOM.Collector
@@ -86,12 +86,23 @@ multicentreOniomNDriver atomicTask = do
       -- Polarise the layer if applicable and requested by electronic embedding
       thisLayerMaybeWithPolarisation <- if currentMolID == Empty
         then return currentMol
-        -- TODO (phillip|p=100|#Unfinished) - These values are here just for testing. We need to get them from the reader context somehow.
-        -- TODO (phillip|p=100|#Unfinished) - Electronic embedding now happens always but shouldn't. Instead obtain somehow from a reader context.
         -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
-        else getPolarisationCloudFromAbove molWithTasks
-                                           currentMolID
-                                           (Seq.fromList [0.2, 0.4, 0.6, 0.8])
+        else do
+          let embeddingOfThisOrignalLayer =
+                currentMol
+                  ^? molecule_CalcContext
+                  .  ix (ONIOMKey Original)
+                  .  calcContext_Input
+                  .  calcInput_Embedding
+          case embeddingOfThisOrignalLayer of
+            Just (Electronic scalingFactors) -> getPolarisationCloudFromAbove
+              molWithTasks
+              currentMolID
+              (fromMaybe defElectronicScalingFactors scalingFactors)
+            Just Mechanical -> return currentMol
+            Nothing         -> throwM $ MolLogicException
+              "multicentreOniomNDriver"
+              "The calculation input does not contain any embedding information for a high level calculation on a model system or this no ONIOM calculation was specified."
 
       -- DEBUG
       logDebug $ "Polarised local molecule: " <> displayShow thisLayerMaybeWithPolarisation
