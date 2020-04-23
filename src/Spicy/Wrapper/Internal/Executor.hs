@@ -88,7 +88,7 @@ runCalculation calcID = do
     $  "Running calculation with ID \""
     <> displayShow (calcID ^. calcID_calcKey)
     <> "\" on "
-    <> (text2Utf8Builder . molID2OniomHumandID $ calcID ^. calcID_MolID)
+    <> molID2OniomHumandID (calcID ^. calcID_MolID)
     <> "."
 
   -- Create the lenses for accessing calculation and molecule.

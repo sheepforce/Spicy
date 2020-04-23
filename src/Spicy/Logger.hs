@@ -187,7 +187,7 @@ getModelAsBuilder = do
 {-|
 Translation of a 'MolID' to a more human readable text. Valid in the context of ONIOM calculations.
 -}
-molID2OniomHumandID :: MolID -> Text
+molID2OniomHumandID :: MolID -> Utf8Builder
 molID2OniomHumandID Empty = "Layer 0 (real system)"
 molID2OniomHumandID molID =
   let depth  = Seq.length molID
@@ -199,7 +199,7 @@ molID2OniomHumandID molID =
         )
         ("Layer " <> tShow depth <> " ")
         molID
-  in  idTree
+  in  display idTree
 
 ----------------------------------------------------------------------------------------------------
 {-|
