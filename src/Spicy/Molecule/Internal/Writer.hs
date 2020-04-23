@@ -36,6 +36,8 @@ import           Data.Massiv.Array             as Massiv
                                                 , zip
                                                 )
 import           Data.Maybe
+import qualified Data.Text.Lazy.Builder        as TextBuilder
+import           Formatting
 import           RIO                     hiding ( view
                                                 , (^.)
                                                 )
@@ -44,36 +46,56 @@ import qualified RIO.HashMap                   as HashMap
 import qualified RIO.List                      as List
 import qualified RIO.Seq                       as Seq
 import qualified RIO.Text                      as Text
+import qualified RIO.Text.Lazy                 as TextLazy
 import           Spicy.Class
 import           Spicy.Generic
 import           Spicy.Molecule.Internal.Util
 import           System.Path                   as Path
 import qualified System.Path.Directory         as Dir
-import           Text.Printf
+import           Spicy.Logger
 
 {-|
 Write a Molden XYZ file from a molecule. This format ignores all deep level layers of a molecule.
 -}
 writeXYZ :: MonadThrow m => Molecule -> m Text
-writeXYZ mol = toXYZ <$> checkMolecule mol
+writeXYZ mol = do
+  _ <- checkMolecule mol
+  toXYZ mol
  where
-  -- Assemble a XYZ file from a moleculeimport           Control.Monad
-  toXYZ :: Molecule -> Text
-  toXYZ m =
+  -- Assemble a XYZ file from a molecule.
+  toXYZ :: MonadThrow m => Molecule -> m Text
+  toXYZ m = do
     let -- Line 1 of the header contains the number of atoms
-        headL1 = Text.pack . show . IntMap.size $ m ^. molecule_Atoms
+        nAtoms = bprint (int % "\n") . IntMap.size $ (m ^. molecule_Atoms)
         -- Line 2 of the header contains 1 line of commenText. Remove all linebreaks by filtering.
-        headL2 = Text.filter (not . isEndOfLine) $ m ^. molecule_Comment
-        atomLs = IntMap.foldr' (\atom acc -> atomLineWriter atom <> acc) "" $ m ^. molecule_Atoms
-    in  Text.unlines [headL1, headL2] <> atomLs
+        commentLine =
+          bprint (stext % "\n") . Text.filter (not . isEndOfLine) $ m ^. molecule_Comment
+
+    -- Every atom printed as a single line.
+    atomLines <- fmap (fmap snd . IntMap.toAscList) . traverse atomLineWriter $ m ^. molecule_Atoms
+
+    let xyzFileBuilder = foldl' (<>) "" $ nAtoms : commentLine : atomLines
+        xyzFile        = TextLazy.toStrict . TextBuilder.toLazyText $ xyzFileBuilder
+
+    return xyzFile
    where
-    atomLineWriter :: Atom -> Text
-    atomLineWriter a = Text.pack $ printf
-      "%-4s    %12.8F    %12.8F    %12.8F\n"
-      (show $ a ^. atom_Element)
-      (fromMaybe 0.0 $ getVectorS (a ^. atom_Coordinates) Massiv.!? 0)
-      (fromMaybe 0.0 $ getVectorS (a ^. atom_Coordinates) Massiv.!? 1)
-      (fromMaybe 0.0 $ getVectorS (a ^. atom_Coordinates) Massiv.!? 2)
+    atomLineWriter :: MonadThrow m => Atom -> m TextBuilder.Builder
+    atomLineWriter a = do
+      let elementOfAtom = a ^. atom_Element
+          isDummy       = a ^. atom_IsDummy
+          symbolToShow  = if isDummy then "Xx" else show elementOfAtom
+      xCoord <- getVectorS (a ^. atom_Coordinates) Massiv.!? 0
+      yCoord <- getVectorS (a ^. atom_Coordinates) Massiv.!? 1
+      zCoord <- getVectorS (a ^. atom_Coordinates) Massiv.!? 2
+
+      let coordF   = left 20 ' ' %. fixed 12
+          atomLine = bprint ((right 5 ' ' %. string) % coordF % coordF % coordF % "\n")
+                            symbolToShow
+                            xCoord
+                            yCoord
+                            zCoord
+
+      return atomLine
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -85,67 +107,74 @@ for visualisation but obviously not for MM.
 This format ingores all deeper level layers of a molecule.
 -}
 writeTXYZ :: MonadThrow m => Molecule -> m Text
-writeTXYZ mol
-  | ffTypeCheck
-  = toTXYZ <$> (checkMolecule =<< reIndex2BaseMolecule (mol & molecule_SubMol .~ IntMap.empty))
-  | otherwise
-  = throwM
-    $ MolLogicException "writeMOL2" "writeTXYZ: Not all atoms have Tinker XYZ style atom types."
+writeTXYZ mol = do
+  _ <- checkMolecule mol
+  toTXYZ mol
  where
-  -- Check if all atoms have TXYZ atom types.
-  ffTypeCheck = all (== FFTXYZ 0) . IntMap.map (^. atom_FFType) $ mol ^. molecule_Atoms
-  --
   -- Write the molecule as a TXYZ formatted file.
-  toTXYZ :: Molecule -> Text
-  toTXYZ m =
-    let -- The header line contains the number of atoms and separated by a space a commenText.
-        headL1 =
-            (Text.pack . show . IntMap.size $ mol ^. molecule_Atoms)
-              <> "  "
-              <> Text.filter (not . isEndOfLine) (mol ^. molecule_Comment)
-              <> "\n"
-        -- The atom lines contain:
-        --   - serial number of the atom
-        --   - element symbol of the atom
-        --   - XYZ coordinates in angstrom
-        --   - The integer number of the atom type
-        --   - The indices of all atoms, where to bind to
-        atomLs = IntMap.foldrWithKey' (\key atom acc -> atomLineWriter key atom m <> acc)
-                                      ""
-                                      (m ^. molecule_Atoms)
-    in  headL1 <> atomLs
-  --
+  toTXYZ :: MonadThrow m => Molecule -> m Text
+  toTXYZ m = do
+    let nAtoms     = IntMap.size $ mol ^. molecule_Atoms
+        comment    = mol ^. molecule_Comment
+        headerLine = bprint ((left 6 ' ' %. int) % " " % stext % "\n") nAtoms comment
+
+    atomLines <-
+      fmap (fmap snd . IntMap.toAscList)
+      .  IntMap.traverseWithKey (\key atom -> atomLineWriter key atom m)
+      $  m
+      ^. molecule_Atoms
+
+    let txyzFileBuilder = foldl' (<>) "" $ headerLine : atomLines
+        txyzFile        = TextLazy.toStrict . TextBuilder.toLazyText $ txyzFileBuilder
+
+    return txyzFile
+
   -- Writes the first part of an atom line in a TXYZ file (without bonds).
-  atomFirstPart :: Int -> Atom -> Text
-  atomFirstPart k a =
-    let ffNum = case a ^. atom_FFType of
-          FFTXYZ i -> i
-          _        -> 0
-    in  Text.pack $ printf "%6d    %2s    %12.8F    %12.8F    %12.8F    %6d"
-                           (k + 1)
-                           (show $ a ^. atom_Element)
-                           (fromMaybe 0.0 $ getVectorS (a ^. atom_Coordinates) Massiv.!? 0)
-                           (fromMaybe 0.0 $ getVectorS (a ^. atom_Coordinates) Massiv.!? 1)
-                           (fromMaybe 0.0 $ getVectorS (a ^. atom_Coordinates) Massiv.!? 2)
-                           ffNum
-  --
-  -- Writes the second part of an atom line in a TXYZ file (bond targets).
-  atomSecondPart :: Int -> Molecule -> Text
-  atomSecondPart k m =
-    let targets =
-            IntSet.fromList
-              .  fmap snd
-              .  HashMap.keys
-              .  HashMap.filterWithKey (\(ixO, _) val -> ixO == k && val)
-              $  m
-              ^. molecule_Bonds
-    in  Text.stripEnd
-            (IntSet.foldr' (\x xs -> Text.pack (printf "    %6d" (x + 1)) <> xs) "" targets)
-          <> "\n"
-  --
-  -- Writes an complete atom line.
-  atomLineWriter :: Int -> Atom -> Molecule -> Text
-  atomLineWriter k a m = atomFirstPart k a <> atomSecondPart k m
+  atomLineWriter :: MonadThrow m => Int -> Atom -> Molecule -> m TextBuilder.Builder
+  atomLineWriter k a m = do
+    xCoord <- getVectorS (a ^. atom_Coordinates) Massiv.!? 0
+    yCoord <- getVectorS (a ^. atom_Coordinates) Massiv.!? 1
+    zCoord <- getVectorS (a ^. atom_Coordinates) Massiv.!? 2
+    ffNum  <- case a ^. atom_FFType of
+      FFTXYZ i -> return i
+      _ ->
+        throwM
+          .  MolLogicException "writeTXYZ"
+          $ "Writing a Tinker XYZ file requires all atoms to have a force field type assigned, but atom "
+          <> show k
+          <> " has another type."
+
+    let atomElement = a ^. atom_Element
+        -- Defining the formatter for the first part.
+        nFmt        = left 6 ' ' %. int
+        elmFmt      = right 2 ' ' %. string
+        coordFmt    = left 10 ' ' %. fixed 6
+        -- Build the first part (index, element, coordinates, force field type).
+        firstPart   = bprint
+          (nFmt % "  " % elmFmt % "  " % coordFmt % "  " % coordFmt % "  " % coordFmt % "  " % nFmt)
+          k
+          (show atomElement)
+          xCoord
+          yCoord
+          zCoord
+          ffNum
+        -- Build the second part (bond targets).
+        secondPart = atomSecondPart k m
+
+    return $ firstPart <> secondPart <> "\n"
+   where
+    -- Writes the second part of an atom line in a TXYZ file (bond targets).
+    atomSecondPart :: Int -> Molecule -> TextBuilder.Builder
+    atomSecondPart k' m' =
+      let targets =
+              IntSet.fromList
+                .  fmap snd
+                .  HashMap.keys
+                .  HashMap.filterWithKey (\(ixO, _) val -> ixO == k' && val)
+                $  m'
+                ^. molecule_Bonds
+          targetFmt = left 6 ' ' %. int
+      in  IntSet.foldr' (\x xs -> bprint targetFmt x <> xs) "" targets
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -153,187 +182,279 @@ Write a simplified .mol2 file (Tripos SYBYL) from a 'Molecule', containing the a
 (single bonds only) and partial charges. This format writes atoms and bonds __only__ from the the
 first sublayer of the 'Molecule', which includes the fragment definitions.
 -}
--- TODO (phillip|p=75|#Broken) - writeMol2 is broken now, as fragments live in _molecule_Fragment now. Fix while porting to text formatters.
 writeMOL2 :: MonadThrow m => Molecule -> m Text
-writeMOL2 mol
-  | ffTypeCheck = toMOL2 <$> (checkMolecule =<< reIndex2BaseMolecule mol)
-  | otherwise   = throwM $ MolLogicException "writeMOL2" "Not all atoms have MOL2 style atom types."
+writeMOL2 mol = do
+  _ <- checkMolecule mol
+  toMOL2 mol
  where
-  ffTypeCheck = all (== FFMol2 "") . IntMap.map (^. atom_FFType) $ mol ^. molecule_Atoms
-  --
   -- Write a MOL2 formatted text from the current molecule.
-  toMOL2 :: Molecule -> Text
-  toMOL2 m =
-    let -- First sublayer of the molecule.
-        subMols = m ^. molecule_SubMol
-    in  toMOLECULE m <> toATOM m subMols <> toBOND m
-  --
-  -- Write the "@<TRIPOS>MOLECULE" block.
-  toMOLECULE :: Molecule -> Text
-  toMOLECULE m =
-    let nAtoms = IntMap.size $ m ^. molecule_Atoms
-        -- Make the bonds unidirectorial firsText.
-        bonds  = makeBondMatUnidirectorial $ m ^. molecule_Bonds
-        -- Then get the overall number of bonds.
-        nBonds = HashMap.size bonds
-    in  Text.unlines
-          [ "@<TRIPOS>MOLECULE"
-          , Text.filter (not . isEndOfLine) $ m ^. molecule_Comment
-          , (Text.pack . show $ nAtoms) <> " " <> (Text.pack . show $ nBonds) <> " 0 0 0"
-          , "SMALL"
-          , "USER_CHARGES"
-          , ""
-          ]
-  --
-  -- Write the @<TRIPOS>ATOM block.
-  toATOM :: Molecule -> IntMap Molecule -> Text
-  toATOM m sM =
-    let
-      annoFrags = sM
-      atomLines = IntMap.foldrWithKey'
-        (\key atom acc ->
-          let -- The index of the submol/fragment, in which the current atom can be found
-            fragmentNum   = findAtomInSubMols key annoFrags
-            fragment      = fragmentNum >>= (`IntMap.lookup` annoFrags)
-            fragmentLabel = _molecule_Comment <$> fragment
-            thisAtomLine  = Text.pack $ printf
-              "%7d %-6s %12.8F %12.8F %12.8F %-8s %4d  %10s %8.4F\n"
-              (key + 1)                                                                -- Index
-              (Text.unpack $ atom ^. atom_Label)                                       -- Atom label
-              (fromMaybe 0.0 $ getVectorS (atom ^. atom_Coordinates) Massiv.!? 0) -- X
-              (fromMaybe 0.0 $ getVectorS (atom ^. atom_Coordinates) Massiv.!? 1) -- Y
-              (fromMaybe 0.0 $ getVectorS (atom ^. atom_Coordinates) Massiv.!? 2) -- Z
-              (case atom ^. atom_FFType of                                             -- Atom label
-                FFMol2 t -> Text.unpack t
-                _        -> show $ atom ^. atom_Element
-              )
-              (fromMaybe 0 fragmentNum)                          -- Fragment number
-              (fromMaybe "UNL1" $ Text.unpack <$> fragmentLabel) -- Fragment name
-              ((Data.Maybe.fromMaybe 0 $ atom ^. atom_Multipoles . multipole_Monopole) :: Double)
-          in
-            thisAtomLine <> acc
-        )
-        ""
-        (m ^. molecule_Atoms)
-    in
-      "@<TRIPOS>ATOM\n" <> atomLines
-  --
-  -- Write the "@<TRIPOS>BOND" block. All bonds are defined as single bonds for convenience.
-  toBOND :: Molecule -> Text
-  toBOND m =
-    let -- Make the bonds unidirectorial.
-        bonds     = makeBondMatUnidirectorial $ m ^. molecule_Bonds
-        -- Write a single line for each bond.
-        -- Fold the keys (origins) in the IntMap to bond lines. Each origin key might give
-        -- multiple lines (one per target), and the targets are folded in an inner fold.
-        bondLines = snd $ IntMap.foldrWithKey'
-          (\origin targets (nthBond, prevBLines) ->
+  toMOL2 :: MonadThrow m => Molecule -> m Text
+  toMOL2 m = do
+    let moleculeBlock = toMOLECULE m
+        bondBlock     = toBOND m
+    atomBlock <- toATOM m
+    return . TextLazy.toStrict . TextBuilder.toLazyText $ moleculeBlock <> atomBlock <> bondBlock
 
-            let -- For each target, write a new line. This is the inner loop, processing all
-                -- targets for the current origin in the outer fold.
-                targetLines = snd $ IntSet.foldr'
-                  (\target (nthTarget, prevTLines) ->
-                    let targetLine = Text.pack $ printf "%6d %6d %6d %4s\n"
-                                                        (nthTarget + nthBond)
-                                                        (origin + 1)
-                                                        (target + 1)
-                                                        ("1" :: String)
-                    in  (nthTarget + 1, prevTLines <> targetLine)
-                  )
-                  (0, "")
-                  targets
-            in  (nthBond + IntSet.size targets, prevBLines <> targetLines)
-          )
-          (1, "")
-          (bondMat2ImIs bonds)
-    in  "@<TRIPOS>BOND\n" <> bondLines
+  -- Write the "@<TRIPOS>MOLECULE" block.
+  toMOLECULE :: Molecule -> TextBuilder.Builder
+  toMOLECULE m =
+    let nAtoms  = IntMap.size $ m ^. molecule_Atoms
+        -- Make the bonds unidirectorial first.
+        bonds   = makeBondMatUnidirectorial $ m ^. molecule_Bonds
+        -- Then get the overall number of bonds.
+        nBonds  = HashMap.size bonds
+        -- Comment line without any potential line breaks.
+        comment = TextBuilder.fromText . Text.filter (not . isEndOfLine) $ m ^. molecule_Comment
+    in  "@<TRIPOS>MOLECULE\n"
+          <> (comment <> "\n")
+          <> bprint (int % " " % int % " 0 0 0\n") nAtoms nBonds
+          <> "SMALL\n"
+          <> "USER_CHARGES\n"
+          <> "\n"
+
+  -- Write the @<TRIPOS>ATOM block.
+  toATOM :: MonadThrow m => Molecule -> m TextBuilder.Builder
+  toATOM m = do
+    -- Associations of the atom key to its fragment label and fragment number, if assigned to a
+    -- fragment at all.
+    keyToFragAssoc <- getAtomAssociationMap m
+
+    -- Atom line text builders.
+    atomLines      <-
+      fmap (fmap snd . IntMap.toAscList)
+      . IntMap.traverseWithKey (\atomKey atomFragAssoc -> atomLineWriter atomKey atomFragAssoc)
+      $ keyToFragAssoc
+
+    return . foldl' (<>) "" $ "@<TRIPOS>ATOM\n" : atomLines
+   where
+    atomLineWriter
+      :: MonadThrow m
+      => Int                           -- ^ Int key of the atom from the original IntMap.
+      -> (Atom, Maybe (Int, Fragment)) -- ^ Association of the atom with its fragment id and label,
+                                       --   if the atom was assigned to a fragment.
+      -> m TextBuilder.Builder
+    atomLineWriter atomKey (atom, fragNumAndLabel) = do
+      let -- Define the formatters.
+          keyFmt     = left 6 ' ' %. int
+          labelFmt   = right 6 ' ' %. stext
+          coordFmt   = left 10 ' ' %. fixed 4
+          ffFmt      = right 6 ' ' %. stext
+          fragnumFmt = left 6 ' ' %. int
+          fragFmt    = right 10 ' ' %. stext
+          chrgFmt    = coordFmt
+          fullFormatter =
+            (keyFmt % " ")
+              % (labelFmt % " ")
+              % (coordFmt % " ")
+              % (coordFmt % " ")
+              % (coordFmt % " ")
+              % (ffFmt % " ")
+              % (fragnumFmt % " ")
+              % (fragFmt % " ")
+              % chrgFmt
+              % "\n"
+
+      -- Get the coordinates.
+      xCoord       <- getVectorS (atom ^. atom_Coordinates) Massiv.!? 0
+      yCoord       <- getVectorS (atom ^. atom_Coordinates) Massiv.!? 1
+      zCoord       <- getVectorS (atom ^. atom_Coordinates) Massiv.!? 2
+
+      -- Get the force field type for this atom.
+      atomFFString <- case atom ^. atom_FFType of
+        FFMol2 label -> return label
+        _            -> throwM $ MolLogicException
+          "writeMOL2"
+          "Writing an atom to a mol2 file requires that the atom has a force field type of FFMol2."
+
+      -- Obtain other information for the atom, which are required for printing.
+      let pCharge   = fromMaybe 0 $ atom ^. atom_Multipoles . multipole_Monopole
+          atomLabel = case atom ^. atom_Label of
+            "" -> "X"
+            l  -> l
+          fragmentNum   = fromMaybe 0 . fmap fst $ fragNumAndLabel
+          fragmentLabel = fromMaybe "UNK" . fmap (_fragment_Label . snd) $ fragNumAndLabel
+
+      let atomLine = bprint fullFormatter
+                            atomKey
+                            atomLabel
+                            xCoord
+                            yCoord
+                            zCoord
+                            atomFFString
+                            fragmentNum
+                            fragmentLabel
+                            pCharge
+      return atomLine
+
+  -- Write the "@<TRIPOS>BOND" block. All bonds are defined as single bonds for convenience.
+  toBOND :: Molecule -> TextBuilder.Builder
+  toBOND m =
+    let
+      -- Define the formatters.
+      nFmt       = left 6 ' ' %. int
+      sndPartFmt = " " % nFmt % " " % nFmt % "     1\n"
+      -- Print bond lines unidirectorial.
+      uniBonds   = makeBondMatUnidirectorial $ m ^. molecule_Bonds
+      bondLinesSndPart =
+        fmap snd
+          . HashMap.toList
+          . HashMap.mapWithKey (\(ixO, ixT) val -> if val then bprint sndPartFmt ixO ixT else "")
+          $ uniBonds
+      bondLines =
+        List.map (\(n, sndPart) -> bprint (nFmt % builder) n sndPart)
+          . List.zip [1 ..]
+          $ bondLinesSndPart
+    in
+      foldl' (<>) "" $ "@<TRIPOS>BOND\n" : bondLines
 
 ----------------------------------------------------------------------------------------------------
 {-|
 Writes a 'Molecule' to a PDB file. The PDB format is simplified and recounts atom, discards
 different chains, sets dummy values for the temperature and occupation factors and cannot write
-charges (as PDB) expects integers.
+charges, as PDB expects integers.
 -}
--- TODO (phillip|p=75|#Broken) - writePDB is broken now, as fragments live in _molecule_Fragment now. Fix while porting to text formatters.
 writePDB :: MonadThrow m => Molecule -> m Text
-writePDB mol
-  | ffTypeCheck = toPDB <$> (checkMolecule =<< reIndex2BaseMolecule mol)
-  | otherwise   = throwM $ MolLogicException "writePDB" "Not all atoms have PDB style atom types."
+writePDB mol = do
+  _ <- checkMolecule mol
+  toPDB mol
  where
-  ffTypeCheck = all (== FFPDB "") . IntMap.map (^. atom_FFType) $ mol ^. molecule_Atoms
-  toPDB :: Molecule -> Text
-  toPDB m =
-    let label = Text.filter (not . isEndOfLine) $ m ^. molecule_Comment
-        -- Strange construct to avoid conflict with the parser with trailing white space in the
-        -- "HEADER" records.
-        header =
-            (Text.stripEnd . Text.pack $ printf "%-6s    %-70s" ("HEADER" :: Text) label) <> "\n"
-    in  header <> toHETATM m <> toCONECT m
-  toHETATM :: Molecule -> Text
-  toHETATM m =
-    let
-      subMols   = m ^. molecule_SubMol
-      annoFrags = subMols
-      atomLines = IntMap.foldrWithKey'
-        (\key atom acc ->
-          let
-            fragmentNum   = findAtomInSubMols key annoFrags
-            fragment      = fragmentNum >>= (`IntMap.lookup` annoFrags)
-            fragmentLabel = _molecule_Comment <$> fragment
-            thisAtomLine =
-              Text.concat
-                . fmap Text.pack
-                $ [ printf "%-6s" ("HETATM" :: Text)                                              -- 1-6: Record type
-                  , printf "%5d " (key + 1)                                                       -- 7-11: Atom serial number
-                  , printf
-                    "%-4s "
-                    (if Text.length (atom ^. atom_Label) <= 3
-                      then " " <> Text.unpack (atom ^. atom_Label)
-                      else Text.unpack $ atom ^. atom_Label
-                    )
-                  , printf "%3s " (fromMaybe "UNL" $ Text.unpack . Text.take 3 <$> fragmentLabel) -- 18-20: Residue name
-                  , printf "%1s"     ("A" :: Text)                                        -- 22: Chain identifier
-                  , printf "%4d    " (fromMaybe 0 fragmentNum)                            -- 23-26: Residue sequence number
-                  , printf "%8.3F"
-                           (fromMaybe 0.0 $ getVectorS (atom ^. atom_Coordinates) Massiv.!? 0)          -- 31-38: X
-                  , printf "%8.3F"
-                           (fromMaybe 0.0 $ getVectorS (atom ^. atom_Coordinates) Massiv.!? 1)          -- 39-46: Y
-                  , printf "%8.3F"
-                           (fromMaybe 0.0 $ getVectorS (atom ^. atom_Coordinates) Massiv.!? 2)          -- 47-54: Z
-                  , printf "%6.2F"           (1.0 :: Double)                                      -- 55-60: Occupancy
-                  , printf "%6.2F          " (0.0 :: Double)                                      -- 61-66: Temperature factor
-                  , printf "%2s" (Text.toUpper . Text.pack . show $ atom ^. atom_Element)         -- 77-78: Element symbol
-                  , printf "%2s\n"           ("" :: Text)                                         -- 79-80: Charge of the atom.
-                  ]
-          in
-            thisAtomLine <> acc
-        )
-        ""
-        (m ^. molecule_Atoms)
-    in
-      atomLines
-  toCONECT :: Molecule -> Text
-  toCONECT m =
-    IntMap.foldrWithKey'
-        (\o ts acc -> let originGroupLines = writeOriginLines o ts in originGroupLines <> acc)
-        ""
-      .  bondMat2ImIs
-      $  m
-      ^. molecule_Bonds
+  toPDB :: MonadThrow m => Molecule -> m Text
+  toPDB m = do
+    let label   = Text.filter (not . isEndOfLine) $ m ^. molecule_Comment
+        -- (Maybe it is necessary to strip whitespace at the end of the line.)
+        header  = bprint ("HEADER    " % (right 70 ' ' %. stext) % "\n") label
+        conects = toCONECT m
+    hetatoms <- toHETATM m
+    return . TextLazy.toStrict . TextBuilder.toLazyText $ header <> hetatoms <> conects
+  -- Writes all atoms as HETATM records to the PDB.
+  toHETATM :: MonadThrow m => Molecule -> m TextBuilder.Builder
+  toHETATM m = do
+    atomFragAssocs <- getAtomAssociationMap m
+    atomLines      <-
+      fmap (fmap snd . IntMap.toAscList)
+      . IntMap.traverseWithKey
+          (\atomKey (atom, fragNumAndLabel) -> writeAtomLine atomKey atom fragNumAndLabel)
+      $ atomFragAssocs
+    return . foldl' (<>) "" $ atomLines
    where
-    writeOriginLines :: Int -> IntSet -> Text
+    writeAtomLine :: MonadThrow m => Int -> Atom -> Maybe (Int, Fragment) -> m TextBuilder.Builder
+    writeAtomLine atomID atom fragNumAndLabel = do
+      -- Define the formatters.
+      let hetatmFmt   = "HETATM"                               -- 1-6 -> 6
+          serialFmt   = (left 5 ' ' %. int) % " "              -- 7-11 (+12w) -> 5
+          atomNameFmt = right 4 ' ' %. stext                   -- 13-16- -> 4 - Modify label depending in length before
+          altLocFmt   = " "                                    -- 17 -> 1
+          resNameFmt  = (right 3 ' ' %. stext) % " "           -- 18-20 (+19w) -> 3
+          chainIDFmt  = char                                   -- 22 -> 1
+          resSeqFmt   = left 4 ' ' %. int                      -- 23-26 -> 4
+          icodeFmt    = " "                                    -- 27 -> 1
+          coordFmt    = left 8 ' ' %. fixed 3                  -- 31-38 + 39-46 + 47-54 -> 3*8
+          occFmt      = left 6 ' ' %. fixed 2                  -- 55-60 -> 6
+          tempfacFmt  = (left 6 ' ' %. fixed 2) % "          " -- 61-66 (+67-76w) -> 6
+          elementFmt  = left 2 ' ' %. stext                    -- 77-78 -> 2
+          chgFmt      = left 2 ' ' %. stext                    -- 79-80 -> 2
+
+      -- Get the coordinates of the atom.
+      xCoord <- getVectorS (atom ^. atom_Coordinates) Massiv.!? 0
+      yCoord <- getVectorS (atom ^. atom_Coordinates) Massiv.!? 1
+      zCoord <- getVectorS (atom ^. atom_Coordinates) Massiv.!? 2
+
+      -- Get other values for printing.
+      let -- The label of the atom. Must not be longer than 4 and 4 indicates, that it contains an
+          -- element symbol with 2 characters. Labels of 3 or shorter start 1 character later than
+          -- labels with 4 characters.
+          pdbSaneAtomName =
+            let label4OrShorter = Text.take 4 $ atom ^. atom_Label
+            in  if Text.length label4OrShorter <= 3 then " " <> label4OrShorter else label4OrShorter
+          -- The residue name of the PDB can be not longer than 3 characters.
+          pdbSaneResName =
+            fromMaybe "UNL" . fmap (Text.take 3 . _fragment_Label . snd) $ fragNumAndLabel
+          -- The residue/fragment ID, that atom belongs to.
+          pdbSaneResSeq  = fromMaybe 0 . fmap fst $ fragNumAndLabel
+          -- The element symbol limited to 2 characters and capitalised.
+          pdbSaneElement = Text.toUpper . Text.take 2 . tShow $ atom ^. atom_Element
+          -- The chain ID of this atom.
+          pdbChainID     = fromMaybe ' ' . ((_fragment_Chain . snd) =<<) $ fragNumAndLabel
+
+      -- Format an atom line.
+      let atomLine = bprint
+            ( hetatmFmt
+            % serialFmt
+            % atomNameFmt
+            % altLocFmt
+            % resNameFmt
+            % chainIDFmt
+            % resSeqFmt
+            % icodeFmt
+            % coordFmt
+            % coordFmt
+            % coordFmt
+            % occFmt
+            % tempfacFmt
+            % elementFmt
+            % chgFmt
+            % "\n"
+            )
+            atomID
+            pdbSaneAtomName
+            pdbSaneResName
+            pdbChainID
+            pdbSaneResSeq
+            xCoord
+            yCoord
+            zCoord
+            (1.0 :: Double) -- Occupancy -- irrelevant for Spicy, therefore simply 1
+            (0.0 :: Double) -- Temperature factor -- irrelevant for Spicy, therefore simply 0
+            pdbSaneElement
+            "" -- Charge as string. Idk. Normally not set.
+      return atomLine
+
+  -- Write all bonds to CONNECT records. They are bidirectorial, but the format is complicated, as a
+  -- maximum of 4 bond targets are allowed per line for an origin.
+  toCONECT :: Molecule -> TextBuilder.Builder
+  toCONECT m =
+    let bondMat            = m ^. molecule_Bonds
+        allBondOrigins     = fmap fst . HashMap.keys $ bondMat
+        -- Construct groupings from every possible origin to all targets.
+        originTargetGroups = fmap
+          (\origin ->
+            let targets =
+                    IntSet.fromList
+                      . fmap snd
+                      . HashMap.keys
+                      . HashMap.filterWithKey (\(ixO, _) val -> ixO == origin && val)
+                      $ bondMat
+            in  (origin, targets)
+          )
+          allBondOrigins
+        -- Translate all groupings into the corresponding CONECT lines.
+        connctLines = foldl' (<>) "" . fmap (uncurry writeOriginLines) $ originTargetGroups
+    in  connctLines
+   where
+    -- Write all connect lines, that are necessary for a given origin (in most cases that will be
+    -- just one).
+    writeOriginLines :: Int -> IntSet -> TextBuilder.Builder
     writeOriginLines origin targets =
-      let targetGroups = chunksOf 4 . IntSet.toList $ targets
+      let -- Create groups of 4 targets per origin.
+          targetGroups = chunksOf 4 . IntSet.toList $ targets
           conectGroups = zip (List.repeat origin) targetGroups
-      in  Text.concat
-            . fmap
-                (\(o, ts) ->
-                  "CONECT"
-                    <> Text.pack (printf "%5d" (o + 1))
-                    <> (Text.concat . fmap (Text.pack . printf "%5d" . (+ 1)) $ ts)
-                    <> "\n"
-                )
-            $ conectGroups
+
+          -- Create the formatters.
+          conectFmt    = "CONECT" -- 1-6 -> 6
+          nFmt         = left 5 ' ' %. int
+
+          -- Construct all necessary connect lines.
+          conectLines  = fmap
+            (\(origin', targetSet) ->
+              let firstPart  = bprint (conectFmt % nFmt) origin'
+                  secondPart = foldl'
+                    (\targetAcc currentTarget -> targetAcc <> bprint nFmt currentTarget)
+                    ""
+                    targetSet
+              in  firstPart <> secondPart <> "\n"
+            )
+            conectGroups
+      in  foldl' (<>) "" conectLines
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -358,61 +479,57 @@ writeLayout
   => (Molecule -> Either SomeException Text)
   -> RIO env ()
 writeLayout writer = do
-  let molIDStart = Seq.empty
-  goLayers molIDStart
+  inputFile <- view inputFileL
+  let writerDir = getDirPath (inputFile ^. permanent) </> Path.dirPath "MoleculeLayout"
+
+  -- Create the directory for the molecule files.
+  liftIO $ Dir.createDirectoryIfMissing True writerDir
+
+  goLayers writerDir Seq.Empty
  where
   -- Removes all submolecules in preparation for a writer.
   removeSubMols :: Molecule -> Molecule
   removeSubMols mol = mol & molecule_SubMol .~ IntMap.empty
 
   -- Recursively write all layers of a molecule.
-  goLayers :: (HasInputFile env, HasMolecule env, HasLogFunc env) => MolID -> RIO env ()
-  goLayers molID = do
+  goLayers :: (HasMolecule env, HasLogFunc env) => Path.AbsRelDir -> MolID -> RIO env ()
+  goLayers writerDir molID = do
     topMol <- view moleculeL
-    writeMolFromID molID
+    writeMolFromID writerDir molID
     thisMol <- getMolByID topMol molID
     let nextMolIDs = fmap (molID |>) . Seq.fromList . IntMap.keys $ thisMol ^. molecule_SubMol
-    mapM_ goLayers nextMolIDs
+    mapM_ (goLayers writerDir) nextMolIDs
 
   -- Write a single layer specified by its MolID to a file in a unique directory.
-  writeMolFromID :: (HasInputFile env, HasMolecule env, HasLogFunc env) => MolID -> RIO env ()
-  writeMolFromID molID = do
-    molTop    <- view moleculeL
-    inputFile <- view inputFileL
-    let
-      -- Create a directory pattern for molecules given by the hierarchy.
-      permaDir            = getDirPath $ inputFile ^. permanent
-      layoutDir           = permaDir </> Path.dirPath "MoleculeLayout"
-      (layoutLayerDir, _) = foldl'
-        (\(dirAcc, recursionDepth) layerKey ->
-          let molDir =
-                  dirAcc </> Path.relDir ("Layer" <> show recursionDepth <> "-Mol" <> show layerKey)
-              nextDepthCounter = recursionDepth + 1
-          in  (molDir, nextDepthCounter)
-        )
-        (layoutDir, 0 :: Int)
-        molID
-      molLayerOfInterest = getMolByID molTop molID
-      molWriterText      = writer =<< removeSubMols <$> molLayerOfInterest
-      molFilePath        = layoutLayerDir </> Path.relFile "Molecule.dat"
+  writeMolFromID :: (HasMolecule env, HasLogFunc env) => Path.AbsRelDir -> MolID -> RIO env ()
+  writeMolFromID writerDir molID = do
+    molTop <- view moleculeL
+    let molLayerOfInterest = getMolByID molTop molID
+        layerONIOMHumanID =
+          Text.unpack . removeWhiteSpace . textDisplay . molID2OniomHumandID $ molID
+        molWriterText = writer =<< removeSubMols <$> molLayerOfInterest
+        molFilePath   = writerDir </> Path.relFile layerONIOMHumanID
 
     -- Try writing the current layer to a file.
     case molWriterText of
       Left exception ->
         logWarnS "writeLayout"
-          $  "Writing molecule with MolID "
-          <> (text2Utf8Builder . tShow . toList $ molID)
-          <> " failed with: "
+          $  "Writing molecule "
+          <> molID2OniomHumandID molID
+          <> " (MolID "
+          <> displayShow molID
+          <> ") failed with: "
           <> (text2Utf8Builder . tShow $ exception)
       Right molText -> do
-        liftIO $ Dir.createDirectoryIfMissing True layoutLayerDir
         hasMolFileAlready <- liftIO $ Dir.doesFileExist molFilePath
         if hasMolFileAlready
           then do
             logWarnS "writeLayout"
-              $  "Molecule file for MolID "
-              <> (text2Utf8Builder . tShow . toList $ molID)
-              <> " does already exist at "
+              $  "Molecule file for "
+              <> molID2OniomHumandID molID
+              <> " (MolID "
+              <> displayShow molID
+              <> ") does already exist at "
               <> path2Utf8Builder molFilePath
               <> ". Overwriting it."
             writeFileUTF8 molFilePath molText

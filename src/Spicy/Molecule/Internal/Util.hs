@@ -49,6 +49,7 @@ module Spicy.Molecule.Internal.Util
   , fragmentDetectionDetached
   , getPolarisationCloudFromAbove
   , bondDistanceGroups
+  , getAtomAssociationMap
   )
 where
 import           Control.Lens            hiding ( (:>)
@@ -414,15 +415,23 @@ makeFragmentsFromAnnoAtoms
   :: Seq (Int, (Int, Text), Atom) -- ^ A plain 'Seq' of all 'Atom's in the 'Molecule'. They are
                                   --   annoated in a Tuple as:
                                   --   @(atomIndex, (subMolID, subMolName), atom)@
-  -> IntMap IntSet
+  -> IntMap Fragment
 makeFragmentsFromAnnoAtoms annoAtoms = foldl
-  (\fragAcc (atomKey, (molID, _fragName), _atom) ->
-    let atomKeySingleton = IntSet.singleton atomKey
-    in  IntMap.insertWith IntSet.union molID atomKeySingleton fragAcc
+  (\fragAcc (atomKey, (molID, fragName), _atom) ->
+    let singleAtomFragment = Fragment { _fragment_Label = fragName
+                                      , _fragment_Atoms = IntSet.singleton atomKey
+                                      , _fragment_Chain = Nothing
+                                      }
+    in  IntMap.insertWith joinFragments molID singleAtomFragment fragAcc
   )
   IntMap.empty
   annoAtoms
-
+ where
+  joinFragments fragA fragB =
+    let selectionA         = fragA ^. fragment_Atoms
+        selectionB         = fragB ^. fragment_Atoms
+        selectionsCombined = IntSet.union selectionA selectionB
+    in  fragA & fragment_Atoms .~ selectionsCombined
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -1739,9 +1748,8 @@ bondDistanceGroups mol startAtomInd maxBondSteps = do
     | currentDist > maxDist
     = groupAcc
     | otherwise
-    = let
-        -- The currently most distant atoms from the start and therefore the origin for the next
-        -- search.
+    = let -- The currently most distant atoms from the start and therefore the origin for the next
+          -- search.
           searchOrigins = case groupAcc of
             Empty           -> IntSet.singleton startAtomInd
             _ :|> lastGroup -> lastGroup
@@ -1782,3 +1790,38 @@ bondDistanceGroups mol startAtomInd maxBondSteps = do
       . HashMap.keys
       . HashMap.filterWithKey (\(ixO, _) val -> ixO == atom && val)
       $ bondMat'
+
+----------------------------------------------------------------------------------------------------
+{-|
+Given a molecule, build the associations of this layers atoms, with the fragments of this layers.
+Therefore, if fragments represent the whole molecule, this will assign Just Fragment to each atom.
+This is the fragment to which the atom belongs.
+-}
+getAtomAssociationMap
+  :: MonadThrow m
+  => Molecule                                 -- ^ The current molecule layer, for which to build
+                                              --   the association map.
+  -> m (IntMap (Atom, Maybe (Int, Fragment))) -- ^ The original 'IntMap' of atoms, but the atoms are
+                                              --   now associated with a fragment and the fragments
+                                              --   'Int' key.
+getAtomAssociationMap mol = do
+  let atoms     = mol ^. molecule_Atoms
+      fragments = mol ^. molecule_Fragment
+  atomToFragAssociations <- IntMap.traverseWithKey
+    (\atomKey atom -> do
+      -- Find all fragments, to which an atom is assigned.
+      let matchingFragments =
+            IntMap.filter (\frag -> atomKey `IntSet.member` (frag ^. fragment_Atoms)) fragments
+
+      case IntMap.size matchingFragments of
+        0 -> return (atom, Nothing)
+        1 -> return (atom, IntMap.lookupMin matchingFragments)
+        _ ->
+          throwM
+            .  MolLogicException "getAtomAssociationMap"
+            $  "Assignment of atom "
+            <> show atomKey
+            <> " to a fragment failed, as the assignment is ambigous. This means an invalid data structure in the fragments."
+    )
+    atoms
+  return atomToFragAssociations

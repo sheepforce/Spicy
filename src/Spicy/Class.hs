@@ -118,6 +118,10 @@ module Spicy.Class
   , atom_Coordinates
   , atom_Multipoles
   , BondMatrix
+  , Fragment(..)
+  , fragment_Label
+  , fragment_Chain
+  , fragment_Atoms
   , Molecule(..)
   , molecule_Comment
   , molecule_Atoms
@@ -1028,6 +1032,23 @@ type BondMatrix = HashMap (Int, Int) Bool
 
 ----------------------------------------------------------------------------------------------------
 {-|
+Definition of a fragment. The fragments are strictly a subset of a given layer.
+-}
+data Fragment = Fragment
+  { _fragment_Label :: !Text         -- ^ The name of a fragment. Doesn't need to be unique.
+  , _fragment_Chain :: !(Maybe Char) -- ^ Meant for PDB and similiar molecules, where protein chains
+                                     --   need to be distinguished.
+  , _fragment_Atoms :: !IntSet       -- ^ The atoms and bonds of the fragment. Relative to the
+                                     --   molecule layer which contains the fragment.
+  } deriving ( Show, Eq, Generic )
+
+instance ToJSON Fragment where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON Fragment
+
+----------------------------------------------------------------------------------------------------
+{-|
 A molecule, which might be the whole system, an ONIOM layer or a fragment of the system, each
 containing possibly even higher layers for ONIOM or fragments. Stores all associated informations of
 a layer.
@@ -1072,7 +1093,7 @@ data Molecule = Molecule
                                                               --   be assumed to be 'False'.
   , _molecule_SubMol            :: !(IntMap Molecule)         -- ^ A Molecule might contain deeper
                                                               --   ONIOM layers.
-  , _molecule_Fragment          :: !(IntMap IntSet)           -- ^ Fragments definition. They are
+  , _molecule_Fragment          :: !(IntMap Fragment)          -- ^ Fragments definition. They are
                                                               --   meant to be either empty, or
                                                               --   contain the whole system, usually
                                                               --   without bond cuts. The keys of
@@ -1548,6 +1569,7 @@ makeLenses ''CalcOutput
 makeLenses ''CalcContext
 makePrisms ''FFType
 makeLenses ''Atom
+makeLenses ''Fragment
 makeLenses ''Molecule
 makeLenses ''CalcID
 

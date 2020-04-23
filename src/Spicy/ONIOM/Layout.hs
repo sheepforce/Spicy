@@ -157,11 +157,7 @@ oniomNLayout = do
       let atomSelection = currentTheoLayer ^. selection
 
       -- Logging for the current layer.
-      logInfoF
-        $  text2Utf8Builder oniomID
-        <> " (MolID "
-        <> (displayShow . toList $ idAcc)
-        <> ") with atoms:"
+      logInfoF $ oniomID <> " (MolID " <> displayShow idAcc <> ") with atoms:"
       mapM_ (logInfoF . ("    " <>))
         . formatPadFoldable 6 int ","
         . IntSet.toAscList
@@ -173,7 +169,7 @@ oniomNLayout = do
       scratchDir <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. scratch
       let
         prefixNameThis =
-          let saneOniomID = Text.unpack . removeWhiteSpace $ oniomID
+          let saneOniomID = Text.unpack . removeWhiteSpace . textDisplay $ oniomID
               saneDescriptor =
                   replaceProblematicChars . Text.unpack . removeWhiteSpace $ currentTheoLayer ^. name
           in  saneOniomID <> "_Original@" <> saneDescriptor
@@ -197,7 +193,7 @@ oniomNLayout = do
           CalcContext { _calcContext_Input = calcInputThis, _calcContext_Output = Nothing }
 
         prefixNameInherited =
-          let saneOniomID = Text.unpack . removeWhiteSpace $ oniomID
+          let saneOniomID = Text.unpack . removeWhiteSpace . textDisplay $ oniomID
               saneDescriptor =
                   replaceProblematicChars
                     .  Text.unpack
@@ -235,9 +231,7 @@ oniomNLayout = do
 
       -- Add calculation context information to the new sublayer.
       let subMolCalcContext = Map.fromList
-            [ (ONIOMKey Original , calcContextThis)
-            , (ONIOMKey Inherited, calcContextInherited)
-            ]
+            [(ONIOMKey Original, calcContextThis), (ONIOMKey Inherited, calcContextInherited)]
           subMolWithContext = newSubMolOnly & molecule_CalcContext .~ subMolCalcContext
 
       -- Recursively also step through all deeper theory layers of this one, creating the even
