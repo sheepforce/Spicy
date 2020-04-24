@@ -22,10 +22,7 @@ module Spicy.Molecule.Internal.Util
   , reIndex2BaseMolecule
   , groupTupleSeq
   , groupBy
-  , makeSubMolsFromAnnoAtoms
-  , makeFragmentsFromAnnoAtoms
   , findAtomInSubMols
-  , groupAnnoAtomsAsSubMols
   , getNElectrons
   , getMolByID
   , molIDLensGen
@@ -50,6 +47,7 @@ module Spicy.Molecule.Internal.Util
   , getPolarisationCloudFromAbove
   , bondDistanceGroups
   , getAtomAssociationMap
+  , fragmentAtomInfo2AtomsAndFragments
   )
 where
 import           Control.Lens            hiding ( (:>)
@@ -66,9 +64,9 @@ import           Data.Ix
 import           Data.Massiv.Array             as Massiv
                                          hiding ( all
                                                 , index
+                                                , mapM
                                                 , sum
                                                 , toList
-                                                , mapM
                                                 )
 import           Data.Massiv.Core.Operations    ( Numeric )
 import           Data.Maybe
@@ -369,72 +367,6 @@ reIndexMoleculeLayer repMap mol
 
 ----------------------------------------------------------------------------------------------------
 {-|
-Take a group ('Seq') of 'Atom's as formed by 'groupAsSubMols' and the bonds of the complete
-'Molecule'. Then form a proper submolecule. This function relies on the group of being a proper
-submolecule and will hapilly accept groups that are not.
--}
-makeSubMolFromGroup
-  :: Seq (Int, (Int, Text), Atom) -- ^ A group of annotated atoms in the style of:
-                                  --   @(atomIndex, (subMolID, subMolName), atom)@
-  -> BondMatrix                   -- ^ Bond type data structure of the whole molecule.
-  -> Molecule                     -- ^ A newly formed submolecule.
-makeSubMolFromGroup group bonds =
-  let atoms        = IntMap.fromList . toList . fmap (\(ind, _, atom) -> (ind, atom)) $ group
-      label        = fromMaybe "" . (Seq.!? 0) . fmap (^. _2 . _2) $ group
-      atomInds     = IntMap.keysSet atoms
-      -- Remove all bonds from the bond matrix, that involve atoms, that not in this set.
-      bondsCleaned = cleanBondMatByAtomInds bonds atomInds
-  in  Molecule { _molecule_Comment           = label
-               , _molecule_Atoms             = atoms
-               , _molecule_Bonds             = bondsCleaned
-               , _molecule_SubMol            = IntMap.empty
-               , _molecule_Fragment          = IntMap.empty
-               , _molecule_EnergyDerivatives = def
-               , _molecule_CalcContext       = Map.empty
-               }
-
-----------------------------------------------------------------------------------------------------
-{-|
-From some common parser informations, form the sub molecules.
--}
-makeSubMolsFromAnnoAtoms
-  :: Seq (Int, (Int, Text), Atom) -- ^ A plain 'Seq' of all 'Atom's in the 'Molecule'. They are
-                                  --   annoated in a Tuple as:
-                                  --   @(atomIndex, (subMolID, subMolName), atom)@
-  -> BondMatrix                   -- ^ Bonds for the whole 'Molecule'. See '_molecule_Bonds'.
-  -> IntMap Molecule              -- ^ The submolecules.
-makeSubMolsFromAnnoAtoms annoAtoms bonds =
-  let subMolAtomGroups = groupAnnoAtomsAsSubMols annoAtoms
-  in  fmap (\g -> makeSubMolFromGroup g bonds) subMolAtomGroups
-
-----------------------------------------------------------------------------------------------------
-{-|
-From some common parser informations, form fragments.
--}
-makeFragmentsFromAnnoAtoms
-  :: Seq (Int, (Int, Text), Atom) -- ^ A plain 'Seq' of all 'Atom's in the 'Molecule'. They are
-                                  --   annoated in a Tuple as:
-                                  --   @(atomIndex, (subMolID, subMolName), atom)@
-  -> IntMap Fragment
-makeFragmentsFromAnnoAtoms annoAtoms = foldl
-  (\fragAcc (atomKey, (molID, fragName), _atom) ->
-    let singleAtomFragment = Fragment { _fragment_Label = fragName
-                                      , _fragment_Atoms = IntSet.singleton atomKey
-                                      , _fragment_Chain = Nothing
-                                      }
-    in  IntMap.insertWith joinFragments molID singleAtomFragment fragAcc
-  )
-  IntMap.empty
-  annoAtoms
- where
-  joinFragments fragA fragB =
-    let selectionA         = fragA ^. fragment_Atoms
-        selectionB         = fragB ^. fragment_Atoms
-        selectionsCombined = IntSet.union selectionA selectionB
-    in  fragA & fragment_Atoms .~ selectionsCombined
-
-----------------------------------------------------------------------------------------------------
-{-|
 Given a 'IntMap.Key' (representing an 'Atom'), determine in which fragment ('_molecule_SubMol') the
 'Atom' IntSet.
 -}
@@ -449,32 +381,6 @@ findAtomInSubMols atomKey annoFrags =
         . IntMap.map (\mol -> atomKey `IntMap.member` (mol ^. molecule_Atoms))
         $ annoFrags
         )
-
-----------------------------------------------------------------------------------------------------
-{-|
-Group a common parser structure based on a submolecule identifier.
--}
-groupAnnoAtomsAsSubMols
-  :: Seq (Int, (Int, Text), Atom)          -- ^ A plain 'Seq' of all 'Atom's in the
-                                           --   'Molecule'. .They are annoated in a Tuple
-                                           --   as:
-                                           --   @(atomIndex, (subMolID, subMolName), atom)@
-  -> IntMap (Seq (Int, (Int, Text), Atom)) -- ^ Groups of annotated submolecules, which
-                                           --   share a common subMolID.
-groupAnnoAtomsAsSubMols annoAtoms =
-  let
-    subMolGroups :: Seq (Seq (Int, (Int, Text), Atom))
-    subMolGroups =
-      groupBy (\x y -> x ^. _2 . _1 == y ^. _2 . _1)
-        . Seq.unstableSortBy (\(_, (subID1, _), _) (_, (subID2, _), _) -> subID1 `compare` subID2)
-        $ annoAtoms
-    subMolIndentifiers :: Seq Int
-    subMolIndentifiers =
-      fmap (\subMolSeq -> fromMaybe (-1) $ subMolSeq ^? ix 0 . _2 . _1) subMolGroups
-    subMolMap :: IntMap (Seq (Int, (Int, Text), Atom))
-    subMolMap = IntMap.fromList . toList $ Seq.zip subMolIndentifiers subMolGroups
-  in
-    subMolMap
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -1821,7 +1727,28 @@ getAtomAssociationMap mol = do
             .  MolLogicException "getAtomAssociationMap"
             $  "Assignment of atom "
             <> show atomKey
-            <> " to a fragment failed, as the assignment is ambigous. This means an invalid data structure in the fragments."
+            <> " to a fragment failed, as the assignment is ambigous. \
+               \This means an invalid data structure in the fragments."
     )
     atoms
   return atomToFragAssociations
+
+----------------------------------------------------------------------------------------------------
+{-|
+Parser easily obtain lists of 'FragmentAtomInfo', which need to be converted to proper fragments and
+atoms for the molecule. This function builds the data types for '_molecule_Atoms' and
+'_molecule_Fragment'.
+-}
+fragmentAtomInfo2AtomsAndFragments :: [FragmentAtomInfo] -> (IntMap Atom, IntMap Fragment)
+fragmentAtomInfo2AtomsAndFragments info =
+  let atoms = IntMap.fromList . fmap (\i -> (faiAtomIndex i, faiAtom i)) $ info
+      fragments =
+          IntMap.fromListWith fragmentUnion . fmap (\i -> (faiFragmentIndex i, faiFragment i)) $ info
+  in  (atoms, fragments)
+ where
+    -- Joins two fragments. The '_fragment_Label' and '_fragment_Chain' should be identical but this
+    -- is not strictly required by this functions. Instead this functions uses a left bias for the
+    -- fragments.
+  fragmentUnion :: Fragment -> Fragment -> Fragment
+  fragmentUnion a b =
+    let atomsInB = b ^. fragment_Atoms in a & fragment_Atoms %~ IntSet.union atomsInB
