@@ -249,7 +249,7 @@ module Spicy.Class
   , PreStartUpEnv(..)
   , psEnvPsi4
   , psEnvNwchem
-    -- ** Initiator Environmentf
+    -- ** Initiator Environment
     -- $appEnvInitiator
   , InitEnv(..)
     -- ** Logger
@@ -262,6 +262,10 @@ module Spicy.Class
   , logFormat
   , logHandle
   , logUseTime
+    -- * Local Helper Types
+    -- $localHelperTypes
+  , FragmentAtomInfo(..)
+  , TXYZAtomInfo(..)
   )
 where
 import           Control.Lens            hiding ( (:>)
@@ -1913,3 +1917,33 @@ instance Default MyLogOptions where
                      }
 
 makeLenses ''MyLogOptions
+
+{-
+####################################################################################################
+-}
+{- $localHelperTypes
+These types are not meant to be returned or consumed by any exported function. Instead they are used
+only locally to pass information around, which would otherwise need to be stored in unannotated
+tuples or something.
+-}
+{-|
+Type to pass atomwise information from parsers with atom-fragment associations around.
+-}
+data FragmentAtomInfo = FragmentAtomInfo
+  { faiAtomIndex     :: Int      -- ^ The index of the atom in the whole structure.
+  , faiFragmentIndex :: Int      -- ^ The index of the fragment in the whole structure.
+  , faiAtom          :: Atom     -- ^ The atom of this line, associated to an fragment.
+  , faiFragment      :: Fragment -- ^ The fragment associated to this atom. Possibly the selection
+                                 --   of atom indices in the fragment contains only one atom and
+                                 --   matching fragments must then be joined.
+  }
+
+----------------------------------------------------------------------------------------------------
+{-|
+Type just to handle the information obtained from parsing a single atom line of a TXYZ file.
+-}
+data TXYZAtomInfo = TXYZAtomInfo
+  { txyzIndex       :: Int   -- ^ Index of this atom in the TXYZ file. First number in a row.
+  , txyzAtom        :: Atom  -- ^ The atom of this line.
+  , txyzBondTargets :: [Int] -- ^ The indices of the atoms, to which this atom has a bond.
+  }

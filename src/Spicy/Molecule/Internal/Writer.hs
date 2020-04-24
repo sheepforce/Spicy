@@ -347,7 +347,7 @@ writePDB mol = do
           resNameFmt  = (right 3 ' ' %. stext) % " "           -- 18-20 (+19w) -> 3
           chainIDFmt  = char                                   -- 22 -> 1
           resSeqFmt   = left 4 ' ' %. int                      -- 23-26 -> 4
-          icodeFmt    = " "                                    -- 27 -> 1
+          icodeFmt    = " " % "   "                            -- 27 (+28-30w) -> 1
           coordFmt    = left 8 ' ' %. fixed 3                  -- 31-38 + 39-46 + 47-54 -> 3*8
           occFmt      = left 6 ' ' %. fixed 2                  -- 55-60 -> 6
           tempfacFmt  = (left 6 ' ' %. fixed 2) % "          " -- 61-66 (+67-76w) -> 6
@@ -366,15 +366,27 @@ writePDB mol = do
           pdbSaneAtomName =
             let label4OrShorter = Text.take 4 $ atom ^. atom_Label
             in  if Text.length label4OrShorter <= 3 then " " <> label4OrShorter else label4OrShorter
-          -- The residue name of the PDB can be not longer than 3 characters.
-          pdbSaneResName =
-            fromMaybe "UNL" . fmap (Text.take 3 . _fragment_Label . snd) $ fragNumAndLabel
-          -- The residue/fragment ID, that atom belongs to.
-          pdbSaneResSeq  = fromMaybe 0 . fmap fst $ fragNumAndLabel
+      -- Get the fragment ID and fragment data. They are necessary for writing a PDB and not having
+      -- them can go very wrong.
+      (fragID, fragmentInfo) <- case fragNumAndLabel of
+        Nothing -> throwM . MolLogicException "writePDB" $ ("Writing a PDB requires all atoms to be associated with a fragment, but atom " <> show atomID <> " does not seem to be assigned with any fragment.")
+        Just f -> return f
+
+      let -- The residue name of the PDB can be not longer than 3 characters.
+          pdbSaneResName = Text.take 3 . _fragment_Label $ fragmentInfo
+          -- The chain ID of this atom.
+          pdbChainID     = fromMaybe 'A' . _fragment_Chain $ fragmentInfo
+          -- The residue/fragment ID, that atom belongs to. This number has been made unique by the
+          -- PDB parser. Using the chainID of the fragment, convert this number back to the
+          -- non-unique PDB representation (unique only within a chain).
+          pdbSaneResSeq =
+            let numA                = fromEnum 'A'
+                numID               = fromEnum pdbChainID
+                maxResiduesPerChain = 10000
+                offSet              = (numID - numA) * maxResiduesPerChain
+            in  fragID - offSet
           -- The element symbol limited to 2 characters and capitalised.
           pdbSaneElement = Text.toUpper . Text.take 2 . tShow $ atom ^. atom_Element
-          -- The chain ID of this atom.
-          pdbChainID     = fromMaybe ' ' . ((_fragment_Chain . snd) =<<) $ fragNumAndLabel
 
       -- Format an atom line.
       let atomLine = bprint
