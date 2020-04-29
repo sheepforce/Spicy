@@ -110,8 +110,6 @@ Check sanity of 'Molecule', which means test the following criteria:
   - Bonds of a layer are bidirectorial
   - The size of '_atom_Coordinates' is strictly 3 for all atoms of this layer
 -}
--- TODO(phillip|p=50|#MissingFeature) - Sanity checks for calculations.
--- TODO(phillip|p=100|#Unfinished) - Sanity check for fragments.
 checkMolecule :: MonadThrow m => Molecule -> m Molecule
 checkMolecule mol = do
   unless layerIndCheck . throwM $ MolLogicException
@@ -129,6 +127,16 @@ checkMolecule mol = do
   unless atomCoordCheck . throwM $ MolLogicException
     "checkMolecule"
     "The dimension of the coordinate vectors of the atoms is not exactly 3 for all atoms."
+  unless fragmentsSelectionRangeCheck . throwM $ MolLogicException
+    "checkMolecule"
+    "The fragments contain indices of atoms, that do not exist in this molecule layer."
+  unless fragmentCompletenessCheck . throwM $ MolLogicException
+    "chechMolecule"
+    "The fragments must either contain all atoms of a layer or no atoms. \
+    \Sorting only a part of the atoms into fragments is not allowed."
+  unless calcCheck . throwM $ MolLogicException
+    "checkMolecule"
+    "A calculation context has an impossible combination of charge and multiplicity."
   if IntMap.null (mol ^. molecule_SubMol)
     then return mol
     else do
@@ -147,7 +155,7 @@ checkMolecule mol = do
   layerIndCheck = IntSet.null $ bondsInds IntSet.\\ atomInds
   -- Next layer molecules. Discard the Map structure
   sM            = mol ^. molecule_SubMol
-  -- Disjointment test (no atoms and bonds shared through fragments). This will not check
+  -- Disjointment test (no atoms and bonds shared through submolecules). This will not check
   -- pseudoatoms (they will be removed before the disjoint check), as the may have common numbers
   -- shared through the fragemnts.
   -- "bA" = Bool_A, "aA" = Atoms_A
@@ -176,6 +184,36 @@ checkMolecule mol = do
   subsetCheckAtoms     = IntSet.null $ (nLAtomsInds IntSet.\\ nLPseudoAtomsInds) IntSet.\\ atomInds
   -- Check if the bonds are bidirectorial
   bondBidectorialCheck = isBondMatrixBidirectorial $ mol ^. molecule_Bonds
+  -- Indices of all atoms assigned to fragments.
+  allFragmentSelections =
+    IntMap.foldl'
+        (\selectionAcc fragment -> selectionAcc `IntSet.union` (fragment ^. fragment_Atoms))
+        IntSet.empty
+      $  mol
+      ^. molecule_Fragment
+  -- Check if only existing atoms are assigned to fragments.
+  fragmentsSelectionRangeCheck = allFragmentSelections `IntSet.isSubsetOf` atomInds
+  -- Check if either all or none of the atoms have been assigned to fragments. Sorting only a part
+  -- of the atoms into fragments is not allowed.
+  fragmentCompletenessCheck =
+    let diffSet = atomInds IntSet.\\ allFragmentSelections
+    in  diffSet == IntSet.empty || diffSet == atomInds
+  -- Check if charge and multiplicity combinations of this layer are fine.
+  calcCheck =
+    all (== True)
+      . Map.map
+          (\calcContext ->
+            let qmLens        = calcContext_Input . calcInput_QMMMSpec . _QM
+                qmCharge      = calcContext ^? qmLens . qmContext_Charge
+                qmMult        = calcContext ^? qmLens . qmContext_Mult
+                nElectrons    = getNElectrons mol <$> qmCharge
+                qmElectronsOK = case (nElectrons, qmMult) of
+                  (Just n, Just m) ->
+                    n + 1 >= m && ((even (n + 1) && odd m) || (odd (n + 1) && even m))
+                  _ -> True
+            in  qmElectronsOK
+          )
+      $ (mol ^. molecule_CalcContext)
     {-
     -- This check doesn't need to be true, as pseudobonds can break the subset property.
     -- All Bonds of the next layer joinded
@@ -342,33 +380,36 @@ reIndexMoleculeLayer
   => IntMap Int -- ^ 'IntMap' with mappings from old indices to new indices (bonds and atoms).
   -> Molecule   -- ^ 'Molecule' to reindex.
   -> m Molecule -- ^ 'Molecule' with __current__ layer reindexed.
-reIndexMoleculeLayer repMap mol
-  |
-  -- If old Atom indices cannot be completely replaced by the Map:
-    not $ intIsRepMapCompleteForSet repMap (IntMap.keysSet $ mol ^. molecule_Atoms)
-  = throwM $ MolLogicException "reIndexMoleculeLayer"
-                               "The remapping of indices is not complete for the atom indices."
-  |
-  -- If old bond type data cannot be completely replaced by the Map:
-    not $ isRepMapCompleteforBondMatrix repMap (mol ^. molecule_Bonds)
-  = throwM $ MolLogicException "reIndexMoleculeLayer"
-                               "The remapping of indices is not complete for the bond data."
-  |
-  -- If both checks went fine:
-    otherwise
-  = return
+reIndexMoleculeLayer repMap mol = do
+  -- Check for completness of the replacement map for the atom keys.
+  unless (intIsRepMapCompleteForSet repMap (IntMap.keysSet $ mol ^. molecule_Atoms))
+    . throwM
+    $ MolLogicException "reIndexMoleculeLayer"
+                        "The remapping of indices is not complete for the atom indices."
+
+  -- Check for completeness of the replacement map for the bond matrix.
+  unless (isRepMapCompleteforBondMatrix repMap (mol ^. molecule_Bonds)) . throwM $ MolLogicException
+    "reIndexMoleculeLayer"
+    "The remapping of indices is not complete for the bond data."
+
+  return
     $  mol
-       -- Use the (%~) lens to update the atoms indices of a molecule with new indices.
+    -- Update the atoms indices of a molecule with new indices.
     &  molecule_Atoms
     %~ intReplaceMapKeys repMap
-       -- Use the (%~) lens to update keys and values (IntSet) of the bond type data structure.
+    -- Update keys and values (IntSet) of the bond type data structure.
     &  molecule_Bonds
     %~ replaceBondMatrixInds repMap
+    -- Update the selection in the fragments.
+    &  molecule_Fragment
+    .  each
+    .  fragment_Atoms
+    %~ intReplaceSet repMap
 
 ----------------------------------------------------------------------------------------------------
 {-|
 Given a 'IntMap.Key' (representing an 'Atom'), determine in which fragment ('_molecule_SubMol') the
-'Atom' IntSet.
+'Atom' is.
 -}
 findAtomInSubMols
   :: Int             -- ^ 'Atom' to find in the fragments.
