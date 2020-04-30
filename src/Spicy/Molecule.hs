@@ -23,7 +23,7 @@ module Spicy.Molecule
   , molIDLensGen
   , calcIDLensGen
   , newSubLayer
-  , createPseudoAtom
+  , createLinkAtom
   , addAtom
   , removeAtom
   , BondOperation(..)

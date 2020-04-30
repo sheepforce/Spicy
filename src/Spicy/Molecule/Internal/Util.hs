@@ -29,8 +29,8 @@ module Spicy.Molecule.Internal.Util
   , getCalcByID
   , calcIDLensGen
   , newSubLayer
-  , createPseudoAtom
-  , calcPseudoCoords
+  , createLinkAtom
+  , calcLinkCoords
   , addAtom
   , removeAtom
   , BondOperation(..)
@@ -96,7 +96,7 @@ import           Spicy.Math
 "nA" = new atom
 "sM" = sub molecules
 "nL" = next layer
-"pA" = pseudo atoms
+"pA" = link atoms
 -}
 
 {-|
@@ -105,7 +105,7 @@ Check sanity of 'Molecule', which means test the following criteria:
   - The 'IntMap.Key's of the '_molecule_Atoms' 'IntMap' are a superset of all 'IntMap.Key's and 'IntSet.Key's
     appearing in the 'IntMap' 'IntSet' of '_molecule_Bonds'
   - The deeper layers in 'molecule_SubMol' are proper subsets of the higher layer regarding
-    non-pseudo 'Atom' indices
+    non-link 'Atom' indices
   - Fragments of the same layer are completelty disjoint in their atom indices
   - Bonds of a layer are bidirectorial
   - The size of '_atom_Coordinates' is strictly 3 for all atoms of this layer
@@ -115,7 +115,7 @@ checkMolecule mol = do
   unless layerIndCheck . throwM $ MolLogicException
     "checkMolecule"
     "Bonds vs Atoms mismatch. Your bonds bind to non existing atoms."
-  unless fragAtomsDisjCheck . throwM $ MolLogicException
+  unless subMolAtomsDisjCheck . throwM $ MolLogicException
     "checkMolecule"
     "The atoms of deeper layers are not disjoint but shared by fragments."
   unless subsetCheckAtoms . throwM $ MolLogicException
@@ -156,17 +156,17 @@ checkMolecule mol = do
   -- Next layer molecules. Discard the Map structure
   sM            = mol ^. molecule_SubMol
   -- Disjointment test (no atoms and bonds shared through submolecules). This will not check
-  -- pseudoatoms (they will be removed before the disjoint check), as the may have common numbers
+  -- link atoms (they will be removed before the disjoint check), as the may have common numbers
   -- shared through the fragemnts.
   -- "bA" = Bool_A, "aA" = Atoms_A
-  fragAtomsDisjCheck =
+  subMolAtomsDisjCheck =
     fst
       . foldl'
           (\(bA, aA) (_, aB) ->
             if aA `intMapDisjoint` aB && bA then (True, aA `IntMap.union` aB) else (False, aA)
           )
           (True, IntMap.empty)
-      . IntMap.map (\atoms -> (True, IntMap.filter (not . _atom_IsPseudo) atoms))
+      . IntMap.map (\atoms -> (True, IntMap.filter (not . isAtomLink . _atom_IsLink) atoms))
       . fmap (^. molecule_Atoms)
       $ sM
   -- Check if the dimension of the atom coordinate vector is exactly 3 for all atoms.
@@ -178,10 +178,10 @@ checkMolecule mol = do
   -- Next Layer atoms all joined
   nLAtoms              = IntMap.unions . fmap (^. molecule_Atoms) $ sM
   nLAtomsInds          = IntMap.keysSet nLAtoms
-  -- All pseudo atoms of the next layer set
-  nLPseudoAtomsInds    = IntMap.keysSet . IntMap.filter (^. atom_IsPseudo) $ nLAtoms
+  -- All link atoms of the next layer set
+  nLLinkAtomsInds = IntMap.keysSet . IntMap.filter (\a -> isAtomLink $ a ^. atom_IsLink) $ nLAtoms
   -- Test if the next deeper layer is a proper subset of the current layer.
-  subsetCheckAtoms     = IntSet.null $ (nLAtomsInds IntSet.\\ nLPseudoAtomsInds) IntSet.\\ atomInds
+  subsetCheckAtoms     = IntSet.null $ (nLAtomsInds IntSet.\\ nLLinkAtomsInds) IntSet.\\ atomInds
   -- Check if the bonds are bidirectorial
   bondBidectorialCheck = isBondMatrixBidirectorial $ mol ^. molecule_Bonds
   -- Indices of all atoms assigned to fragments.
@@ -215,12 +215,12 @@ checkMolecule mol = do
           )
       $ (mol ^. molecule_CalcContext)
     {-
-    -- This check doesn't need to be true, as pseudobonds can break the subset property.
+    -- This check doesn't need to be true, as link bonds can break the subset property.
     -- All Bonds of the next layer joinded
     nLBonds              = IntMap.unions . VB.map (^. molecule_Bonds) $ sM
-    -- Exclude bonds from and to pseudo atoms in deeper layers
-    nLBondsOrigin        = IntMap.keysSet nLBonds \\ nLPseudoAtomsInds
-    nLBondsTarget        = IntSet.unions nLBonds \\ nLPseudoAtomsInds
+    -- Exclude bonds from and to link atoms in deeper layers
+    nLBondsOrigin        = IntMap.keysSet nLBonds \\ nLLinkAtomsInds
+    nLBondsTarget        = IntSet.unions nLBonds \\ nLLinkAtomsInds
     subsetCheckBonds     =
       (nLBondsOrigin `IntSet.union` nLBondsTarget) \\ (bondsTarget `IntSet.union` bondsOrig)
     -}
@@ -334,10 +334,17 @@ molFoldlWithMolID f s mol = go Empty f s mol
                                     subMols
 
 ----------------------------------------------------------------------------------------------------
+{-| Translates link info to a simple boolean.
+-}
+isAtomLink :: LinkInfo -> Bool
+isAtomLink NotLink  = False
+isAtomLink IsLink{} = True
+
+----------------------------------------------------------------------------------------------------
 {-|
 This reindexes all structures in a 'Molecule' with predefined counting scheme. This means counting
 of 'Atom's will start at 0 and be consecutive. This also influences bonds in '_molecule_Bonds' and
-layers in '_molecule_SubMol'. Pseudoatoms will be taken care of.
+layers in '_molecule_SubMol'. Link atoms will be taken care of.
 -}
 reIndex2BaseMolecule :: MonadThrow m => Molecule -> m Molecule
 reIndex2BaseMolecule mol =
@@ -348,7 +355,7 @@ reIndex2BaseMolecule mol =
 ----------------------------------------------------------------------------------------------------
 {-|
 Get the indices of all 'Atom's in a 'Molecule', including those of sublayers in '_molecule_SubMol'
-and pseudoatoms therein. This assumes a sane 'Molecule' according to 'checkMolecule'.
+and link atoms therein. This assumes a sane 'Molecule' according to 'checkMolecule'.
 -}
 getAtomIndices :: Molecule -> IntSet
 getAtomIndices mol =
@@ -363,7 +370,7 @@ getAtomIndices mol =
 Reindex a complete 'Molecule', including all its deeper layers in '_molecule_SubMol') by mappings
 from a global replacement Map, mapping old to new indices. This function assumes, that your molecule
 is sane in the overall assumptions of this program. This means that the lower layers obey the
-counting scheme of the atoms of the higher layers and pseudoatoms come last.
+counting scheme of the atoms of the higher layers and link come last.
 -}
 reIndexMolecule :: MonadThrow m => IntMap Int -> Molecule -> m Molecule
 reIndexMolecule repMap mol = molTraverse (reIndexMoleculeLayer repMap) mol
@@ -508,12 +515,12 @@ calcIDLensGen (CalcID molID calcKey) = molIDLensGen molID . molecule_CalcContext
 ----------------------------------------------------------------------------------------------------
 {-|
 Separates a new subsystem from the current molecule layer. Covalent bonds that were cut, can be
-capped with pseudo atoms. The following behaviour is employed for the constructor fields of the
+capped with link atoms. The following behaviour is employed for the constructor fields of the
 sublayer 'Molecule':
 
 - '_molecule_Comment': Will be an empty.
 - '_molecule_Atoms': The atoms that are kept will have no '_atom_Multipoles' information.
-  Pseudoatoms will be added. Their 'Int' key will start at @(maximum index/key to keep) + 1@.
+  Link atoms will be added. Their 'Int' key will start at @(maximum index) + 1@.
 - '_molecule_Bonds': The ones from the top layer restricted to the indices supplied in origin and
   target.
 - '_molecule_SubMol': Will be empty.
@@ -560,9 +567,9 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
           <> " keeping the indices "
           <> tShow (IntSet.toList newLayerInds)
           <> "."
-      -- Just the atoms from the old layer that are kept but no pseudoatoms added yet.
+      -- Just the atoms from the old layer that are kept but no link atoms added yet.
       slAtomsToKeep       = (mol ^. molecule_Atoms) `IntMap.restrictKeys` newLayerInds
-      -- Bonds from the old layer to keep but no bonds for pseudoatoms added yet.
+      -- Bonds from the old layer to keep but no bonds for link atoms added yet.
       slBondsToKeep       = cleanBondMatByAtomInds (mol ^. molecule_Bonds) newLayerInds
       slSubMol            = IntMap.empty
       slFragments         = IntMap.empty
@@ -584,12 +591,12 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
         (mol ^. molecule_Bonds)
 
   -- This creates all necessary capping atoms for a new sublayer. The structure maps from the index
-  -- of an atom in the new sublayer, to its capping pseudoatoms/link atoms.
-  cappingPseudoAtoms <- HashSet.foldl'
-    (\accPseudoAtomMap' (ixSL, ixTL) -> do
-      accPseudoAtomMap <- accPseudoAtomMap'
+  -- of an atom in the new sublayer, to its capping link atoms.
+  cappingLinkAtoms <- HashSet.foldl'
+    (\accLinkAtomMap' (ixSL, ixTL) -> do
+      accLinkAtomMap <- accLinkAtomMap'
       -- Lookup the sublayer atom, which needs a cap.
-      slCappedAtom     <- case atoms IntMap.!? ixSL of
+      slCappedAtom   <- case atoms IntMap.!? ixSL of
         Just a -> return a
         Nothing ->
           throwM
@@ -606,21 +613,19 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
             $  "Lookup for atom with index "
             <> show ixTL
             <> " failed."
-      -- Create a new pseudoatom, for the current pair.
-      newPseudoAtom <-
-        Seq.singleton
-          <$> createPseudoAtom covScale
-                               capAtomElement
-                               capAtomLabel
-                               capAtomFFType
-                               slCappedAtom
-                               tlRemovedAtom
-      return . IntMap.insertWith (<>) ixSL newPseudoAtom $ accPseudoAtomMap
+      -- Create a new link atom, for the current pair.
+      newLinkAtom <- Seq.singleton <$> createLinkAtom covScale
+                                                        capAtomElement
+                                                        capAtomLabel
+                                                        capAtomFFType
+                                                        (ixSL, slCappedAtom)
+                                                        (ixTL, tlRemovedAtom)
+      return . IntMap.insertWith (<>) ixSL newLinkAtom $ accLinkAtomMap
     )
     (return IntMap.empty)
     cutAtomPairs
 
-  let -- Create an intermediate sublayer molecule, which does not yet have pseudoatoms but is
+  let -- Create an intermediate sublayer molecule, which does not yet have link atoms but is
       -- otherwise cleaned of the information from the top layer.
       slIntermediateMol = Molecule { _molecule_Comment           = slComment
                                    , _molecule_Atoms             = slAtomsToKeep
@@ -632,19 +637,19 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
                                    }
 
   -- Add all capping atoms to the sublayer
-  subLayerWithPseudoAdded <- IntMap.foldlWithKey'
-    (\accMol' slOrigin pseudoAtomList -> do
+  subLayerWithLinkAdded <- IntMap.foldlWithKey'
+    (\accMol' slOrigin linkAtomList -> do
       accMol <- accMol'
-      addPseudosFromList slOrigin accMol pseudoAtomList
+      addLinksFromList slOrigin accMol linkAtomList
     )
     (pure slIntermediateMol)
-    cappingPseudoAtoms
+    cappingLinkAtoms
 
   let -- Identify top level atoms, that are part of a capped bond. (Works thanks to the Foldable
       -- instance of IntMap ...)
       slAtomsCapped          = HashSet.map fst cutAtomPairs
       -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom as capped.
-      subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithPseudoAdded slAtomsCapped
+      subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithLinkAdded slAtomsCapped
       -- Mark the top layer atoms, that are part of a capped bond as capped and add the newly
       -- constructed submolecule to this molecule.
       markedMolWithNewSublayer =
@@ -652,17 +657,17 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
 
   return markedMolWithNewSublayer
  where
-  -- Add a list of capping pseudoatoms to an existing molecule and a single bond partner. Usually
-  -- this will be just one pseudoatom but it could also add multiple caps to a single atom.
-  addPseudosFromList :: MonadThrow m => Int -> Molecule -> Seq Atom -> m Molecule
-  addPseudosFromList pseudoBondPartner mol' pseudoSeq = foldl'
-    (\accMol' pseudoAtom -> do
+  -- Add a list of capping link atoms to an existing molecule and a single bond partner. Usually
+  -- this will be just one link atom but it could also add multiple caps to a single atom.
+  addLinksFromList :: MonadThrow m => Int -> Molecule -> Seq Atom -> m Molecule
+  addLinksFromList linkBondPartner mol' linkSeq = foldl'
+    (\accMol' linkAtom -> do
       accMol                 <- accMol'
-      (accNewInd, accNewMol) <- addAtom accMol pseudoAtom
-      changeBond Add accNewMol (pseudoBondPartner, accNewInd)
+      (accNewInd, accNewMol) <- addAtom accMol linkAtom
+      changeBond Add accNewMol (linkBondPartner, accNewInd)
     )
     (pure mol')
-    pseudoSeq
+    linkSeq
 
   -- Mark a Set of atoms as capped in the current layer.
   markAtomsAsCapped :: Molecule -> HashSet Int -> Molecule
@@ -674,106 +679,111 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
 
 ----------------------------------------------------------------------------------------------------
 {-|
-Function to create a capping pseudo atom from an atom to keep and an atom, that has been cut away.
+Function to create a capping link atom from an atom to keep and an atom, that has been cut away.
 
 Following special behaviours are used here:
 
 - The scaling factor \(g\) (see below) might be given. If it is not given, a default value will be
   used
-- A chemical 'Element' might be given for the new pseudoatom/link atom ('_atom_Element') and if not
+- A chemical 'Element' might be given for the new link atom ('_atom_Element') and if not
   specified a hydrogen atom will be used.
 - An 'AtomLabel' might be given. If not, the '_atom_Label' will be empty.
 - A force-field type might be given. If not it will be 'XYZ'.
 
-See also 'calcPseudoCoords'.
+See also 'calcLinkCoords'.
 
-The position of the pseudoatom (commonly called link atom) is calculated as:
+The position of the link atom is calculated as:
 \[
-\mathbf{R}_\mathrm{PA} =
+\mathbf{R}_\mathrm{LA} =
   \mathbf{R}_\mathrm{CA} + g ( \mathbf{R}_\mathrm{RA} - \mathbf{R}_\mathrm{CA})
 \]
 where the scaling factor \(g\) will be calculated from a ratio of covalent radii, if not specified:
 \[
-g = \frac{r^\mathrm{cov}_\mathrm{CA} + \mathrm{cov}_\mathrm{PA}}{\mathrm{cov}_\mathrm{RA} + \mathrm{cov}_\mathrm{PA}}
+g = \frac{r^\mathrm{cov}_\mathrm{CA} + \mathrm{cov}_\mathrm{LA}}{\mathrm{cov}_\mathrm{RA} + \mathrm{cov}_\mathrm{PA}}
 \]
 With:
-- \( \mathbf{R}_\mathrm{PA} \): the coordinates of the created pseudoatom/link atom
+- \( \mathbf{R}_\mathrm{LA} \): the coordinates of the created link atom
 - \( \mathbf{R}_\mathrm{RA} \): the coordinates of the atom that has been removed by creating the
   new layer
-- \( \mathbf{R}_\mathrm{CA} \): the coordinates of the atom, that will be capped by the
-  pseudoatom/link atom
-- \( g \): the scaling factor for the position of the pseudoatom/link atom.
+- \( \mathbf{R}_\mathrm{CA} \): the coordinates of the atom, that will be capped by the link atom
+- \( g \): the scaling factor for the position of the link atom.
 -}
-createPseudoAtom
+createLinkAtom
   :: MonadThrow m
-  => Maybe Double    -- ^ Scaling factor \(g\) for the position of the pseudo atom.
-  -> Maybe Element   -- ^ Chemical element for pseudoatom to create.
-  -> Maybe AtomLabel -- ^ Textual label of the pseudoatom/link atom.
-  -> Maybe FFType    -- ^ Force field type of the pseudoatom/link atom.
-  -> Atom            -- ^ 'Atom' to cap with the pseudoatom.
-  -> Atom            -- ^ 'Atom' that has been cut away and needs to be replaced by the pseudoatom,
-                     --   that will be created.
-  -> m Atom          -- ^ Created pseudoatom.
-createPseudoAtom gScaleOption pseudoElementOption label fftype cappedAtom removedAtom = do
-  let pseudoElement    = fromMaybe H pseudoElementOption
-      cappedElement    = cappedAtom ^. atom_Element
-      cappedCoords     = Massiv.delay . getVectorS $ cappedAtom ^. atom_Coordinates
-      cappedCovRadius  = covalentRadii Map.!? cappedElement
-      removedElement   = removedAtom ^. atom_Element
-      removedCoords    = Massiv.delay . getVectorS $ removedAtom ^. atom_Coordinates
-      removedCovRadius = covalentRadii Map.!? removedElement
-      pseudoCovRadius  = covalentRadii Map.!? pseudoElement
-      gFactorDefault :: Maybe Double
-      gFactorDefault = do
-        cappedCovRadius'  <- cappedCovRadius
-        removedCovRadius' <- removedCovRadius
-        pseudoCovRadius'  <- pseudoCovRadius
-        return $ (cappedCovRadius' + pseudoCovRadius') / (removedCovRadius' + pseudoCovRadius')
+  => Maybe Double    -- ^ Scaling factor \(g\) for the position of the link atom.
+  -> Maybe Element   -- ^ Chemical element for link atom to create.
+  -> Maybe AtomLabel -- ^ Textual label of the link atom.
+  -> Maybe FFType    -- ^ Force field type of the link atom.
+  -> (Int, Atom)     -- ^ 'Atom' and its key to cap with the link atom.
+  -> (Int, Atom)     -- ^ 'Atom' and its key that has been cut away and needs to be replaced by the
+                     --   link atom, that will be created.
+  -> m Atom          -- ^ Created link atom.
+createLinkAtom gScaleOption linkElementOption label fftype (cappedKey, cappedAtom) (removedKey, removedAtom)
+  = do
+    let linkElement      = fromMaybe H linkElementOption
+        cappedElement    = cappedAtom ^. atom_Element
+        cappedCoords     = Massiv.delay . getVectorS $ cappedAtom ^. atom_Coordinates
+        cappedCovRadius  = covalentRadii Map.!? cappedElement
+        removedElement   = removedAtom ^. atom_Element
+        removedCoords    = Massiv.delay . getVectorS $ removedAtom ^. atom_Coordinates
+        removedCovRadius = covalentRadii Map.!? removedElement
+        linkCovRadius    = covalentRadii Map.!? linkElement
+        gFactorDefault :: Maybe Double
+        gFactorDefault = do
+          cappedCovRadius'  <- cappedCovRadius
+          removedCovRadius' <- removedCovRadius
+          linkCovRadius'    <- linkCovRadius
+          return $ (cappedCovRadius' + linkCovRadius') / (removedCovRadius' + linkCovRadius')
 
-  pseudoCoordinates <- case (gScaleOption, gFactorDefault) of
-    (Just gScale, _          ) -> calcPseudoCoords cappedCoords removedCoords gScale
-    (Nothing    , Just gScale) -> calcPseudoCoords cappedCoords removedCoords gScale
-    (Nothing, Nothing) ->
-      throwM
-        .  MolLogicException "createPseudoAtom"
-        $  "Can not find covalent radius of one of these elements "
-        <> show (pseudoElement, cappedElement, removedElement)
-        <> " and no scaling factor g has been given."
+    gScaleToUse <- case (gScaleOption, gFactorDefault) of
+      (Just gScale, _          ) -> return gScale
+      (Nothing    , Just gScale) -> return gScale
+      (Nothing, Nothing) ->
+        throwM
+          .  MolLogicException "createLinkAtom"
+          $  "Can not find covalent radius of one of these elements "
+          <> show (linkElement, cappedElement, removedElement)
+          <> " and no scaling factor g has been given."
 
-  let newPseudoAtom = Atom { _atom_Element     = pseudoElement
-                           , _atom_Label       = fromMaybe "" label
-                           , _atom_IsPseudo    = True
-                           , _atom_IsCapped    = False
-                           , _atom_IsDummy     = False
-                           , _atom_FFType      = fromMaybe FFXYZ fftype
-                           , _atom_Coordinates = VectorS . computeS $ pseudoCoordinates
-                           , _atom_Multipoles  = def
-                           }
+    linkCoordinates <- calcLinkCoords cappedCoords removedCoords gScaleToUse
 
-  return newPseudoAtom
+    let newLinkAtom = Atom
+          { _atom_Element     = linkElement
+          , _atom_Label       = fromMaybe "" label
+          , _atom_IsLink      = IsLink { _isLink_ModelAtom = cappedKey
+                                       , _isLink_RealAtom  = removedKey
+                                       , _isLink_gFactor   = gScaleToUse
+                                       }
+          , _atom_IsCapped    = False
+          , _atom_IsDummy     = False
+          , _atom_FFType      = fromMaybe FFXYZ fftype
+          , _atom_Coordinates = VectorS . computeS $ linkCoordinates
+          , _atom_Multipoles  = def
+          }
+
+    return newLinkAtom
 
 ----------------------------------------------------------------------------------------------------
 {-|
-Calculate the new coordinates of a pseudoatom/linkatom as:
+Calculate the new coordinates of a link atom as:
 \[
 \mathbf{R}_\mathrm{PA} =
   \mathbf{R}_\mathrm{CA} + g ( \mathbf{R}_\mathrm{RA} - \mathbf{R}_\mathrm{CA})
 \]
 With:
-- \( \mathbf{R}_\mathrm{PA} \): the coordinates of the created pseudoatom/link atom
+- \( \mathbf{R}_\mathrm{PA} \): the coordinates of the created link atom
 - \( \mathbf{R}_\mathrm{RA} \): the coordinates of the atom that has been removed by creating the
   new layer
-- \( \mathbf{R}_\mathrm{CA} \): the coordinates of the atom, that will be capped by the
-  pseudoatom/link atom
+- \( \mathbf{R}_\mathrm{CA} \): the coordinates of the atom, that will be capped by the link atom
 -}
 -- TODO(phillip|p=40|#Unfinished) - Check if the scaling factor is correct. Results look spurious.
-calcPseudoCoords
+calcLinkCoords
   :: (Load r Ix1 a, MonadThrow m, Numeric r a)
   => Vector r a -- ^ Coordinates of the atom being capped.
   -> Vector r a -- ^ Coordinates of the atom being removed.
   -> a          -- ^ The scaling factor g.
   -> m (Vector r a)
-calcPseudoCoords cappedAtomCoords removedAtomCoords gScale = do
+calcLinkCoords cappedAtomCoords removedAtomCoords gScale = do
   diffVec <- removedAtomCoords .-. cappedAtomCoords
   let scaledDiffVec = gScale *. diffVec
   cappedAtomCoords .+. scaledDiffVec
@@ -783,9 +793,9 @@ calcPseudoCoords cappedAtomCoords removedAtomCoords gScale = do
 Adds an 'Atom' to the current 'Molecule' layer. Its 'IntMap.Key'will be larger by 1 than the largest
 atom index at the current layer. The atom will also be added to all deeper layers with the same
 'IntMap.Key'. If the 'IntMap.Key', that was determined from the current layer already exists in a
-deeper layer (because a pseudoatom in a deeper layer has been given this key), an error will be
+deeper layer (because a link atom in a deeper layer has been given this key), an error will be
 thrown. It is therefore advisable to use this function only on molecules, that do not have
-pseudoatoms in deeper layers yet. No bonds will be updated.
+link atom in deeper layers yet. No bonds will be updated.
 
 The 'Int' returned is the 'IntMap' key of the newly added atom.
 -}
@@ -830,9 +840,9 @@ addAtom mol atom = do
 ----------------------------------------------------------------------------------------------------
 {-|
 Removes an 'Atom' specified by its index key from the 'Molecule' and all deeper layers. If the atom
-specified was a pseudoatom in the highest layer, it will remove pseudoatoms in the deeper layers,
-that have the same key. If the atom to remove was not a pseudoatom in the highest layer, but a
-pseudoatom with the same index is found in deeper layers, the pseudoatom will not be touched. Bonds
+specified was a link atom in the highest layer, it will remove link atoms in the deeper layers,
+that have the same key. If the atom to remove was not a link atom in the highest layer, but a
+link atom with the same index is found in deeper layers, the link atom will not be touched. Bonds
 will be cleaned from references to this atom, if the atom is removed.
 -}
 removeAtom :: MonadThrow m => Molecule -> Int -> m Molecule
@@ -841,10 +851,10 @@ removeAtom mol atomInd = do
   _ <- checkMolecule mol
 
   -- Get information about the atom of interest.
-  let atoms        = mol ^. molecule_Atoms
-      atomExists   = atomInd `IntMap.member` atoms
-      atomIsPseudo = case atoms IntMap.!? atomInd of
-        Just a  -> a ^. atom_IsPseudo
+  let atoms      = mol ^. molecule_Atoms
+      atomExists = atomInd `IntMap.member` atoms
+      atomIsLink = case atoms IntMap.!? atomInd of
+        Just a  -> isAtomLink $ a ^. atom_IsLink
         Nothing -> False
 
   when atomExists
@@ -854,23 +864,23 @@ removeAtom mol atomInd = do
     <> show atomInd
     <> " from the top molecule layer. The key does not exist."
 
-  return $ goRemove mol (atomInd, atomIsPseudo)
+  return $ goRemove mol (atomInd, atomIsLink)
 
  where
   goRemove :: Molecule -> (Int, Bool) -> Molecule
-  goRemove mol' (atomInd', wasPseudo) =
+  goRemove mol' (atomInd', wasLink) =
     -- Get information about the atom to remove in the current layer.
-    let atoms        = mol' ^. molecule_Atoms
-        atomIsPseudo = case atoms IntMap.!? atomInd' of
-          Just a  -> a ^. atom_IsPseudo
+    let atoms      = mol' ^. molecule_Atoms
+        atomIsLink = case atoms IntMap.!? atomInd' of
+          Just a  -> isAtomLink $ a ^. atom_IsLink
           Nothing -> False
 
-        -- If it did not change if this atom is a pseudo atom, remove it from this layer.
+        -- If it did not change if this atom is a link atom, remove it from this layer.
         -- Otherwise it must be a different atom now and we dont touch it.
-        atomsUpdated = if atomIsPseudo == wasPseudo then atomInd' `IntMap.delete` atoms else atoms
+        atomsUpdated     = if atomIsLink == wasLink then atomInd' `IntMap.delete` atoms else atoms
 
         -- Remove bonds involving this atom if there was no change wether this atom was a
-        -- pseudoatom.
+        -- link atom..
         bonds            = mol' ^. molecule_Bonds
         bondsUpdated     = removeBondsByAtomIndsFromBondMat bonds (IntSet.singleton atomInd')
 
@@ -879,7 +889,7 @@ removeAtom mol atomInd = do
 
         -- Get the submolecules and update them lazily.
         subMols          = thisLayerUpdated ^. molecule_SubMol
-        subMolsUpdated   = IntMap.map (\m -> goRemove m (atomInd', wasPseudo)) subMols
+        subMolsUpdated   = IntMap.map (\m -> goRemove m (atomInd', wasLink)) subMols
     in  if IntMap.null subMols
           then thisLayerUpdated
           else thisLayerUpdated & molecule_SubMol .~ subMolsUpdated
@@ -898,12 +908,12 @@ data BondOperation
 Adds\/removes a bond recursively to\/from a 'Molecule' and its deeper layers. Two atom 'IntMap.Key's
 are specified, to indicate between which 'Atom's a new bond shall be inserted/removed. If these
 'Atom's/'IntMap.Key's do not exist in the top layer, this function will fail. If the atoms do not
-exist in deeper layers or one of them became a pseudoatom, no bond will be inserted/removed in the
+exist in deeper layers or one of them became a link atom, no bond will be inserted/removed in the
 deeper layer. If a bond already exists/does not exist between those atoms, it will not be changed.
 
-If one of the two atoms was a pseudoatom in the top layer and still is in the deeper layers, bonds
-will be inserted/removed normally. If one the atoms was not a pseudoatom in the top layer but
-becomes a pseudoatom in a deeper layer, bonds involving those atoms will not be touched.
+If one of the two atoms was a link atom in the top layer and still is in the deeper layers, bonds
+will be inserted/removed normally. If one the atoms was not a link atom in the top layer but
+becomes a link atom in a deeper layer, bonds involving those atoms will not be touched.
 -}
 changeBond :: MonadThrow m => BondOperation -> Molecule -> (Int, Int) -> m Molecule
 changeBond operation mol (at1, at2) = do
@@ -911,42 +921,40 @@ changeBond operation mol (at1, at2) = do
   _ <- checkMolecule mol
 
   -- Check if origin and target key are present as atoms in the molecule at all.
-  let atoms         = mol ^. molecule_Atoms
-      atom1Exists   = at1 `IntMap.member` atoms
-      atom2Exists   = at2 `IntMap.member` atoms
+  let atoms       = mol ^. molecule_Atoms
+      atom1Exists = at1 `IntMap.member` atoms
+      atom2Exists = at2 `IntMap.member` atoms
       -- These lookups are safe as long as they are lazy and the check if the atoms exist happens
       -- before those information are used.
-      atom1IsPseudo = (atoms IntMap.! at1) ^. atom_IsPseudo
-      atom2IsPseudo = (atoms IntMap.! at2) ^. atom_IsPseudo
+      atom1IsLink = isAtomLink $ (atoms IntMap.! at1) ^. atom_IsLink
+      atom2IsLink = isAtomLink $ (atoms IntMap.! at2) ^. atom_IsLink
 
-  if atom1Exists && atom2Exists
-    then return ()
-    else
-      throwM
-      .  MolLogicException "changeBond"
-      $  "Wanted to add a bond between atoms"
-      <> show at1
-      <> " and "
-      <> show at2
-      <> " but at least one of those atoms does not exist in the top layer."
+  unless (atom1Exists && atom2Exists)
+    .  throwM
+    .  MolLogicException "changeBond"
+    $  "Wanted to add a bond between atoms"
+    <> show at1
+    <> " and "
+    <> show at2
+    <> " but at least one of those atoms does not exist in the top layer."
 
   -- If checks are passed, start with updating the current layer and work all the way down.
-  return $ goDeepAddRemove operation mol ((at1, atom1IsPseudo), (at2, atom2IsPseudo))
+  return $ goDeepAddRemove operation mol ((at1, atom1IsLink), (at2, atom2IsLink))
 
  where
   -- Update the deeper layers with a different check.
   goDeepAddRemove :: BondOperation -> Molecule -> ((Int, Bool), (Int, Bool)) -> Molecule
-  goDeepAddRemove operation' mol' ((at1', wasPseudo1), (at2', wasPseudo2)) =
-    -- Check if both origin and target exist and if they are pseudo atom.
+  goDeepAddRemove operation' mol' ((at1', wasLink1), (at2', wasLink2)) =
+    -- Check if both origin and target exist and if they are link atom.
     let
-      atoms          = mol' ^. molecule_Atoms
-      originExitst   = at1' `IntMap.member` atoms
-      targetExists   = at2' `IntMap.member` atoms
-      originIsPseudo = case atoms IntMap.!? at1' of
-        Just a  -> a ^. atom_IsPseudo
+      atoms        = mol' ^. molecule_Atoms
+      originExitst = at1' `IntMap.member` atoms
+      targetExists = at2' `IntMap.member` atoms
+      originIsLink = case atoms IntMap.!? at1' of
+        Just a  -> isAtomLink $ a ^. atom_IsLink
         Nothing -> False
-      targetIsPseudo = case atoms IntMap.!? at2' of
-        Just a  -> a ^. atom_IsPseudo
+      targetIsLink = case atoms IntMap.!? at2' of
+        Just a  -> isAtomLink $ a ^. atom_IsLink
         Nothing -> False
 
       -- Choose the update function depending wether to remove or add bonds.
@@ -957,19 +965,17 @@ changeBond operation mol (at1, at2) = do
       -- Update the bonds of this layer if everything is fine. Keep them as is otherwise.
       thisLayerBonds = mol' ^. molecule_Bonds
       thisLayerBondsUpdated =
-        if all
-           (== True)
-           [originExitst, targetExists, wasPseudo1 == originIsPseudo, wasPseudo2 == targetIsPseudo]
+        if all (== True)
+               [originExitst, targetExists, wasLink1 == originIsLink, wasLink2 == targetIsLink]
         then
           updateFunction thisLayerBonds (at1', at2')
         else
           thisLayerBonds
 
       -- Lazily update the submolecules recursively.
-      subMols        = mol' ^. molecule_SubMol
-      subMolsUpdated = IntMap.map
-        (\m -> goDeepAddRemove operation' m ((at1', wasPseudo1), (at2', wasPseudo2)))
-        subMols
+      subMols = mol' ^. molecule_SubMol
+      subMolsUpdated =
+        IntMap.map (\m -> goDeepAddRemove operation' m ((at1', wasLink1), (at2', wasLink2))) subMols
     in
       if IntMap.null subMols -- Update deeper layers only if required to end the recursion.
         then mol' & molecule_Bonds .~ thisLayerBondsUpdated
@@ -1537,9 +1543,9 @@ getPolarisationCloudFromAbove
                 --   the layer above. The layer above is also determined from the MolID by removing
                 --   its last element.
   -> Seq Double -- ^ Scaling factors for the multipole moments in bond distances. The first value in
-                --   the sequence would be used to scale the multipoles of atoms 1 bond away the
-                --   non-pseudoatom model system atoms, the second value in the sequence multipoles
-                --   2 bonds away and so on.
+                --   the sequence would be used to scale the multipoles of atoms 1 bond away from
+                --   set 1 atoms, the second value in the sequence multipoles 2 bonds away and so
+                --   on.
   -> m Molecule -- ^ The specified layer of the molecule only with polarisation centres added. All
                 --   submolecules or fragments this layer may have had are removed.
 getPolarisationCloudFromAbove mol layerID poleScalings = do

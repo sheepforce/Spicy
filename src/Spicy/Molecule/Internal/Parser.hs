@@ -82,7 +82,7 @@ parseXYZ = do
     endOfLine
     return Atom { _atom_Element     = fromMaybe H . readMaybe $ cElement
                 , _atom_Label       = ""
-                , _atom_IsPseudo    = False
+                , _atom_IsLink      = NotLink
                 , _atom_IsCapped    = False
                 , _atom_IsDummy     = False
                 , _atom_FFType      = FFXYZ
@@ -136,7 +136,7 @@ parseTXYZ = do
     let atom = Atom
           { _atom_Element     = fromMaybe H . readMaybe $ cElement
           , _atom_Label       = ""
-          , _atom_IsPseudo    = False
+          , _atom_IsLink      = NotLink
           , _atom_IsCapped    = False
           , _atom_IsDummy     = True
           , _atom_FFType      = case mFFType of
@@ -255,7 +255,7 @@ parseMOL2 = do
               <> fromMaybe "" ffType
           atom = Atom { _atom_Element     = fromMaybe H . readMaybe $ cElem
                       , _atom_Label       = label
-                      , _atom_IsPseudo    = False
+                      , _atom_IsLink      = NotLink
                       , _atom_IsCapped    = False
                       , _atom_IsDummy     = False
                       , _atom_FFType      = FFMol2 mol2FFText
@@ -389,7 +389,7 @@ parsePDB = do
     let atom = Atom
           { _atom_Element     = element
           , _atom_Label       = atomLabel
-          , _atom_IsPseudo    = False
+          , _atom_IsLink      = NotLink
           , _atom_IsCapped    = False
           , _atom_IsDummy     = False
           , _atom_FFType      = FFPDB atomLabel
