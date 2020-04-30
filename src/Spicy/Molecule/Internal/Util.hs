@@ -545,11 +545,9 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
 
   -- Check if the indices for the new layer are strictly a subset of the old layer.
   let oldLayerAtomInds = IntMap.keysSet $ mol ^. molecule_Atoms
-  if newLayerInds `IntSet.isSubsetOf` oldLayerAtomInds
-    then return ()
-    else throwM $ MolLogicException
-      "newSubLayer"
-      "The new layer indices are either reffering to atoms, that are not there."
+  unless (newLayerInds `IntSet.isSubsetOf` oldLayerAtomInds) . throwM $ MolLogicException
+    "newSubLayer"
+    "The new layer indices are either reffering to atoms, that are not there."
 
   let atoms = mol ^. molecule_Atoms
       -- Convert the capping atom defaults to individual values.
@@ -641,8 +639,16 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
     (\accMol' slOrigin linkAtomList -> do
       accMol <- accMol'
       addLinksFromList slOrigin accMol linkAtomList
+  -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the
+  -- inner loop in addLinksFromList goes through all link atoms, that need to be added to a single
+  -- atom that need to be capped.
+  (_, subLayerWithLinkAdded) <- IntMap.foldlWithKey'
+    (\accIndxAndMol' slOrigin linkAtomList -> do
+      (accIndx   , accMol) <- accIndxAndMol'
+      (newMaxIndx, newMol) <- addLinksFromList accIndx slOrigin accMol linkAtomList
+      return (newMaxIndx, newMol)
     )
-    (pure slIntermediateMol)
+    (pure (maxAtomIndexBeforeLinksAdded, slIntermediateMol))
     cappingLinkAtoms
 
   let -- Identify top level atoms, that are part of a capped bond. (Works thanks to the Foldable
@@ -650,23 +656,26 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
       slAtomsCapped          = HashSet.map fst cutAtomPairs
       -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom as capped.
       subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithLinkAdded slAtomsCapped
-      -- Mark the top layer atoms, that are part of a capped bond as capped and add the newly
-      -- constructed submolecule to this molecule.
+      -- Mark the sub layer atoms, that are part of a capped bond as capped and add the newly
+      -- constructed submolecule to this molecule layer.
       markedMolWithNewSublayer =
         mol & molecule_SubMol %~ IntMap.insert newSubLayerIndex subLayerMarkedAsCapped
 
   return markedMolWithNewSublayer
  where
   -- Add a list of capping link atoms to an existing molecule and a single bond partner. Usually
-  -- this will be just one link atom but it could also add multiple caps to a single atom.
-  addLinksFromList :: MonadThrow m => Int -> Molecule -> Seq Atom -> m Molecule
-  addLinksFromList linkBondPartner mol' linkSeq = foldl'
-    (\accMol' linkAtom -> do
-      accMol                 <- accMol'
-      (accNewInd, accNewMol) <- addAtom accMol linkAtom
-      changeBond Add accNewMol (linkBondPartner, accNewInd)
+  -- this will be just one link atom but it could also add multiple caps to a single atom. Returns
+  -- the index of the last link atom added and the molecule layer with all the links atoms added.
+  addLinksFromList :: MonadThrow m => Int -> Int -> Molecule -> Seq Atom -> m (Int, Molecule)
+  addLinksFromList maxAtomIndex' linkBondPartner mol' linkSeq = foldl'
+    (\accIndxAndMol' linkAtom -> do
+      (accIndx, accMol) <- accIndxAndMol'
+      let newAtomIndex = accIndx + 1
+      molAtomAdded        <- addAtomWithKeyToCurrentLayer accMol newAtomIndex linkAtom
+      molAtomAndBondAdded <- changeBond Add molAtomAdded (linkBondPartner, newAtomIndex)
+      return (newAtomIndex, molAtomAndBondAdded)
     )
-    (pure mol')
+    (pure (maxAtomIndex', mol'))
     linkSeq
 
   -- Mark a Set of atoms as capped in the current layer.
@@ -790,33 +799,49 @@ calcLinkCoords cappedAtomCoords removedAtomCoords gScale = do
 
 ----------------------------------------------------------------------------------------------------
 {-|
-Adds an 'Atom' to the current 'Molecule' layer. Its 'IntMap.Key'will be larger by 1 than the largest
-atom index at the current layer. The atom will also be added to all deeper layers with the same
-'IntMap.Key'. If the 'IntMap.Key', that was determined from the current layer already exists in a
-deeper layer (because a link atom in a deeper layer has been given this key), an error will be
-thrown. It is therefore advisable to use this function only on molecules, that do not have
-link atom in deeper layers yet. No bonds will be updated.
+Adds an 'Atom' to a specified 'Molecule' layer within the full molecular system. The  'IntMap.Key'
+of the new atom will be larger by 1 than the largest atom index in the full system. The atom will
+also be added to all deeper layers than the specified one with the same 'IntMap.Key'. No bonds will
+be updated.
 
 The 'Int' returned is the 'IntMap' key of the newly added atom.
 -}
-addAtom :: MonadThrow m => Molecule -> Atom -> m (Int, Molecule)
-addAtom mol atom = do
-  -- Before doing anything, make sure the molecule is sane.
-  _ <- checkMolecule mol
+addAtom :: MonadThrow m => Molecule -> MolID -> Atom -> m (Int, Molecule)
+addAtom fullMol molID atom = do
+  -- Before doing anything, make sure the whole molecule is sane.
+  _            <- checkMolecule fullMol
+
+  -- The largest atom index in the complete molecule.
+  maxAtomIndex <- case IntSet.maxView . getAtomIndices $ fullMol of
+    Nothing -> throwM $ MolLogicException "addAtom" "Your molecule appears to have no atoms"
+    Just (maxKey, _) -> return maxKey
+
+  -- Get the layer from which to start adding the atom by a MolID.
+  mol <- case fullMol ^? molIDLensGen molID of
+    Nothing ->
+      throwM
+        . MolLogicException "addAtom"
+        $ (  "Requested to add an atom to layers below layer with ID "
+          <> show molID
+          <> " but no layer with this id could be found."
+          )
+    Just m -> return m
 
   -- Find the largest index of this layer.
-  let thisLayerMaxIndex = IntSet.findMax . IntMap.keysSet $ mol ^. molecule_Atoms
-      newAtomIndex      = thisLayerMaxIndex + 1
+  let newAtomIndex = maxAtomIndex + 1
 
-  -- Insert the new atom recursively into all layers
+  -- Insert the new atom recursively into all layers below and including the selected one.
   newMol <- goInsert mol newAtomIndex atom
 
-  return (newAtomIndex, newMol)
+  -- Return the full molecular system with the sublayers updated.
+  let newFullMol = fullMol & (molIDLensGen molID) .~ newMol
+
+  return (newAtomIndex, newFullMol)
 
  where
   goInsert :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
   goInsert mol' newInd' atom' = do
-    let atoms = mol ^. molecule_Atoms
+    let atoms = mol' ^. molecule_Atoms
 
     -- Check if the key for the new atom would be new/unique.
     when (newInd' `IntMap.member` atoms)
@@ -836,6 +861,45 @@ addAtom mol atom = do
       else do
         updatedSubMols <- traverse (\m -> goInsert m newInd' atom') subMols
         return $ thisLayerMolAtomAdded & molecule_SubMol .~ updatedSubMols
+
+----------------------------------------------------------------------------------------------------
+{-|
+This function adds an atom with a given key to all layers below the molecule which was given as
+input. This can cause problems if the key, that is given is already present. If it is already
+present in the  layers visible to this function (current one and below) an exception will be thrown.
+But if a sublayer is given to this function and you specify a key to this function, which is present
+in layers above (not visible to this function) but not in the layers visible, you will end up with
+an inconsistent molecule.
+-}
+addAtomWithKeyToCurrentLayer :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
+addAtomWithKeyToCurrentLayer mol key atom = do
+  -- Before doing anything, make sure that the input is sane.
+  _      <- checkMolecule mol
+
+  newMol <- goInsert mol key atom
+  return newMol
+ where
+  goInsert :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
+  goInsert mol' newKey' atom' = do
+    let atoms = mol' ^. molecule_Atoms
+
+    when (newKey' `IntMap.member` atoms)
+      .  throwM
+      .  MolLogicException "addAtomWithKeyToCurrentLayer"
+      $  "Cannot add atom with key "
+      <> show newKey'
+      <> " to the current molecule layer. The key already exists."
+
+    -- Add the atom with the given index to the current layer.
+    let thisLayerMolAtomAdded = mol' & molecule_Atoms %~ IntMap.insert newKey' atom'
+        subMols               = thisLayerMolAtomAdded ^. molecule_SubMol
+
+    -- Add recursively also to all deeper layers.
+    if IntMap.null subMols
+      then return thisLayerMolAtomAdded
+      else do
+        updateSubMols <- traverse (\m -> goInsert m newKey' atom') subMols
+        return $ thisLayerMolAtomAdded & molecule_SubMol .~ updateSubMols
 
 ----------------------------------------------------------------------------------------------------
 {-|
