@@ -529,12 +529,13 @@ sublayer 'Molecule':
 -}
 newSubLayer
   :: MonadThrow m
-  => Molecule                           -- ^ Input molecule, for which a new layer will be inserted.
+  => Int                                -- ^ The maximum index of all atoms in the full system.
+  -> Molecule                           -- ^ Input molecule, for which a new layer will be inserted.
   -> IntSet                             -- ^ Selection of the atoms to keep for the sublayer.
   -> Maybe Double                       -- ^ Scaling radius $\(g\).
   -> Maybe (Element, AtomLabel, FFType) -- ^ Settings for the insertion of capping atoms.
   -> m Molecule                         -- ^ The original molecule modified by a sublayer inserted.
-newSubLayer mol newLayerInds covScale capAtomInfo = do
+newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
   -- Before doing anything, make sure the molecule is sane.
   _ <- checkMolecule mol
 
@@ -634,11 +635,6 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
                                    , _molecule_CalcContext       = slCalcContext
                                    }
 
-  -- Add all capping atoms to the sublayer
-  subLayerWithLinkAdded <- IntMap.foldlWithKey'
-    (\accMol' slOrigin linkAtomList -> do
-      accMol <- accMol'
-      addLinksFromList slOrigin accMol linkAtomList
   -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the
   -- inner loop in addLinksFromList goes through all link atoms, that need to be added to a single
   -- atom that need to be capped.
@@ -648,13 +644,13 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
       (newMaxIndx, newMol) <- addLinksFromList accIndx slOrigin accMol linkAtomList
       return (newMaxIndx, newMol)
     )
-    (pure (maxAtomIndexBeforeLinksAdded, slIntermediateMol))
+    (pure (maxAtomIndex, slIntermediateMol))
     cappingLinkAtoms
 
   let -- Identify top level atoms, that are part of a capped bond. (Works thanks to the Foldable
       -- instance of IntMap ...)
       slAtomsCapped          = HashSet.map fst cutAtomPairs
-      -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom as capped.
+      -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom, as capped.
       subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithLinkAdded slAtomsCapped
       -- Mark the sub layer atoms, that are part of a capped bond as capped and add the newly
       -- constructed submolecule to this molecule layer.
@@ -671,7 +667,7 @@ newSubLayer mol newLayerInds covScale capAtomInfo = do
     (\accIndxAndMol' linkAtom -> do
       (accIndx, accMol) <- accIndxAndMol'
       let newAtomIndex = accIndx + 1
-      molAtomAdded        <- addAtomWithKeyToCurrentLayer accMol newAtomIndex linkAtom
+      molAtomAdded        <- addAtomWithKeyLocal accMol newAtomIndex linkAtom
       molAtomAndBondAdded <- changeBond Add molAtomAdded (linkBondPartner, newAtomIndex)
       return (newAtomIndex, molAtomAndBondAdded)
     )
@@ -871,8 +867,8 @@ But if a sublayer is given to this function and you specify a key to this functi
 in layers above (not visible to this function) but not in the layers visible, you will end up with
 an inconsistent molecule.
 -}
-addAtomWithKeyToCurrentLayer :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
-addAtomWithKeyToCurrentLayer mol key atom = do
+addAtomWithKeyLocal :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
+addAtomWithKeyLocal mol key atom = do
   -- Before doing anything, make sure that the input is sane.
   _      <- checkMolecule mol
 
@@ -885,7 +881,7 @@ addAtomWithKeyToCurrentLayer mol key atom = do
 
     when (newKey' `IntMap.member` atoms)
       .  throwM
-      .  MolLogicException "addAtomWithKeyToCurrentLayer"
+      .  MolLogicException "addAtomWithKeyLocal"
       $  "Cannot add atom with key "
       <> show newKey'
       <> " to the current molecule layer. The key already exists."
