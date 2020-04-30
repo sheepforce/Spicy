@@ -22,6 +22,7 @@ module Spicy.Molecule
   , molFoldlWithMolID
   , molIDLensGen
   , calcIDLensGen
+  , getMaxAtomIndex
   , newSubLayer
   , createLinkAtom
   , addAtom

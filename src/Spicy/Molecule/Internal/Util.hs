@@ -20,6 +20,7 @@ module Spicy.Molecule.Internal.Util
   , molFoldlWithMolID
   , reIndexMolecule
   , reIndex2BaseMolecule
+  , getMaxAtomIndex
   , groupTupleSeq
   , groupBy
   , findAtomInSubMols
@@ -208,9 +209,8 @@ checkMolecule mol = do
                 qmMult        = calcContext ^? qmLens . qmContext_Mult
                 nElectrons    = getNElectrons mol <$> qmCharge
                 qmElectronsOK = case (nElectrons, qmMult) of
-                  (Just n, Just m) ->
-                    n + 1 >= m && ((even (n + 1) && odd m) || (odd (n + 1) && even m))
-                  _ -> True
+                  (Just n, Just m) -> n + 1 >= m && ((even n && odd m) || (odd n && even m))
+                  _                -> True
             in  qmElectronsOK
           )
       $ (mol ^. molecule_CalcContext)
@@ -367,6 +367,20 @@ getAtomIndices mol =
 
 ----------------------------------------------------------------------------------------------------
 {-|
+Given the full molecular system, this function will find the maximum index respective key of an atom
+in all layers.
+-}
+getMaxAtomIndex :: MonadThrow m => Molecule -> m Int
+getMaxAtomIndex mol = do
+  let maybeMax = fmap fst . IntSet.maxView . getAtomIndices $ mol
+  case maybeMax of
+    Nothing -> throwM $ MolLogicException
+      "getMaxAtomIndex"
+      "Cannot find the maximum index of all atoms in the molecule. The molecule seems to be empty."
+    Just k -> return k
+
+----------------------------------------------------------------------------------------------------
+{-|
 Reindex a complete 'Molecule', including all its deeper layers in '_molecule_SubMol') by mappings
 from a global replacement Map, mapping old to new indices. This function assumes, that your molecule
 is sane in the overall assumptions of this program. This means that the lower layers obey the
@@ -440,7 +454,7 @@ getNElectrons
   -> Int      -- ^ Number of electrons of the 'Molecule' at the given charge.
 getNElectrons mol charge' =
   let atoms         = mol ^. molecule_Atoms
-      atomicNumbers = IntMap.map (\a -> fromEnum $ a ^. atom_Element) atoms
+      atomicNumbers = IntMap.map (\a -> (+ 1) . fromEnum $ a ^. atom_Element) atoms
       nElectrons    = sum atomicNumbers - charge'
   in  nElectrons
 
@@ -614,11 +628,11 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
             <> " failed."
       -- Create a new link atom, for the current pair.
       newLinkAtom <- Seq.singleton <$> createLinkAtom covScale
-                                                        capAtomElement
-                                                        capAtomLabel
-                                                        capAtomFFType
-                                                        (ixSL, slCappedAtom)
-                                                        (ixTL, tlRemovedAtom)
+                                                      capAtomElement
+                                                      capAtomLabel
+                                                      capAtomFFType
+                                                      (ixSL, slCappedAtom)
+                                                      (ixTL, tlRemovedAtom)
       return . IntMap.insertWith (<>) ixSL newLinkAtom $ accLinkAtomMap
     )
     (return IntMap.empty)
@@ -905,6 +919,7 @@ that have the same key. If the atom to remove was not a link atom in the highest
 link atom with the same index is found in deeper layers, the link atom will not be touched. Bonds
 will be cleaned from references to this atom, if the atom is removed.
 -}
+-- TODO (phillip|p=100|#Wrong) - Change the behaviour regarding link atoms. The new creation of atoms is more safe.
 removeAtom :: MonadThrow m => Molecule -> Int -> m Molecule
 removeAtom mol atomInd = do
   -- Before doing anything check if the molecule is sane.
