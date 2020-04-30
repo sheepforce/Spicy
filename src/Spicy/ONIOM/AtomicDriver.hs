@@ -112,7 +112,6 @@ multicentreOniomNDriver atomicTask = do
       -- one). Therefore a local context of calculation keys is provided, to carry out the calculation
       -- on the local molecule of this traverse.
       -- All ONIOM calculations will be performed.
-      -- TODO (phillip|p=200|#Unfinished) - use the correct CalcID so that runCalculation does not get confused. Lenses will help.
       currentLayerOutputs <- Map.traverseWithKey
         (\calcK _ -> case calcK of
           ONIOMKey Inherited -> do
