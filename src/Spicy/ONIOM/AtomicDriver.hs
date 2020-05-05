@@ -37,6 +37,16 @@ import           Spicy.Wrapper
 A driver function for an atomic step in Multicentre-ONIOM-n methods. Performs a single point energy
 calculation, a gradient calculation or a hessian calculation on a given layout and builds the ONIOM
 result from the individual results of the calculations on the layers.
+
+*Note:* The way polarisation can be used here is a general form. It can polarise layerwise top down,
+but only the layer directly above the layer currently handled can polarise. For exmaple in the case
+of a 3 layer ONIOM model with real, intermediate and model system, the model system can only be
+polarised by the intermediate system, but not the real system. The real system might influence the
+model system by polarising the intermediate system, which then polarises the model system. Therefore
+this is like a propagation form the outer to the inner layers. This different from the special cases
+described in [The ONIOM Method and Its Applications](https://doi.org/10.1021/cr5004419), section
+2.1.4.1. Also, the scheme employed here allows QM-QM polarisation, if the QM method provides
+charges.
 -}
 multicentreOniomNDriver
   :: ( HasMolecule env
@@ -178,6 +188,7 @@ multicentreOniomNDriver atomicTask = do
 
   -- Collect all the results from the calculation outputs and combine bottom up all the results.
   logInfoF "Collecting the results from individual calculations ..."
-  molCollectedResult <- local (& moleculeL .~ molWithOutputs) multicentreOniomNCollector
+  molCollectedResult <- local (& moleculeL .~ molWithOutputs)
+    $ multicentreOniomNCollector atomicTask
 
   return molCollectedResult

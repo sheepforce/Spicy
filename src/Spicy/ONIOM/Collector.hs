@@ -174,3 +174,48 @@ energyCollector mol = do
       $ realMol
       & (molecule_EnergyDerivatives . energyDerivatives_Energy ?~ oniom2Energy)
       & (molecule_SubMol .~ modelCentresWithTheirRealEnergies)
+
+----------------------------------------------------------------------------------------------------
+{-|
+Collector for multicentre ONIOM-n gradients. Implemented in the local ONIOM-2 formulation, that is
+used by 'energyCollector'. For link atoms the formulation of [A new ONIOM implementation in
+Gaussian98. Part I. The calculation of energies, gradients, vibrational frequencies and electric
+field derivatives](https://doi.org/10.1016/S0166-1280(98)00475-8) is used, which maintains the
+degrees of freedom of the system by distributing the gradient of the link atom to the capped atom
+and the host atom is used.
+-}
+-- TODO (phillip|p=100|#Unfinished) - The effect of embedding is not direclty considered here but potentially must.
+gradientCollector :: MonadThrow m => Molecule -> m Molecule
+gradientCollector mol = do
+  let subMols = mol ^. molecule_SubMol
+
+  -- Update this layer of the molecule with its gradient, as if this layer would be the real system.
+  thisLayerAsReal <- if IntMap.null subMols
+    then thisOriginalGradientAsRealGradient mol
+    else multiCentreONIOM2Collector mol subMols
+  return undefined
+ where
+    -- For a molecule, that does not contain any deeper layers, the 'Original' calcoutput can be
+    -- used as the gradient of this system. This function therefore copies the energy from the
+    -- 'Original' calcoutput to this layer's 'EnergyDerivatives'.
+  thisOriginalGradientAsRealGradient :: MonadThrow m => Molecule -> m Molecule
+  thisOriginalGradientAsRealGradient mol' = do
+    let maybeOriginalCalcGradient =
+          mol'
+            ^? molecule_CalcContext
+            .  ix (ONIOMKey Original)
+            .  calcContext_Output
+            .  _Just
+            .  calcOutput_EnergyDerivatives
+            .  energyDerivatives_Gradient
+            .  _Just
+    case maybeOriginalCalcGradient of
+      Nothing -> throwM $ MolLogicException
+        "gradientCollector"
+        "Could not find the gradient from the original calculation of this layer."
+      Just gradient ->
+        return $ mol' & molecule_EnergyDerivatives . energyDerivatives_Gradient ?~ gradient
+
+  multiCentreONIOM2Collector :: MonadThrow m => Molecule -> IntMap Molecule -> m Molecule
+  multiCentreONIOM2Collector realMol modelCentres = do
+    return undefined
