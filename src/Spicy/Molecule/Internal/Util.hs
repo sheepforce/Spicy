@@ -485,6 +485,7 @@ getMolByID mol (i :<| is) =
 {-| This generator takes a 'MolID' and generates an Lens to access this molecule. Dont be confused
 by the type signature, it is a normal lens to be used with '(^?)' as lookup (for setters sometimes
 it helps do redefine the lens locally in the setter). Read the type signature more as:
+
 @
     molIDLensGen :: MolID -> Lens' Molecule' Molecule'
 @
@@ -518,6 +519,7 @@ getCalcByID mol calcID = do
 ----------------------------------------------------------------------------------------------------
 {-|
 Generates a lens for calculation ID in a molecule. The type signature is confusing, read it more as
+
 @
     calcIDLensGen :: CalcID -> Lens' Molecule CalcContext
 @
@@ -713,20 +715,25 @@ Following special behaviours are used here:
 See also 'calcLinkCoords'.
 
 The position of the link atom is calculated as:
+
 \[
-\mathbf{R}_\mathrm{LA} =
-  \mathbf{R}_\mathrm{CA} + g ( \mathbf{R}_\mathrm{RA} - \mathbf{R}_\mathrm{CA})
+    \mathbf{r}^\mathrm{LA} =
+    \mathbf{r}^\mathrm{LAC} + g ( \mathbf{r}^\mathrm{LAH} - \mathbf{r}^\mathrm{LAC})
 \]
+
 where the scaling factor \(g\) will be calculated from a ratio of covalent radii, if not specified:
+
 \[
-g = \frac{r^\mathrm{cov}_\mathrm{CA} + \mathrm{cov}_\mathrm{LA}}{\mathrm{cov}_\mathrm{RA} + \mathrm{cov}_\mathrm{PA}}
+    g = \frac{r^\mathrm{cov, LAC} + r^\mathrm{cov, LA}}{r^\mathrm{cov, LAH} + r^\mathrm{cov, LA}}
 \]
+
 With:
-- \( \mathbf{R}_\mathrm{LA} \): the coordinates of the created link atom
-- \( \mathbf{R}_\mathrm{RA} \): the coordinates of the atom that has been removed by creating the
-  new layer
-- \( \mathbf{R}_\mathrm{CA} \): the coordinates of the atom, that will be capped by the link atom
-- \( g \): the scaling factor for the position of the link atom.
+
+  - \( \mathbf{r}^\mathrm{LA} \): the coordinates of the created link atom
+  - \( \mathbf{r}^\mathrm{LAH} \): the coordinates of the atom that has been removed by creating the
+    new layer
+  - \( \mathbf{r}^\mathrm{LAC} \): the coordinates of the atom, that will be capped by the link atom
+  - \( g \): the scaling factor for the position of the link atom.
 -}
 createLinkAtom
   :: MonadThrow m
@@ -786,15 +793,18 @@ createLinkAtom gScaleOption linkElementOption label fftype (cappedKey, cappedAto
 ----------------------------------------------------------------------------------------------------
 {-|
 Calculate the new coordinates of a link atom as:
+
 \[
-\mathbf{R}_\mathrm{PA} =
-  \mathbf{R}_\mathrm{CA} + g ( \mathbf{R}_\mathrm{RA} - \mathbf{R}_\mathrm{CA})
+    \mathbf{r}^\mathrm{LA} =
+    \mathbf{r}^\mathrm{LAC} + g ( \mathbf{r}^\mathrm{LAH} - \mathbf{r}^\mathrm{LAC})
 \]
+
 With:
-- \( \mathbf{R}_\mathrm{PA} \): the coordinates of the created link atom
-- \( \mathbf{R}_\mathrm{RA} \): the coordinates of the atom that has been removed by creating the
+
+- \( \mathbf{r}^\mathrm{LA} \): the coordinates of the created link atom
+- \( \mathbf{r}^\mathrm{LAH} \): the coordinates of the atom that has been removed by creating the
   new layer
-- \( \mathbf{R}_\mathrm{CA} \): the coordinates of the atom, that will be capped by the link atom
+- \( \mathbf{r}^\mathrm{LAC} \): the coordinates of the atom, that will be capped by the link atom
 -}
 -- TODO(phillip|p=40|#Unfinished) - Check if the scaling factor is correct. Results look spurious.
 calcLinkCoords
@@ -1599,10 +1609,11 @@ If the atoms of the real system above do not contain multipole information, you 
 dummy atoms in the model system.
 
 Be aware of a nasty corner case:
+
 @
-  b--c--d
- /       \
-A         E
+      b--c--d
+     /       \\
+    A         E
 @
 The atoms @A@ and @E@ belong to the model system, which shall be polarised, while @b@, @c@ and @d@
 belong to the real system, which provides the polarisation cloud. If scaling factors for up to three
