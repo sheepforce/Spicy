@@ -49,6 +49,7 @@ module Spicy.Molecule.Internal.Util
   , bondDistanceGroups
   , getAtomAssociationMap
   , fragmentAtomInfo2AtomsAndFragments
+  , getJacobian
   )
 where
 import           Control.Lens            hiding ( (:>)
@@ -1874,3 +1875,123 @@ fragmentAtomInfo2AtomsAndFragments info =
   fragmentUnion :: Fragment -> Fragment -> Fragment
   fragmentUnion a b =
     let atomsInB = b ^. fragment_Atoms in a & fragment_Atoms %~ IntSet.union atomsInB
+
+----------------------------------------------------------------------------------------------------
+{-|
+-}
+getJacobian :: MonadThrow m => IntMap Atom -> IntMap Atom -> m (Matrix D Double)
+getJacobian realAtoms modelAtoms = do
+  let
+    nModelAtoms      = IntMap.size modelAtoms
+    nRealAtoms       = IntMap.size realAtoms
+    realLinkAtoms    = IntMap.filter (isAtomLink . _atom_IsLink) realAtoms
+    realLinkAtomKeys = IntMap.keysSet realLinkAtoms
+    modelLinkAtoms =
+      flip IntMap.withoutKeys realLinkAtomKeys
+        . IntMap.filter (isAtomLink . _atom_IsLink)
+        $ modelAtoms
+    -- Translations of different mapping schemes:
+    --   - Global dense mapping means, that the real system atoms are treated as if they were dense
+    --      and 0-based (array like)
+    --   - Local dense mapping means, that the model system atoms are treated as if they were dense
+    --     and 0-based
+    realAtomKeys       = IntMap.keys realAtoms
+    modelAtomKeys      = IntMap.keys modelAtoms
+    allAtomKeys        = IntMap.keys $ IntMap.union realAtoms modelAtoms
+    sparse2DenseGlobal = IntMap.fromAscList $ RIO.zip allAtomKeys [0 ..]
+    dense2SparseGlobal = Massiv.fromList Par allAtomKeys :: Vector U Int
+    sparse2DenseLocal  = IntMap.fromAscList $ RIO.zip modelAtomKeys [0 ..]
+    dense2SparseLocal  = Massiv.fromList Par modelAtomKeys :: Vector U Int
+    -- This is the mapping from global dense indices to local dense indices. This means if you ask
+    -- for a real system atom, you will get 'Just' the dense index of the same atom in the model
+    -- system or 'Nothing' if this atom is not part of the model system.
+    global2Local :: IntMap (Maybe Int)
+    global2Local =
+      let globalKeys        = [0 .. nRealAtoms - 1]
+          global2LocalAssoc = fmap
+            (\globalKey ->
+              let sparseKey = dense2SparseGlobal Massiv.!? globalKey :: Maybe Int
+                  localKey  = flip IntMap.lookup sparse2DenseLocal =<< sparseKey
+              in  (globalKey, localKey)
+            )
+            globalKeys
+      in  IntMap.fromAscList global2LocalAssoc
+
+  -- DEBUG
+  traceM $ "sparse2DenseGlobal:" <> tshow sparse2DenseGlobal
+  traceM $ "sparse2DenseLocal:" <> tshow sparse2DenseLocal
+  traceM $ "global2Local:" <> tshow global2Local
+
+  -- Create a Matrix like HashMap, similiar to the BondMat stuff, that contains for pairs of
+  -- dense (local modelKey, global realKey) scaling factors g. There should be one pair per link.
+  -- atom.
+  -- This is close to the final jacobian but not there yet.
+  ((linkToModelG, linkToRealG) :: (HashMap (Int, Int) Double, HashMap (Int, Int) Double)) <-
+    IntMap.foldlWithKey'
+      (\hashMapAcc' linkKey linkAtom -> do
+        (linkToModelAcc, linkToRealAcc) <- hashMapAcc'
+
+        let denseLinkLocalKey   = sparse2DenseLocal IntMap.!? linkKey
+            sparseModelKey      = linkAtom ^? atom_IsLink . isLink_ModelAtom
+            denseModelGlobalKey = (sparse2DenseGlobal IntMap.!?) =<< sparseModelKey
+            sparseRealKey       = linkAtom ^? atom_IsLink . isLink_RealAtom
+            denseRealGlobalKey  = (sparse2DenseGlobal IntMap.!?) =<< sparseRealKey
+            gFactor'            = linkAtom ^? atom_IsLink . isLink_gFactor
+
+        -- DEBUG
+        traceM $ "denseLinkLocalKey:" <> tshow denseLinkLocalKey
+        traceM $ "sparseModelKey: " <> tshow sparseModelKey
+        traceM $ "denseModelGlobalKey: " <> tshow denseModelGlobalKey
+        traceM $ "sparseRealKey: " <> tshow sparseRealKey
+        traceM $ "denseRealGlobalKey: " <> tshow denseRealGlobalKey
+        traceM $ "gFactor: " <> tshow gFactor'
+
+        (linkIx, modelIx, realIx) <-
+          case (denseLinkLocalKey, denseModelGlobalKey, denseRealGlobalKey) of
+            (Just l, Just m, Just r) -> return (l, m, r)
+            _                        -> throwM $ MolLogicException
+              "getJacobian"
+              "While checking for atoms, that are influenced by link atoms, either a model system\
+          \ atom or a real system atom, that must be associated to the link atom, could not be\
+          \ found."
+
+        gFactor <- case gFactor' of
+          Nothing -> throwM $ MolLogicException
+            "getJacobian"
+            "The scaling factor g for this link atom could not be found."
+          Just g -> return g
+
+        return
+          $ ( HashMap.insert (linkIx, modelIx) gFactor linkToModelAcc
+            , HashMap.insert (linkIx, realIx) (1 - gFactor) linkToRealAcc
+            )
+      )
+      (return (HashMap.empty, HashMap.empty))
+      modelLinkAtoms
+
+  -- DEBUG
+  traceM $ "linkToModelG: " <> tshow linkToModelG
+  traceM $ "linkToRealG: " <> tshow linkToRealG
+
+  let jacobian :: Matrix D Double
+      jacobian = Massiv.makeArray
+        Par
+        (Sz (nModelAtoms :. nRealAtoms))
+        (\(modelIx :. realIx) ->
+          let -- Check wether the current real atom is also in the model system.
+              realInModel  = join $ global2Local IntMap.!? realIx
+              -- If the real atom is present in the model system, the gradient of the model system
+              -- for this atom is used instead.
+              defaultValue = case realInModel of
+                Nothing            -> 0
+                Just localModelKey -> if modelIx == localModelKey then 1 else 0
+              -- Check if the current pair belogns to a link atom in the model system.
+              gLinkToModel = fromMaybe 0 $ HashMap.lookup (modelIx, realIx) linkToModelG
+              gLinkToReal  = fromMaybe 0 $ HashMap.lookup (modelIx, realIx) linkToRealG
+          in  defaultValue + gLinkToModel + gLinkToReal
+              -- case (pairForth, pairBack) of
+              --   (Just forth, Nothing  ) -> forth
+              --   (Nothing   , Just back) -> back
+              --   _                       -> defaultValue
+        )
+  return jacobian
