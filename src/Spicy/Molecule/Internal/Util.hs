@@ -1878,8 +1878,42 @@ fragmentAtomInfo2AtomsAndFragments info =
 
 ----------------------------------------------------------------------------------------------------
 {-|
+Obtains the Jacobian matrix for the transformation from the basis of the model system to
+the basis of a real system as used in the equation for ONIOM gradients:
+
+\[
+    \nabla E^\mathrm{ONIOM2} = \nabla E^\mathrm{real} - \nabla E^\mathrm{model, low} \mathbf{J}
+                             + \nabla E^\mathrm{model, high} \mathbf{J}
+\]
+
+The gradient of the real system, which has \(N\) atoms is a row vector with \(3 N\) elements. The
+gradient of the model system, which has \(M\) atoms is a row vector, with \(3 M\) elements. The
+Jacobian matrix therefore has a size of \( 3 M \times 3 N\).
+
+To transform from the basis of the model system to the basis of the real system, the Jacobian does
+the following
+
+  - Distribute the gradient that is acting on a link atom @LA@ (which connects the model system atom
+    @LAC@ to the real system atom @LAH@) according to the factor \(g\), if the position of "LA"
+    depends on @LAH@ and @LAC@ by
+    \( \mathbf{r}^\mathrm{LA} = \mathbf{r}^\mathrm{LAC} + g (\mathbf{r}^\mathrm{LAH} - \mathbf{r}^\mathrm{LAC}) \)
+    as
+    \( \partial r_a^\mathrm{LA} / \partial r_b^\mathrm{LAH} = g \delta_{a,b} \)
+    ,
+    \(\partial r_a^\mathrm{LA} / \partial r_b^\mathrm{LAC} = (1 - g) \delta_{a,b}\)
+    , where \(a\) and \(b\) are the cartesian components \(x\), \(y\) or \(z\) of the gradient.
+  - Atoms of the real system, that are not part of the model system (set 4 atoms) get a contribution
+    of 0 from the model system.
+  - Atoms of the real system, that are part of the model system, get a full contribution from the
+    model system.
+  - To obtain an element of the Jacobian all contributions are summed up.
 -}
-getJacobian :: MonadThrow m => IntMap Atom -> IntMap Atom -> m (Matrix D Double)
+-- TODO (phillip|p=5|#Improvement #ExternalDependency) - As soon as Massiv supports sparse arrays, use them! https://github.com/lehins/massiv/issues/50
+getJacobian
+  :: MonadThrow m
+  => IntMap Atom         -- ^ Atoms of the real system.
+  -> IntMap Atom         -- ^ Atoms of the model system.
+  -> m (Matrix D Double)
 getJacobian realAtoms modelAtoms = do
   let
     nModelAtoms      = IntMap.size modelAtoms
@@ -1895,13 +1929,11 @@ getJacobian realAtoms modelAtoms = do
     --      and 0-based (array like)
     --   - Local dense mapping means, that the model system atoms are treated as if they were dense
     --     and 0-based
-    realAtomKeys       = IntMap.keys realAtoms
     modelAtomKeys      = IntMap.keys modelAtoms
     allAtomKeys        = IntMap.keys $ IntMap.union realAtoms modelAtoms
     sparse2DenseGlobal = IntMap.fromAscList $ RIO.zip allAtomKeys [0 ..]
     dense2SparseGlobal = Massiv.fromList Par allAtomKeys :: Vector U Int
     sparse2DenseLocal  = IntMap.fromAscList $ RIO.zip modelAtomKeys [0 ..]
-    dense2SparseLocal  = Massiv.fromList Par modelAtomKeys :: Vector U Int
     -- This is the mapping from global dense indices to local dense indices. This means if you ask
     -- for a real system atom, you will get 'Just' the dense index of the same atom in the model
     -- system or 'Nothing' if this atom is not part of the model system.
@@ -1916,11 +1948,6 @@ getJacobian realAtoms modelAtoms = do
             )
             globalKeys
       in  IntMap.fromAscList global2LocalAssoc
-
-  -- DEBUG
-  traceM $ "sparse2DenseGlobal:" <> tshow sparse2DenseGlobal
-  traceM $ "sparse2DenseLocal:" <> tshow sparse2DenseLocal
-  traceM $ "global2Local:" <> tshow global2Local
 
   -- Create a Matrix like HashMap, similiar to the BondMat stuff, that contains for pairs of
   -- dense (local modelKey, global realKey) scaling factors g. There should be one pair per link.
@@ -1938,14 +1965,6 @@ getJacobian realAtoms modelAtoms = do
             denseRealGlobalKey  = (sparse2DenseGlobal IntMap.!?) =<< sparseRealKey
             gFactor'            = linkAtom ^? atom_IsLink . isLink_gFactor
 
-        -- DEBUG
-        traceM $ "denseLinkLocalKey:" <> tshow denseLinkLocalKey
-        traceM $ "sparseModelKey: " <> tshow sparseModelKey
-        traceM $ "denseModelGlobalKey: " <> tshow denseModelGlobalKey
-        traceM $ "sparseRealKey: " <> tshow sparseRealKey
-        traceM $ "denseRealGlobalKey: " <> tshow denseRealGlobalKey
-        traceM $ "gFactor: " <> tshow gFactor'
-
         (linkIx, modelIx, realIx) <-
           case (denseLinkLocalKey, denseModelGlobalKey, denseRealGlobalKey) of
             (Just l, Just m, Just r) -> return (l, m, r)
@@ -1962,36 +1981,40 @@ getJacobian realAtoms modelAtoms = do
           Just g -> return g
 
         return
-          $ ( HashMap.insert (linkIx, modelIx) gFactor linkToModelAcc
-            , HashMap.insert (linkIx, realIx) (1 - gFactor) linkToRealAcc
-            )
+          ( HashMap.insert (linkIx, modelIx) (1 - gFactor) linkToModelAcc
+          , HashMap.insert (linkIx, realIx) gFactor linkToRealAcc
+          )
       )
       (return (HashMap.empty, HashMap.empty))
       modelLinkAtoms
 
-  -- DEBUG
-  traceM $ "linkToModelG: " <> tshow linkToModelG
-  traceM $ "linkToRealG: " <> tshow linkToRealG
-
   let jacobian :: Matrix D Double
       jacobian = Massiv.makeArray
         Par
-        (Sz (nModelAtoms :. nRealAtoms))
-        (\(modelIx :. realIx) ->
-          let -- Check wether the current real atom is also in the model system.
-              realInModel  = join $ global2Local IntMap.!? realIx
+        (Sz (3 * nModelAtoms :. 3 * nRealAtoms))
+        (\(modelCartIx :. realCartIx) ->
+          let -- The indices of the matrix are the expanded atom indices, meaning that actually 3
+              -- values per atom (x, y, z) are present. These are the atom indices again now.
+              modelIx        = modelCartIx `div` 3
+              realIx         = realCartIx `div` 3
+              -- This is the cartesian component of the gradient of an atom. 0:x, 1:y, 2:z
+              modelComponent = modelCartIx `mod` 3
+              realComponent  = realCartIx `mod` 3
+              -- Check wether the current real atom is also in the model system.
+              realInModel    = join $ global2Local IntMap.!? realIx
               -- If the real atom is present in the model system, the gradient of the model system
-              -- for this atom is used instead.
-              defaultValue = case realInModel of
-                Nothing            -> 0
-                Just localModelKey -> if modelIx == localModelKey then 1 else 0
-              -- Check if the current pair belogns to a link atom in the model system.
-              gLinkToModel = fromMaybe 0 $ HashMap.lookup (modelIx, realIx) linkToModelG
-              gLinkToReal  = fromMaybe 0 $ HashMap.lookup (modelIx, realIx) linkToRealG
-          in  defaultValue + gLinkToModel + gLinkToReal
-              -- case (pairForth, pairBack) of
-              --   (Just forth, Nothing  ) -> forth
-              --   (Nothing   , Just back) -> back
-              --   _                       -> defaultValue
+              -- for this atom is used instead. Only use the gradient for the appropriate cartesian
+              -- components (x component provides x component, but not x provided y).
+              defaultValue   = case realInModel of
+                Nothing -> 0
+                Just localModelKey ->
+                  if modelIx == localModelKey && modelComponent == realComponent then 1 else 0
+              -- Check if the current pair belogns to a link atom in the model system. Keep it only
+              -- if the cartesian components match.
+              (link2ModelGValue, link2RealGValue) =
+                  let link2ModelG = fromMaybe 0 $ HashMap.lookup (modelIx, realIx) linkToModelG
+                      link2RealG  = fromMaybe 0 $ HashMap.lookup (modelIx, realIx) linkToRealG
+                  in  if modelComponent == realComponent then (link2ModelG, link2RealG) else (0, 0)
+          in  defaultValue + link2ModelGValue + link2RealGValue
         )
   return jacobian
