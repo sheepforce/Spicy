@@ -1982,8 +1982,8 @@ getJacobian realAtoms modelAtoms = do
             _                        -> throwM $ MolLogicException
               "getJacobian"
               "While checking for atoms, that are influenced by link atoms, either a model system\
-          \ atom or a real system atom, that must be associated to the link atom, could not be\
-          \ found."
+              \ atom or a real system atom, that must be associated to the link atom, could not be\
+              \ found."
 
         gFactor <- case gFactor' of
           Nothing -> throwM $ MolLogicException
