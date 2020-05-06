@@ -70,6 +70,7 @@ parseXYZ = do
                   , _molecule_Fragment          = IntMap.empty
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
   xyzLineParser :: Parser Atom
@@ -119,6 +120,7 @@ parseTXYZ = do
                   , _molecule_Fragment          = IntMap.empty
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
   -- Parsing a single line of atomSeq. Tinker's format keeps bonds associated with atomSeq. So a tuple
@@ -169,6 +171,7 @@ parseMOL2 = do
                   , _molecule_Fragment          = fragments
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
    -- Parse the @<TRIPOS>MOLECULE block of MOL2.
@@ -331,6 +334,7 @@ parsePDB = do
                   , _molecule_Fragment          = fragments
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
   -- Parser fot HETATM and ATOM records.

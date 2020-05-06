@@ -650,6 +650,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
                                    , _molecule_Fragment          = slFragments
                                    , _molecule_EnergyDerivatives = slEnergyDerivatives
                                    , _molecule_CalcContext       = slCalcContext
+                                   , _molecule_Jacobian = Nothing
                                    }
 
   -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the
@@ -664,15 +665,22 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
     (pure (maxAtomIndex, slIntermediateMol))
     cappingLinkAtoms
 
-  let -- Identify top level atoms, that are part of a capped bond. (Works thanks to the Foldable
+  -- Calculate the Jacobian for this layer.
+  let topLayerAtoms = mol ^. molecule_Atoms
+      subLayerAtoms = subLayerWithLinkAdded ^. molecule_Atoms
+  slJacobian <- getJacobian topLayerAtoms subLayerAtoms
+
+  let -- Identify sub layer atoms, that are part of a capped bond. (Works thanks to the Foldable
       -- instance of IntMap ...)
       slAtomsCapped          = HashSet.map fst cutAtomPairs
       -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom, as capped.
       subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithLinkAdded slAtomsCapped
+      -- Add the jacobian to the sublayer.
+      subLayerWithJacobian = subLayerMarkedAsCapped & molecule_Jacobian ?~ (MatrixD slJacobian)
       -- Mark the sub layer atoms, that are part of a capped bond as capped and add the newly
       -- constructed submolecule to this molecule layer.
       markedMolWithNewSublayer =
-        mol & molecule_SubMol %~ IntMap.insert newSubLayerIndex subLayerMarkedAsCapped
+        mol & molecule_SubMol %~ IntMap.insert newSubLayerIndex subLayerWithJacobian
 
   return markedMolWithNewSublayer
  where

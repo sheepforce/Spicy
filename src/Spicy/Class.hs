@@ -29,6 +29,7 @@ module Spicy.Class
   , Array2S
   , Array3S(..)
   , Array4S(..)
+  , MatrixD(..)
     -- ** Paths
     -- $jsonTypesPath
   , JFilePath(..)
@@ -136,6 +137,7 @@ module Spicy.Class
   , molecule_Fragment
   , molecule_EnergyDerivatives
   , molecule_CalcContext
+  , molecule_Jacobian
   , Trajectory
   , MolID
   , CalcID(..)
@@ -403,7 +405,7 @@ instance (FromJSON a, Storable a) => FromJSON (MatrixS a) where
         fail
         $  "Size vs number of elements mismatch: Array has size: "
         <> (show . Massiv.size $ parsedArr)
-        <> "and expected was: "
+        <> " and expected was: "
         <> show sizeSupposed
 
 type Array2S = MatrixS
@@ -464,6 +466,39 @@ instance (FromJSON a, Storable a) => FromJSON (Array4S a) where
         <> (show . Massiv.size $ parsedArr)
         <> "and expected was: "
         <> show sizeSupposed
+
+----------------------------------------------------------------------------------------------------
+{-|
+Newtype wrapper for delayed matrices from Massiv.
+
+Be aware, that parsing them from file will load them into memory completely once, so you are not
+saving any memory here.
+-}
+newtype MatrixD a = MatrixD { getMatrixD :: Array Massiv.D Ix2 a }
+  deriving ( Generic, Show, Eq )
+
+instance (ToJSON a) => ToJSON (MatrixD a) where
+  toJSON arr =
+    let plainList         = Massiv.toList . getMatrixD $ arr
+        Sz (dim1 :. dim2) = Massiv.size . getMatrixD $ arr
+    in  object ["shape" .= (dim1, dim2), "elements" .= plainList]
+
+instance (FromJSON a, Unbox a) => FromJSON (MatrixD a) where
+  parseJSON = withObject "MatrixD" $ \arr -> do
+    (dim1, dim2) <- arr .: "shape"
+    let sizeSupposed = Sz (dim1 :. dim2)
+    elements <- arr .: "elements"
+    let parsedStrictArr = Massiv.fromLists' Par . chunksOf dim2 $ elements :: Matrix Massiv.U a
+        parsedArr       = Massiv.delay parsedStrictArr
+    if Massiv.size parsedArr == sizeSupposed
+      then return . MatrixD $ parsedArr
+      else
+        fail
+        $  "Size vs number of elements mismatch: Array has size: "
+        <> (show . Massiv.size $ parsedArr)
+        <> " and expected was: "
+        <> show sizeSupposed
+
 {-
 ====================================================================================================
 -}
@@ -1144,6 +1179,9 @@ data Molecule = Molecule
                                                               --   The 'Text' values of the 'Map'
                                                               --   serve as unique identifiers for a
                                                               --   calculation on this molecule.
+  , _molecule_Jacobian          :: !(Maybe (MatrixD Double))  -- ^ The Jacobian matrix for energy
+                                                              --   derivative transformation from
+                                                              --   this system to its parent system.
   }
   deriving ( Show, Eq, Generic )
 
