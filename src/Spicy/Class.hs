@@ -1176,7 +1176,7 @@ data Molecule = Molecule
                                                               --   The 'Text' values of the 'Map'
                                                               --   serve as unique identifiers for a
                                                               --   calculation on this molecule.
-  , _molecule_Jacobian          :: !(Maybe (MatrixD Double))  -- ^ The Jacobian matrix for energy
+  , _molecule_Jacobian          :: !(Maybe (MatrixS Double))  -- ^ The Jacobian matrix for energy
                                                               --   derivative transformation from
                                                               --   this system to its parent system.
   }

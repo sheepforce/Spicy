@@ -683,10 +683,11 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
   -- Construction of the finaly sub molecule
   let topLayerAtoms = mol ^. molecule_Atoms
       subLayerAtoms = subLayerWithLinkAdded ^. molecule_Atoms
-  slJacobian <- getJacobian topLayerAtoms subLayerAtoms
+  slJacobianD <- getJacobian topLayerAtoms subLayerAtoms
+  let slJacobian = Massiv.computeAs Massiv.S . Massiv.setComp Par $ slJacobianD
 
   let -- Add the Jacobian to the otherwise final sublayer and add the sublayer to the input system.
-      subLayerWithJacobian = subLayerWithLinkAdded & molecule_Jacobian ?~ MatrixD slJacobian
+      subLayerWithJacobian = subLayerWithLinkAdded & molecule_Jacobian ?~ MatrixS slJacobian
       -- Add the sublayer with its new key as submolecule to the original input system.
       markedMolWithNewSublayer =
         mol & molecule_SubMol %~ IntMap.insert newSubLayerIndex subLayerWithJacobian
