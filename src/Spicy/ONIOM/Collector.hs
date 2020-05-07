@@ -17,17 +17,17 @@ module Spicy.ONIOM.Collector
   , hessianCollector
   )
 where
-import           RIO                     hiding ( (^.)
-                                                , view
-                                                , Vector
-                                                )
 import           Control.Lens
-import           Spicy.Class
 import qualified Data.IntMap.Strict            as IntMap
 import           Data.Massiv.Array             as Massiv
-                                         hiding ( sum
-                                                , mapM
+                                         hiding ( mapM
+                                                , sum
                                                 )
+import           RIO                     hiding ( Vector
+                                                , view
+                                                , (^.)
+                                                )
+import           Spicy.Class
 
 {-|
 Collector for multicentre ONIOM-N calculations.
@@ -37,14 +37,16 @@ multicentreOniomNCollector atomicTask = do
   mol         <- view moleculeL
   _inputFile  <- view inputFileL
 
+  -- TODO (phillip|p=100|#Unfinished) - A multipole collector needs to run first to get embedding.
   molEnergy   <- energyCollector mol
   molGradient <- case atomicTask of
     WTGradient -> gradientCollector molEnergy
     _          -> return molEnergy
-  -- Collect hessian information if requested.
+  molHessian <- case atomicTask of
+    WTHessian -> hessianCollector molGradient
+    _         -> return molGradient
 
-  -- TODO (phillip|p=100|#Unfinished) - Obviously processing needs to be implemented here before returning any molecule.
-  return molGradient
+  return molHessian
 
 ----------------------------------------------------------------------------------------------------
 {-|
