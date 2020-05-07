@@ -220,7 +220,7 @@ gradientCollector mol = do
   return thisLayerAsReal
  where
   -- For a molecule, that does not contain any deeper layers, the 'Original' calcoutput can be
-  -- used as the gradient of this system. This function therefore copies the energy from the
+  -- used as the gradient of this system. This function therefore copies the gradient from the
   -- 'Original' calcoutput to this layer's 'EnergyDerivatives'.
   thisOriginalGradientAsRealGradient :: MonadThrow m => Molecule -> m Molecule
   thisOriginalGradientAsRealGradient mol' = do
@@ -264,7 +264,8 @@ gradientCollector mol = do
       case maybeOriginalRealGradient of
         Nothing -> throwM $ MolLogicException
           "gradientCollector"
-          "The gradient of the local real system could not be found in the \"Original\" calculation context, but is required."
+          "The gradient of the local real system could not be found in the \"Original\" calculation\
+          \ context, but is required."
         Just gradient -> return gradient
 
     -- Get the set of ∇E(model, low)*J.
@@ -289,7 +290,7 @@ gradientCollector mol = do
                         .   getVectorS
                         <$> lowOutputGradient
                   jacobian            = getMatrixS <$> modelCentre ^. molecule_Jacobian
-                  -- Calculate
+                  -- Calculate the transformed gradient.
                   transformedGradient = join $ (|*|) <$> outputGradientAsRowVec <*> jacobian
               in  transformedGradient >>= (!?> 0)
             )
@@ -329,7 +330,7 @@ gradientCollector mol = do
           \ gradient."
         Just g -> return g
 
-    -- Sum up all transformed high-level model gradients
+    -- Sum up the transformed the groups of model gradients.
     let gradientSize = Massiv.size realSystemGradient
         zeroGradient :: Vector Massiv.S Double
         zeroGradient = Massiv.makeArray Par gradientSize (const 0)
@@ -345,7 +346,7 @@ gradientCollector mol = do
       Massiv.delay realSystemGradient .-. modelLowLevelGradients >>= (.+. modelHighLevelGradients)
     let oniom2Gradient = VectorS . Massiv.compute . Massiv.setComp Par $ oniom2GradientD
 
-    -- Update this layer molecule with the ONIOM2 energy of this layer and the submolecule with
+    -- Update this layer molecule with the ONIOM2 gradient of this layer and the submolecule with
     -- their evaluated versions and return.
     return
       $ realMol
@@ -375,5 +376,142 @@ For the definition of the Jacobian matrix, see 'getJacobian'.
 -}
 hessianCollector :: MonadThrow m => Molecule -> m Molecule
 hessianCollector mol = do
+  let subMols = mol ^. molecule_SubMol
 
-  return undefined
+  -- Update this layer of the molecule with its hessian, af if this layer would be the real system.
+  thisLayerAsReal <- if IntMap.null subMols
+    then thisOriginalHessianAsRealHessian mol
+    else multiCentreONIOM2Collector mol subMols
+
+  return thisLayerAsReal
+ where
+  -- For a molecule, that does not contain any deeper layers, the 'Original' calcoutput can be used
+  -- as the gradient for this system. This function therefore copies the hessian from the 'Original'
+  -- calcoutput to this layers 'EnergyDerivatives'.
+  thisOriginalHessianAsRealHessian :: MonadThrow m => Molecule -> m Molecule
+  thisOriginalHessianAsRealHessian mol' = do
+    let maybeOriginalCalcHessian =
+          mol'
+            ^? molecule_CalcContext
+            .  ix (ONIOMKey Original)
+            .  calcContext_Output
+            .  _Just
+            .  calcOutput_EnergyDerivatives
+            .  energyDerivatives_Hessian
+            .  _Just
+    case maybeOriginalCalcHessian of
+      Nothing -> throwM $ MolLogicException
+        "hessianCollector"
+        "Could not find the hessian from the original calcoutput of this layer."
+      Just hessian ->
+        return $ mol & molecule_EnergyDerivatives . energyDerivatives_Hessian ?~ hessian
+
+  multiCentreONIOM2Collector :: MonadThrow m => Molecule -> IntMap Molecule -> m Molecule
+  multiCentreONIOM2Collector realMol modelCentres = do
+    -- Make sure the model centres have their hessians already collected.
+    modelCentresWithTheirRealHessians <- mapM hessianCollector modelCentres
+
+    -- Get H(real) (this layer's hessian) from the original calcoutput.
+    realSystemHessian                 <- do
+      let maybeOriginalHessian =
+            getMatrixS
+              <$> realMol
+              ^?  molecule_CalcContext
+              .   ix (ONIOMKey Original)
+              .   calcContext_Output
+              .   _Just
+              .   calcOutput_EnergyDerivatives
+              .   energyDerivatives_Hessian
+              .   _Just
+      case maybeOriginalHessian of
+        Nothing -> throwM $ MolLogicException
+          "hessianCollector"
+          "The hessian of the local real system could not be found in the \"Original\" calculation\
+          \ context, but is required."
+        Just hessian -> return hessian
+
+    -- Get the set of J^T H(model, low) J.
+    modelCentresWithTransformedLowLevelHessian <- do
+      let
+        maybeTransformedHessians = traverse
+          (\modelCentre ->
+            let lowOutputHessian =
+                    getMatrixS
+                      <$> modelCentre
+                      ^?  molecule_CalcContext
+                      .   ix (ONIOMKey Inherited)
+                      .   calcContext_Output
+                      .   _Just
+                      .   calcOutput_EnergyDerivatives
+                      .   energyDerivatives_Hessian
+                      .   _Just
+                jacobian = getMatrixS <$> modelCentre ^. molecule_Jacobian
+                jacobianT =
+                    Massiv.computeAs Massiv.S . Massiv.setComp Par . Massiv.transpose <$> jacobian
+                transformedHessian = do
+                  jT <- jacobianT
+                  j  <- jacobian
+                  h  <- lowOutputHessian
+                  jT |*| h >>= (|*| j)
+            in  transformedHessian
+          )
+          modelCentresWithTheirRealHessians
+      case maybeTransformedHessians of
+        Nothing -> throwM $ MolLogicException
+          "hessianCollector"
+          "While calculating the transformed low level hessian of a model system, something went\
+          \ wrong. This can be cause by a missing low level hessian for the model system, a missing\
+          \ Jacobian for the model system, or a dimension mismatch in the Jacobian and the Hessian."
+        Just h -> return h
+
+    -- Get the set of J^T H(model, low) J.
+    modelCentresWithTransformedHighLevelHessian <- do
+      let
+        maybeTransformedHessians = traverse
+          (\modelCentre ->
+            let
+              maybeExtractedHessian =
+                getMatrixS <$> modelCentre ^. molecule_EnergyDerivatives . energyDerivatives_Hessian
+              jacobian = getMatrixS <$> modelCentre ^. molecule_Jacobian
+              jacobianT =
+                Massiv.computeAs Massiv.S . Massiv.setComp Par . Massiv.transpose <$> jacobian
+              transformedHessian = do
+                jT <- jacobianT
+                j  <- jacobian
+                h  <- maybeExtractedHessian
+                jT |*| h >>= (|*| j)
+            in
+              transformedHessian
+          )
+          modelCentresWithTheirRealHessians
+      case maybeTransformedHessians of
+        Nothing -> throwM $ MolLogicException
+          "hessianCollector"
+          "While calculating the transformed high level hessian of a model system, something went\
+          \ wrong. This can be cause by a missing high level hessian for the model system, a \
+          \ missing Jacobian for the model system, or a dimension mismatch in the Jacobian and the\
+          \ Hessian."
+        Just h -> return h
+
+    -- Sum up the transformed groups of model hessians.
+    let hessianSize = Massiv.size realSystemHessian
+        zeroHessian :: Matrix Massiv.S Double
+        zeroHessian = Massiv.makeArray Par hessianSize (const 0)
+    modelHighLevelHessian <- foldl' (\sumAcc h -> sumAcc >>= (.+. Massiv.delay h))
+                                    (return . Massiv.delay $ zeroHessian)
+                                    modelCentresWithTransformedHighLevelHessian
+    modelLowLevelHessian <- foldl' (\sumAcc h -> sumAcc >>= (.+. Massiv.delay h))
+                                   (return . Massiv.delay $ zeroHessian)
+                                   modelCentresWithTransformedLowLevelHessian
+
+    -- Calculate the MC-ONIOM2 gradient.
+    oniom2HessianD <-
+      Massiv.delay realSystemHessian .-. modelLowLevelHessian >>= (.+. modelHighLevelHessian)
+    let oniom2Hessian = MatrixS . Massiv.compute . Massiv.setComp Par $ oniom2HessianD
+
+    -- Update this layer molecule with the hessian of this layer and the submolecule with their
+    -- evaluated versions and return.
+    return
+      $ realMol
+      & (molecule_EnergyDerivatives . energyDerivatives_Hessian ?~ oniom2Hessian)
+      & (molecule_SubMol .~ modelCentresWithTheirRealHessians)
