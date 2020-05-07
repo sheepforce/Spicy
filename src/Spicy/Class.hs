@@ -119,7 +119,6 @@ module Spicy.Class
   , atom_Element
   , atom_Label
   , atom_IsLink
-  , atom_IsCapped
   , atom_IsDummy
   , atom_FFType
   , atom_Coordinates
@@ -1073,8 +1072,6 @@ data Atom = Atom
   , _atom_IsLink      :: !LinkInfo          -- ^ Boolean, telling if this is a Link atom,
                                             --   introduced because a bond was broken. Also known as
                                             --   link atom in ONIOM.
-  , _atom_IsCapped    :: !Bool              -- ^ Boolean, telling if this is a high level atom,
-                                            --   whose bond to a lower layer has been capped.
   , _atom_IsDummy     :: !Bool              -- ^ Whether the atom is a dummy atom, only providing
                                             --   multipole information.
   , _atom_FFType      :: !FFType            -- ^ Label depending on the MM software used,

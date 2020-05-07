@@ -25,6 +25,7 @@ module Spicy.Molecule.Internal.Util
   , groupBy
   , findAtomInSubMols
   , getNElectrons
+  , getCappedAtoms
   , getMolByID
   , molIDLensGen
   , getCalcByID
@@ -461,6 +462,20 @@ getNElectrons mol charge' =
 
 ----------------------------------------------------------------------------------------------------
 {-|
+Given the atoms of a model system molecule, find all atoms @LAC@, that have been capped with a link
+atom.
+-}
+getCappedAtoms :: IntMap Atom -> IntMap Atom
+getCappedAtoms atoms =
+  let linkAtoms = IntMap.filter (isAtomLink . _atom_IsLink) atoms
+      cappedIndices =
+          IntSet.fromList . fmap snd . IntMap.toAscList . fromMaybe IntMap.empty $ traverse
+            (\la -> la ^? atom_IsLink . isLink_ModelAtom)
+            linkAtoms
+  in  IntMap.restrictKeys atoms cappedIndices
+
+----------------------------------------------------------------------------------------------------
+{-|
 From the complete data structure pf the 'Molecule', get the specific layer, you want.  This is now
 the new top layer.
 -}
@@ -650,7 +665,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
                                    , _molecule_Fragment          = slFragments
                                    , _molecule_EnergyDerivatives = slEnergyDerivatives
                                    , _molecule_CalcContext       = slCalcContext
-                                   , _molecule_Jacobian = Nothing
+                                   , _molecule_Jacobian          = Nothing
                                    }
 
   -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the
@@ -665,20 +680,14 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
     (pure (maxAtomIndex, slIntermediateMol))
     cappingLinkAtoms
 
-  -- Calculate the Jacobian for this layer.
+  -- Construction of the finaly sub molecule
   let topLayerAtoms = mol ^. molecule_Atoms
       subLayerAtoms = subLayerWithLinkAdded ^. molecule_Atoms
   slJacobian <- getJacobian topLayerAtoms subLayerAtoms
 
-  let -- Identify sub layer atoms, that are part of a capped bond. (Works thanks to the Foldable
-      -- instance of IntMap ...)
-      slAtomsCapped          = HashSet.map fst cutAtomPairs
-      -- Mark all the atoms in the sublayer, that have lost a bond and got a link atom, as capped.
-      subLayerMarkedAsCapped = markAtomsAsCapped subLayerWithLinkAdded slAtomsCapped
-      -- Add the jacobian to the sublayer.
-      subLayerWithJacobian = subLayerMarkedAsCapped & molecule_Jacobian ?~ (MatrixD slJacobian)
-      -- Mark the sub layer atoms, that are part of a capped bond as capped and add the newly
-      -- constructed submolecule to this molecule layer.
+  let -- Add the Jacobian to the otherwise final sublayer and add the sublayer to the input system.
+      subLayerWithJacobian = subLayerWithLinkAdded & molecule_Jacobian ?~ MatrixD slJacobian
+      -- Add the sublayer with its new key as submolecule to the original input system.
       markedMolWithNewSublayer =
         mol & molecule_SubMol %~ IntMap.insert newSubLayerIndex subLayerWithJacobian
 
@@ -698,14 +707,6 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
     )
     (pure (maxAtomIndex', mol'))
     linkSeq
-
-  -- Mark a Set of atoms as capped in the current layer.
-  markAtomsAsCapped :: Molecule -> HashSet Int -> Molecule
-  markAtomsAsCapped mol' atomSelection = mol' & molecule_Atoms %~ IntMap.mapWithKey
-    (\atomKey atom -> if atomKey `HashSet.member` atomSelection
-      then atom & atom_IsCapped .~ True
-      else atom & atom_IsCapped %~ id
-    )
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -789,7 +790,6 @@ createLinkAtom gScaleOption linkElementOption label fftype (cappedKey, cappedAto
                                        , _isLink_RealAtom  = removedKey
                                        , _isLink_gFactor   = gScaleToUse
                                        }
-          , _atom_IsCapped    = False
           , _atom_IsDummy     = False
           , _atom_FFType      = fromMaybe FFXYZ fftype
           , _atom_Coordinates = VectorS . computeS $ linkCoordinates
@@ -1672,8 +1672,7 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
   -- in a different distance to capped atoms. In this case, the smallest distance will be used for
   -- scaling.
   let searchDistance = Seq.length poleScalings
-      cappedOrigins =
-        IntMap.keys . IntMap.filter (^. atom_IsCapped) $ layerOfInterest ^. molecule_Atoms
+      cappedOrigins  = IntMap.keys . getCappedAtoms $ layerOfInterest ^. molecule_Atoms
   distanceGroups <- mapM
     (\startAtom -> bondDistanceGroups layerOfPolarisationCloud startAtom searchDistance)
     cappedOrigins
