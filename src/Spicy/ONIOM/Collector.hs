@@ -16,10 +16,15 @@ module Spicy.ONIOM.Collector
 where
 import           RIO                     hiding ( (^.)
                                                 , view
+                                                , Vector
                                                 )
 import           Control.Lens
 import           Spicy.Class
 import qualified Data.IntMap.Strict            as IntMap
+import           Data.Massiv.Array             as Massiv
+                                         hiding ( sum
+                                                , mapM
+                                                )
 
 {-|
 Collector for multicentre ONIOM-N calculations.
@@ -30,11 +35,13 @@ multicentreOniomNCollector atomicTask = do
   _inputFile <- view inputFileL
 
   molEnergy  <- energyCollector mol
-  -- Collect gradient information if requested.
+  molGradient <- case atomicTask of
+    WTGradient -> gradientCollector molEnergy
+    _ -> return molEnergy
   -- Collect hessian information if requested.
 
   -- TODO (phillip|p=100|#Unfinished) - Obviously processing needs to be implemented here before returning any molecule.
-  return mol
+  return molGradient
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -110,7 +117,7 @@ energyCollector mol = do
   -- calculation context.
   multiCentreONIOM2Collector :: MonadThrow m => Molecule -> IntMap Molecule -> m Molecule
   multiCentreONIOM2Collector realMol modelCentres = do
-    -- Make sure the model centres have their energy calculated.
+    -- Make sure the model centres have their energies already collected.
     modelCentresWithTheirRealEnergies <- mapM energyCollector modelCentres
 
     -- Get the set of E(model, high).
@@ -168,7 +175,7 @@ energyCollector mol = do
     let oniom2Energy =
           realSystemEnergy + sum modelCentresHighLevelEnergies - sum modelCentresLowLevelEnergies
 
-    -- Update this layer molecule with the ONIOM2 energy of this layer and and the submolecules with
+    -- Update this layer molecule with the ONIOM2 energy of this layer and the submolecules with
     -- their evaluated versions and then return.
     return
       $ realMol
@@ -193,7 +200,8 @@ gradientCollector mol = do
   thisLayerAsReal <- if IntMap.null subMols
     then thisOriginalGradientAsRealGradient mol
     else multiCentreONIOM2Collector mol subMols
-  return undefined
+
+  return thisLayerAsReal
  where
     -- For a molecule, that does not contain any deeper layers, the 'Original' calcoutput can be
     -- used as the gradient of this system. This function therefore copies the energy from the
@@ -218,4 +226,109 @@ gradientCollector mol = do
 
   multiCentreONIOM2Collector :: MonadThrow m => Molecule -> IntMap Molecule -> m Molecule
   multiCentreONIOM2Collector realMol modelCentres = do
-    return undefined
+    -- Make sure the model centres have their gradients already collected.
+    modelCentresWithTheirRealGradients <- mapM gradientCollector modelCentres
+
+
+    -- Get ∇E(real) (this layers gradient) from the original calculation of this layer.
+    realSystemGradient                 <- do
+      let maybeOriginalRealGradient =
+            getVectorS
+              <$> realMol
+              ^?  molecule_CalcContext
+              .   ix (ONIOMKey Original)
+              .   calcContext_Output
+              .   _Just
+              .   calcOutput_EnergyDerivatives
+              .   energyDerivatives_Gradient
+              .   _Just
+      case maybeOriginalRealGradient of
+        Nothing -> throwM $ MolLogicException
+          "gradientCollector"
+          "The gradient of the local real system could not be found in the \"Original\" calculation context, but is required."
+        Just gradient -> return gradient
+
+    -- Get the set of ∇E(model, low)*J.
+    modelCentresWithTransformedLowLevelGradients <- do
+      let maybeTransformedGradients = traverse
+            (\modelCentre ->
+              let lowOutputGradient =
+                      modelCentre
+                        ^? molecule_CalcContext
+                        .  ix (ONIOMKey Inherited)
+                        .  calcContext_Output
+                        .  _Just
+                        .  calcOutput_EnergyDerivatives
+                        .  energyDerivatives_Gradient
+                        .  _Just
+                  -- To be able to use matrix-matrix multiplication, this formally transforms the
+                  -- gradient vector to a 1x3M matrix, which again is a row vector.
+                  outputGradientAsRowVec =
+                      Massiv.computeAs Massiv.S
+                        .   Massiv.setComp Par
+                        .   Massiv.expandOuter (Sz 1) const
+                        .   getVectorS
+                        <$> lowOutputGradient
+                  jacobian            = getMatrixS <$> modelCentre ^. molecule_Jacobian
+                  -- Calculate
+                  transformedGradient = join $ (|*|) <$> outputGradientAsRowVec <*> jacobian
+              in  transformedGradient >>= (!?> 0)
+            )
+            modelCentresWithTheirRealGradients
+      case maybeTransformedGradients of
+        Nothing -> throwM $ MolLogicException
+          "gradientCollector"
+          "While calculating the transformed low level gradient of a model system, something went\
+          \ wrong. This can be caused by a missing low level gradient for the model system, a\
+          \ missing Jacobian for the model system, or a dimension mismatch in the Jacobian and the\
+          \ gradient."
+        Just g -> return g
+
+    -- Get the set of ∇E(mode, high)*J
+    modelCentresWithTransformedHighLevelGradient <- do
+      let maybeTransformedGradients = traverse
+            (\modelCentre ->
+              let maybeExtractedGradient =
+                      modelCentre ^. molecule_EnergyDerivatives . energyDerivatives_Gradient
+                  extractedGradientAsTowVec =
+                      Massiv.computeAs Massiv.S
+                        .   Massiv.setComp Par
+                        .   Massiv.expandOuter (Sz 1) const
+                        .   getVectorS
+                        <$> maybeExtractedGradient
+                  jacobian            = getMatrixS <$> modelCentre ^. molecule_Jacobian
+                  transformedGradient = join $ (|*|) <$> extractedGradientAsTowVec <*> jacobian
+              in  transformedGradient >>= (!?> 0)
+            )
+            modelCentresWithTheirRealGradients
+      case maybeTransformedGradients of
+        Nothing -> throwM $ MolLogicException
+          "gradientCollector"
+          "While calculating the transformed high level gradient of a model system, something went\
+          \ wrong. This can be caused by a missing high level gradient for the model system, a\
+          \ missing Jacobian for the model system, or a dimension mismatch in the Jacobian and the\
+          \ gradient."
+        Just g -> return g
+
+    -- Sum up all transformed high-level model gradients
+    let gradientSize = Massiv.size realSystemGradient
+        zeroGradient :: Vector Massiv.S Double
+        zeroGradient = Massiv.makeArray Par gradientSize (const 0)
+    modelHighLevelGradients <- foldl' (\sumAcc g -> sumAcc >>= (.+. Massiv.delay g))
+                                      (return . Massiv.delay $ zeroGradient)
+                                      modelCentresWithTransformedHighLevelGradient
+    modelLowLevelGradients <- foldl' (\sumAcc g -> sumAcc >>= (.+. Massiv.delay g))
+                                     (return . Massiv.delay $ zeroGradient)
+                                     modelCentresWithTransformedLowLevelGradients
+
+    -- Calculate the MC-ONIOM2 gradient.
+    oniom2GradientD <-
+      Massiv.delay realSystemGradient .-. modelLowLevelGradients >>= (.+. modelHighLevelGradients)
+    let oniom2Gradient = VectorS . Massiv.compute . Massiv.setComp Par $ oniom2GradientD
+
+    -- Update this layer molecule with the ONIOM2 energy of this layer and the submolecule with
+    -- their evaluated versions and return.
+    return
+      $ realMol
+      & (molecule_EnergyDerivatives . energyDerivatives_Gradient ?~ oniom2Gradient)
+      & (molecule_SubMol .~ modelCentresWithTheirRealGradients)
