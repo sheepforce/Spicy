@@ -31,13 +31,13 @@ Collector for multicentre ONIOM-N calculations.
 -}
 multicentreOniomNCollector :: (HasMolecule env, HasInputFile env) => WrapperTask -> RIO env Molecule
 multicentreOniomNCollector atomicTask = do
-  mol        <- view moleculeL
-  _inputFile <- view inputFileL
+  mol         <- view moleculeL
+  _inputFile  <- view inputFileL
 
-  molEnergy  <- energyCollector mol
+  molEnergy   <- energyCollector mol
   molGradient <- case atomicTask of
     WTGradient -> gradientCollector molEnergy
-    _ -> return molEnergy
+    _          -> return molEnergy
   -- Collect hessian information if requested.
 
   -- TODO (phillip|p=100|#Unfinished) - Obviously processing needs to be implemented here before returning any molecule.
@@ -113,7 +113,7 @@ energyCollector mol = do
 
   -- Collects the energy of a local ONIOM2 setup. There is the real system with its 'Original'
   -- calculation output (E(Real)) and the model centres with their high level results
-  -- (E(model, high)) in 'molecule_EnergyDerivatives' and their low level results in the 'Inherited'
+  -- (E(model, high)) in '_molecule_EnergyDerivatives' and their low level results in the 'Inherited'
   -- calculation context.
   multiCentreONIOM2Collector :: MonadThrow m => Molecule -> IntMap Molecule -> m Molecule
   multiCentreONIOM2Collector realMol modelCentres = do
@@ -203,9 +203,9 @@ gradientCollector mol = do
 
   return thisLayerAsReal
  where
-    -- For a molecule, that does not contain any deeper layers, the 'Original' calcoutput can be
-    -- used as the gradient of this system. This function therefore copies the energy from the
-    -- 'Original' calcoutput to this layer's 'EnergyDerivatives'.
+  -- For a molecule, that does not contain any deeper layers, the 'Original' calcoutput can be
+  -- used as the gradient of this system. This function therefore copies the energy from the
+  -- 'Original' calcoutput to this layer's 'EnergyDerivatives'.
   thisOriginalGradientAsRealGradient :: MonadThrow m => Molecule -> m Molecule
   thisOriginalGradientAsRealGradient mol' = do
     let maybeOriginalCalcGradient =
@@ -224,11 +224,14 @@ gradientCollector mol = do
       Just gradient ->
         return $ mol' & molecule_EnergyDerivatives . energyDerivatives_Gradient ?~ gradient
 
+  -- Collects the gradients of a local ONIOM2 setup. There is the real system with its 'Original'
+  -- calculation output (∇E(real)) and the model centres with their high level results
+  -- (∇E(model, high)) in '_molecule_EnergyDerivatives' and their low level results in the
+  -- 'Inherited' calculation context.
   multiCentreONIOM2Collector :: MonadThrow m => Molecule -> IntMap Molecule -> m Molecule
   multiCentreONIOM2Collector realMol modelCentres = do
     -- Make sure the model centres have their gradients already collected.
     modelCentresWithTheirRealGradients <- mapM gradientCollector modelCentres
-
 
     -- Get ∇E(real) (this layers gradient) from the original calculation of this layer.
     realSystemGradient                 <- do
