@@ -14,6 +14,7 @@ module Spicy.ONIOM.Collector
   ( multicentreOniomNCollector
   , energyCollector
   , gradientCollector
+  , hessianCollector
   )
 where
 import           RIO                     hiding ( (^.)
@@ -47,15 +48,14 @@ multicentreOniomNCollector atomicTask = do
 
 ----------------------------------------------------------------------------------------------------
 {-|
-*Use the 'multicentreOniomNCollector', which calls this collector.*
+__Use the 'multicentreOniomNCollector', which calls this collector.__
 
 Collector for the energy of a multicentre ONIOM-n molecule. Can fail if some energies or
 electrostatic information are not available. Each layer will get an updated field for
 @molecule_EnergyDerivatives . energyDerivatives_Energy@ and will 'Just' contain the energy as if the
 corresponding layer would be the real system top layer.
 
-*The idea here works as follows:*
-
+_The idea here works as follows:_
 The highest calculation level model system does not contain any
 deeper layers. It's energy, if it would be a real system, is simply the energy of the high
 calculation level. Therefore, the data from the calculation output of this deepest layers will be
@@ -190,7 +190,7 @@ energyCollector mol = do
 
 ----------------------------------------------------------------------------------------------------
 {-|
-*Use the 'multicentreOniomNCollector', which calls this collector.*
+__Use the 'multicentreOniomNCollector', which calls this collector.__
 
 Collector for multicentre ONIOM-n gradients. Implemented in the local ONIOM-2 formulation, that is
 used by 'energyCollector'. For link atoms the formulation of [A new ONIOM implementation in
@@ -205,7 +205,7 @@ The gradient expression for such a multicentre ONIOM2 calculation is:
     \nabla E^\mathrm{MC-ONIOM2} = E^\mathrm{real} + \sum\limits_c \nabla E_c^\mathrm{model, high} \mathbf{J}_c - \sum\limits_c \nabla E_c^\mathrm{model, low} \mathbf{J}_c
 \]
 
-For the definition of the Jacobian matrix, see 'Spicy.Molecule.Internal.Utils.getJacobian'.
+For the definition of the Jacobian matrix, see 'getJacobian'.
 -}
 -- TODO (phillip|p=100|#Unfinished) - The effect of embedding is not direclty considered here but potentially must.
 gradientCollector :: MonadThrow m => Molecule -> m Molecule
@@ -354,5 +354,26 @@ gradientCollector mol = do
 
 ----------------------------------------------------------------------------------------------------
 {-|
-Multicentre
+__Use the 'multicentreOniomNCollector', which calls this collector.__
+
+Multicentre ONIOMn collector for the hessian. Implemented in a local ONIOM-2 formulation, that is
+also used by 'energyCollector'. For link atoms, the formulation of [A new ONIOM implementation in
+Gaussian98. Part I. The calculation of energies, gradients, vibrational frequencies and electric
+field derivatives](https://doi.org/10.1016/S0166-1280\(98\)00475-8) is used, which maintains the
+degrees of freedom of the system by distributing the gradient of the link atom to the capped atom
+and the host atom is used.
+
+The hessian expression for such a multicentre ONIOM2 calculation is:
+
+\[
+    \mathbf{H}^\mathrm{MC-ONIOM2} = \mathbf{H}^\mathrm{real}
+                                  - \sum\limits_c \mathbf{J}_c^T \mathbf{H}_c^\mathrm{model, low} \mathbf{J}_c
+                                  + \sum\limits_c \mathbf{J}_c^T \mathbf{H}_c^\mathrm{model, high} \mathbf{J}_c
+\]
+
+For the definition of the Jacobian matrix, see 'getJacobian'.
 -}
+hessianCollector :: MonadThrow m => Molecule -> m Molecule
+hessianCollector mol = do
+
+  return undefined
