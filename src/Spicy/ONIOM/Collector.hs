@@ -12,6 +12,8 @@ result from it.
 -}
 module Spicy.ONIOM.Collector
   ( multicentreOniomNCollector
+  , energyCollector
+  , gradientCollector
   )
 where
 import           RIO                     hiding ( (^.)
@@ -45,6 +47,8 @@ multicentreOniomNCollector atomicTask = do
 
 ----------------------------------------------------------------------------------------------------
 {-|
+*Use the 'multicentreOniomNCollector', which calls this collector.*
+
 Collector for the energy of a multicentre ONIOM-n molecule. Can fail if some energies or
 electrostatic information are not available. Each layer will get an updated field for
 @molecule_EnergyDerivatives . energyDerivatives_Energy@ and will 'Just' contain the energy as if the
@@ -71,9 +75,11 @@ The result is, that the molecule can be treated as series of ONIOM2 multicentre 
 (current layer as real system) and the layer directly below as model systems.
 
 The energy expression for such a multicentre ONIOM2 calculations is:
+
 \[
-E^\mathrm{MC-ONIOM2} = E^\mathrm{real} + \sum\limits_c E^\mathrm{model, high}_c - \sum\limits_c E^\mathrm{model, low}_c
+    E^\mathrm{MC-ONIOM2} = E^\mathrm{real} + \sum\limits_c E^\mathrm{model, high}_c - \sum\limits_c E^\mathrm{model, low}_c
 \]
+
 where \(c\) refers to the centre.
 -}
 -- TODO (phillip|p=100|#Unfinished) - This takes embedding currently not into consideration.
@@ -184,12 +190,22 @@ energyCollector mol = do
 
 ----------------------------------------------------------------------------------------------------
 {-|
+*Use the 'multicentreOniomNCollector', which calls this collector.*
+
 Collector for multicentre ONIOM-n gradients. Implemented in the local ONIOM-2 formulation, that is
 used by 'energyCollector'. For link atoms the formulation of [A new ONIOM implementation in
 Gaussian98. Part I. The calculation of energies, gradients, vibrational frequencies and electric
-field derivatives](https://doi.org/10.1016/S0166-1280(98)00475-8) is used, which maintains the
+field derivatives](https://doi.org/10.1016/S0166-1280\(98\)00475-8) is used, which maintains the
 degrees of freedom of the system by distributing the gradient of the link atom to the capped atom
 and the host atom is used.
+
+The gradient expression for such a multicentre ONIOM2 calculation is:
+
+\[
+    \nabla E^\mathrm{MC-ONIOM2} = E^\mathrm{real} + \sum\limits_c \nabla E_c^\mathrm{model, high} \mathbf{J}_c - \sum\limits_c \nabla E_c^\mathrm{model, low} \mathbf{J}_c
+\]
+
+For the definition of the Jacobian matrix, see 'Spicy.Molecule.Internal.Utils.getJacobian'.
 -}
 -- TODO (phillip|p=100|#Unfinished) - The effect of embedding is not direclty considered here but potentially must.
 gradientCollector :: MonadThrow m => Molecule -> m Molecule
@@ -335,3 +351,8 @@ gradientCollector mol = do
       $ realMol
       & (molecule_EnergyDerivatives . energyDerivatives_Gradient ?~ oniom2Gradient)
       & (molecule_SubMol .~ modelCentresWithTheirRealGradients)
+
+----------------------------------------------------------------------------------------------------
+{-|
+Multicentre
+-}
