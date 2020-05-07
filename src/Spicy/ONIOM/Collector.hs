@@ -55,7 +55,7 @@ electrostatic information are not available. Each layer will get an updated fiel
 @molecule_EnergyDerivatives . energyDerivatives_Energy@ and will 'Just' contain the energy as if the
 corresponding layer would be the real system top layer.
 
-_The idea here works as follows:_
+/The idea here works as follows:/
 The highest calculation level model system does not contain any
 deeper layers. It's energy, if it would be a real system, is simply the energy of the high
 calculation level. Therefore, the data from the calculation output of this deepest layers will be
