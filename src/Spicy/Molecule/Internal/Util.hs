@@ -734,7 +734,7 @@ The position of the link atom is calculated as:
 where the scaling factor \(g\) will be calculated from a ratio of covalent radii, if not specified:
 
 \[
-    g = \frac{r^\mathrm{cov, LAC} + r^\mathrm{cov, LA}}{r^\mathrm{cov, LAH} + r^\mathrm{cov, LA}}
+    g = \frac{r^\mathrm{cov, LAC} + r^\mathrm{cov, LA}}{r^\mathrm{cov, LAH} + r^\mathrm{cov, LAC}}
 \]
 
 With:
@@ -770,7 +770,7 @@ createLinkAtom gScaleOption linkElementOption label fftype (cappedKey, cappedAto
           cappedCovRadius'  <- cappedCovRadius
           removedCovRadius' <- removedCovRadius
           linkCovRadius'    <- linkCovRadius
-          return $ (cappedCovRadius' + linkCovRadius') / (removedCovRadius' + linkCovRadius')
+          return $ (cappedCovRadius' + linkCovRadius') / (removedCovRadius' + cappedCovRadius')
 
     gScaleToUse <- case (gScaleOption, gFactorDefault) of
       (Just gScale, _          ) -> return gScale
