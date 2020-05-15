@@ -96,6 +96,10 @@ module Spicy.Generic
   , vectorToGroups
   , matrixFromGroupVector
   , chunksOfNColumns
+    -- * RIO And Error Handlings
+    -- $rioAndErrors
+  , maybe2MThrow
+  , getResOrErr
   )
 where
 import           Data.Attoparsec.Text
@@ -1111,3 +1115,30 @@ chunksOfNColumns n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) E
       let (Sz (_ :. nColsRemaining)) = Massiv.size restMatrix
       in  if nColsRemaining == 0 then groupAcc else groupAcc |> restMatrix
     Just (thisChunk, restMinusThisChunk) -> go n' restMinusThisChunk (groupAcc |> thisChunk)
+
+{-
+####################################################################################################
+-}
+{- $rioAndErrors
+These are some simple helper functions for RIO and error handling patterns, commonly used in Spicy.
+-}
+{-|
+Generalisation of a 'Maybe' value to an arbitrary monad, that is an instance of 'MonadThrow'. An
+exception to throw must be provided, in case a 'Nothing' was given.
+-}
+maybe2MThrow :: MonadThrow m => SomeException -> Maybe a -> m a
+maybe2MThrow exc Nothing  = throwM exc
+maybe2MThrow _   (Just a) = return a
+
+----------------------------------------------------------------------------------------------------
+{-|
+Convenience function for a common RIO pattern. If some function returned an error, log this error
+with RIO's logging system and then throw the error. If the result is fine, obtain it in the RIO
+monad.
+-}
+getResOrErr :: HasLogFunc env => Either SomeException a -> RIO env a
+getResOrErr val = case val of
+  Right res -> return res
+  Left exc -> do
+    logError . displayShow $ exc
+    throwM exc
