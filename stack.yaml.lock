@@ -5,15 +5,15 @@
 
 packages:
 - completed:
-    hackage: massiv-0.5.1.0@sha256:61541d0ac64a7cb51944dc11cdbca9c2c106d7d61676fb115f4a992b76b42480,4745
+    hackage: massiv-0.5.2.0@sha256:f5471fe5685324991d71ca55fdc0f6500e84963ecb48a98d05086da29a05a6c2,4745
     pantry-tree:
-      size: 3991
-      sha256: 19c4a83de1f6abafacf1c943ca65aa8133f147932b3cbe56b8dc76e4f77108bd
+      size: 3992
+      sha256: 67be2fa5d23994cb54e03a3275dfa381ee4e8e140e25192d73690f75339bbe6b
   original:
-    hackage: massiv-0.5.1.0
+    hackage: massiv-0.5.2.0
 snapshots:
 - completed:
-    size: 491373
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/15/3.yaml
-    sha256: 29e9ff61b8bf4b4fcff55cde3ac106ebb971f0d21331dccac9eee63374fa6ca8
-  original: lts-15.3
+    size: 496112
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/15/13.yaml
+    sha256: 75a1a0f870e1876898b117b0e443f911b3fa2985bfabb53158c81ab5765beda5
+  original: lts-15.13

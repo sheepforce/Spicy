@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5a80e9bb2c84b129b88e711da45181a57be77492588cffe4c6baa45d307070c5
+-- hash: 25e4e48a95534b0d66325bcbb6ff046aa2f957750ab5bfaa4fb9a8fb5d3eea8f
 
 name:           spicy
 version:        0.0.0.1
@@ -105,7 +105,7 @@ library
     , formatting >=6.3.7 && <6.4
     , githash >=0.1.3.3 && <0.2
     , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -150,7 +150,7 @@ executable benchmarks-exe
     , formatting >=6.3.7 && <6.4
     , githash >=0.1.3.3 && <0.2
     , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -195,7 +195,7 @@ executable spicy
     , formatting >=6.3.7 && <6.4
     , githash >=0.1.3.3 && <0.2
     , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -240,7 +240,7 @@ executable unittests-exe
     , formatting >=6.3.7 && <6.4
     , githash >=0.1.3.3 && <0.2
     , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -286,7 +286,7 @@ test-suite unittests
     , formatting >=6.3.7 && <6.4
     , githash >=0.1.3.3 && <0.2
     , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -333,7 +333,7 @@ benchmark benchmarks
     , formatting >=6.3.7 && <6.4
     , githash >=0.1.3.3 && <0.2
     , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
