@@ -19,6 +19,7 @@ module Spicy.ONIOM.Collector
 where
 import           Control.Lens
 import qualified Data.IntMap.Strict            as IntMap
+import qualified Data.IntSet                   as IntSet
 import           Data.Massiv.Array             as Massiv
                                          hiding ( mapM
                                                 , sum
@@ -28,6 +29,8 @@ import           RIO                     hiding ( Vector
                                                 , (^.)
                                                 )
 import           Spicy.Class
+import           Spicy.Generic
+import           Spicy.Molecule.Internal.Util
 
 {-|
 Collector for multicentre ONIOM-N calculations.
@@ -517,3 +520,107 @@ hessianCollector mol = do
       $ realMol
       & (molecule_EnergyDerivatives . energyDerivatives_Hessian ?~ oniom2Hessian)
       & (molecule_SubMol .~ modelCentresWithTheirRealHessians)
+
+----------------------------------------------------------------------------------------------------
+{-|
+This collector does not perform any actual calculation, but rather sets the multipoles of the atoms.
+In similiar spirit to the other collectors, this happens in a local MC-ONIOM2 recursion. The
+multipole moments of the current real layer are taken from the local model if this atom was part of
+the local model system and from this real layers original calculation context otherwise.
+
+The final toplayer allows to calculate the electrostatic energy from all its atoms directly then.
+-}
+multipoleTransferCollector :: MonadThrow m => Molecule -> m Molecule
+multipoleTransferCollector mol = do
+  let subMols = mol ^. molecule_SubMol
+
+  -- Update this layer of the molecule with its multipoles, as if this layer would be the real
+  -- system.
+  thisLayerAsReal <- if IntMap.null subMols
+    -- If no deeper layers are present, the multipoles of this layer depends on nothing else and can
+    -- be taken directly from the high level original calculation context.
+    then thisOriginalMultipolesOutputAsRealMultipoles mol
+    else multiCentreONIOM2Collector mol subMols
+
+  return thisLayerAsReal
+ where
+  -- For the bottom layer (highest calculation level, most model system), the multipoles of the
+  -- original calcoutput will be used to fill in the values for the atoms.
+  thisOriginalMultipolesOutputAsRealMultipoles :: MonadThrow m => Molecule -> m Molecule
+  thisOriginalMultipolesOutputAsRealMultipoles mol' = do
+    maybeOriginalCalcMultipoles <-
+      maybe2MThrow
+        (MolLogicException "multipoleTransferCollector"
+                           "The original calculation output for a layer does not exist."
+        )
+      $  mol'
+      ^? molecule_CalcContext
+      .  ix (ONIOMKey Original)
+      .  calcContext_Output
+      .  _Just
+      .  calcOutput_Multipoles
+    let realAtomsNoPoles = mol' ^. molecule_Atoms
+
+    -- Check that the wrapper produced outputs for the correct atoms and that the output is
+    -- complete.
+    unless
+        (IntMap.keysSet maybeOriginalCalcMultipoles == IntMap.keysSet maybeOriginalCalcMultipoles)
+      . throwM
+      $ MolLogicException
+          "multipoleTransferCollector"
+          "The atoms from the calculation output and the molecule layer itself seem to mismatch."
+
+    -- Combine the Atom Intmap with the multipole IntMap. The intersection is used here (which
+    -- will not shrink the size of the IntMap, if the keys are completely the same), to allow for
+    -- different IntMaps to be combined.
+    let realAtomsPoles = IntMap.intersectionWith (\atom poles -> atom & atom_Multipoles .~ poles)
+                                                 realAtomsNoPoles
+                                                 maybeOriginalCalcMultipoles
+    return $ mol' & molecule_Atoms .~ realAtomsPoles
+
+  -- In a local MC-ONIOM2 setup calculate the current layer as if it would have been real. The
+  -- multipoles of link atoms, that are only in the local model system, are being redistributed.
+  -- The best case scenario is to have GDMA multipoles, where the link atoms were not allowed to
+  -- carry a pole.
+  multiCentreONIOM2Collector :: MonadThrow m => Molecule -> IntMap Molecule -> m Molecule
+  multiCentreONIOM2Collector realMol modelCentres = do
+    -- Remove link tags from atoms, that were already links in the local real system from the
+    -- model systems.
+    let modelLinksClean = fmap (removeRealLinkTagsFromModel realMol) modelCentres
+
+    -- Make sure that the set 1 atoms (model system atoms without link atoms in the model system)
+    -- are a subset of this real system.
+    let set1ModelAtoms =
+          IntMap.keysSet
+            . IntMap.unions
+            . fmap (\mc -> IntMap.filter (not . isAtomLink . _atom_IsLink) $ mc ^. molecule_Atoms)
+            $ modelLinksClean
+        realAtomsNoPoles = IntMap.keysSet $ realMol ^. molecule_Atoms
+    unless (set1ModelAtoms `IntSet.isSubsetOf` realAtomsNoPoles) . throwM $ MolLogicException
+      "multipoleTransferCollector"
+      "The model centres seem to contain non-link atoms, which are not part of the real layer. This must not happen."
+
+    -- First get all multipoles of this local real layer from the calculation output of this layer.
+    realMolWithMultipoles               <- thisOriginalMultipolesOutputAsRealMultipoles realMol
+
+    -- Make sure the model layers all got their multipoles updated.
+    modelCentresWithTheirRealMultipoles <- mapM multipoleTransferCollector modelLinksClean
+
+    -- Redistribute the multipoles of model system specific link atoms over the the set 1 atoms of
+    -- the model.
+    let modelCentresRedistributed =
+          fmap redistributeLinkMoments modelCentresWithTheirRealMultipoles
+
+    -- Use the model system atom's multipoles instead of the ones of the real system calculation for
+    -- the real system here (model system multipoles have priority).
+    let realAtoms        = realMolWithMultipoles ^. molecule_Atoms
+        modelSet1Atoms   = IntMap.unions . fmap _molecule_Atoms $ modelCentresRedistributed
+        realAtomsUpdated = IntMap.unionWith
+          (\realAtom modelAtom -> realAtom & atom_Multipoles .~ (modelAtom ^. atom_Multipoles))
+          realAtoms
+          modelSet1Atoms
+
+    return
+      $ realMol
+      & (molecule_Atoms .~ realAtomsUpdated)
+      & (molecule_SubMol .~ modelCentresWithTheirRealMultipoles)
