@@ -281,28 +281,28 @@ gradientCollector mol = do
             \ the gradient."
           )
         $ traverse
-            (\modelCentre ->
-              let lowOutputGradient =
-                      modelCentre
-                        ^? molecule_CalcContext
-                        .  ix (ONIOMKey Inherited)
-                        .  calcContext_Output
-                        .  _Just
-                        .  calcOutput_EnergyDerivatives
-                        .  energyDerivatives_Gradient
-                        .  _Just
+            (\modelCentre -> do
+              lowOutputGradient <-
+                modelCentre
+                ^? molecule_CalcContext
+                .  ix (ONIOMKey Inherited)
+                .  calcContext_Output
+                .  _Just
+                .  calcOutput_EnergyDerivatives
+                .  energyDerivatives_Gradient
+                .  _Just
                   -- To be able to use matrix-matrix multiplication, this formally transforms the
                   -- gradient vector to a 1x3M matrix, which again is a row vector.
-                  outputGradientAsRowVec =
-                      Massiv.computeAs Massiv.S
-                        .   Massiv.setComp Par
-                        .   Massiv.expandOuter (Sz 1) const
-                        .   getVectorS
-                        <$> lowOutputGradient
-                  jacobian            = getMatrixS <$> modelCentre ^. molecule_Jacobian
-                  -- Calculate the transformed gradient.
-                  transformedGradient = join $ (|*|) <$> outputGradientAsRowVec <*> jacobian
-              in  transformedGradient >>= (!?> 0)
+              let outputGradientAsRowVec =
+                    Massiv.computeAs Massiv.S
+                      . Massiv.setComp Par
+                      . Massiv.expandOuter (Sz 1) const
+                      . getVectorS
+                      $ lowOutputGradient
+              jacobian            <- getMatrixS <$> modelCentre ^. molecule_Jacobian
+              -- Calculate the transformed gradient.
+              transformedGradient <- outputGradientAsRowVec |*| jacobian
+              transformedGradient !?> 0
             )
             modelCentresWithTheirRealGradients
 
@@ -311,24 +311,24 @@ gradientCollector mol = do
       maybe2MThrow
           (MolLogicException
             "gradientCollector"
-            "While calculating the transformed high level gradient of a model system, something went\
-      \ wrong. This can be caused by a missing high level gradient for the model system, a\
-      \ missing Jacobian for the model system, or a dimension mismatch in the Jacobian and the\
-      \ gradient."
+            "While calculating the transformed high level gradient of a model system, something\
+            \ went wrong. This can be caused by a missing high level gradient for the model system,\
+            \ a missing Jacobian for the model system, or a dimension mismatch in the Jacobian and\
+            \ the gradient."
           )
         $ traverse
-            (\modelCentre ->
-              let maybeExtractedGradient =
-                      modelCentre ^. molecule_EnergyDerivatives . energyDerivatives_Gradient
-                  extractedGradientAsTowVec =
-                      Massiv.computeAs Massiv.S
-                        .   Massiv.setComp Par
-                        .   Massiv.expandOuter (Sz 1) const
-                        .   getVectorS
-                        <$> maybeExtractedGradient
-                  jacobian            = getMatrixS <$> modelCentre ^. molecule_Jacobian
-                  transformedGradient = join $ (|*|) <$> extractedGradientAsTowVec <*> jacobian
-              in  transformedGradient >>= (!?> 0)
+            (\modelCentre -> do
+              extractedGradient <-
+                modelCentre ^. molecule_EnergyDerivatives . energyDerivatives_Gradient
+              let extractedGradientAsRowVec =
+                    Massiv.computeAs Massiv.S
+                      . Massiv.setComp Par
+                      . Massiv.expandOuter (Sz 1) const
+                      . getVectorS
+                      $ extractedGradient
+              jacobian            <- getMatrixS <$> modelCentre ^. molecule_Jacobian
+              transformedGradient <- extractedGradientAsRowVec |*| jacobian
+              transformedGradient !?> 0
             )
             modelCentresWithTheirRealGradients
 
