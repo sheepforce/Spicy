@@ -598,7 +598,8 @@ multipoleTransferCollector mol = do
         realAtomsNoPoles = IntMap.keysSet $ realMol ^. molecule_Atoms
     unless (set1ModelAtoms `IntSet.isSubsetOf` realAtomsNoPoles) . throwM $ MolLogicException
       "multipoleTransferCollector"
-      "The model centres seem to contain non-link atoms, which are not part of the real layer. This must not happen."
+      "The model centres seem to contain non-link atoms, which are not part of the real layer.\
+      \ This must not happen."
 
     -- First get all multipoles of this local real layer from the calculation output of this layer.
     realMolWithMultipoles               <- thisOriginalMultipolesOutputAsRealMultipoles realMol
