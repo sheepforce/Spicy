@@ -18,6 +18,7 @@ module Spicy.Molecule.Internal.Util
   , molTraverseWithID
   , molFoldl
   , molFoldlWithMolID
+  , isAtomLink
   , reIndexMolecule
   , reIndex2BaseMolecule
   , getMaxAtomIndex
@@ -51,6 +52,8 @@ module Spicy.Molecule.Internal.Util
   , getAtomAssociationMap
   , fragmentAtomInfo2AtomsAndFragments
   , getJacobian
+  , redistributeLinkMoments
+  , removeRealLinkTagsFromModel
   )
 where
 import           Control.Lens            hiding ( (:>)
@@ -2037,3 +2040,118 @@ getJacobian realAtoms modelAtoms = do
           in  defaultValue + link2ModelGValue + link2RealGValue
         )
   return jacobian
+
+----------------------------------------------------------------------------------------------------
+{-|
+Sum of multipole moments.
+-}
+addMultipoles :: Multipoles -> Multipoles -> Multipoles
+addMultipoles a b =
+  let newMonopoles =
+          let mA = a ^. multipole_Monopole
+              mB = a ^. multipole_Monopole
+          in  combine (\x y -> Just $ x + y) mA mB
+      newDipoles =
+          let dA = Massiv.delay . getVectorS <$> a ^. multipole_Dipole
+              dB = Massiv.delay . getVectorS <$> b ^. multipole_Dipole
+          in  VectorS . Massiv.computeAs Massiv.S <$> combine (.+.) dA dB
+      newQuadrupoles =
+          let qA = Massiv.delay . getMatrixS <$> a ^. multipole_Quadrupole
+              qB = Massiv.delay . getMatrixS <$> b ^. multipole_Quadrupole
+          in  MatrixS . Massiv.compute <$> combine (.+.) qA qB
+      newOctopoles =
+          let oA = Massiv.delay . getArray3S <$> a ^. mutlipole_Octopole
+              oB = Massiv.delay . getArray3S <$> b ^. mutlipole_Octopole
+          in  Array3S . Massiv.computeAs Massiv.S <$> combine (.+.) oA oB
+      newHexadecapoles =
+          let hA = Massiv.delay . getArray4S <$> a ^. mutlipole_Hexadecapole
+              hB = Massiv.delay . getArray4S <$> b ^. mutlipole_Hexadecapole
+          in  Array4S . Massiv.computeAs Massiv.S <$> combine (.+.) hA hB
+  in  Multipoles { _multipole_Monopole     = newMonopoles
+                 , _multipole_Dipole       = newDipoles
+                 , _multipole_Quadrupole   = newQuadrupoles
+                 , _mutlipole_Octopole     = newOctopoles
+                 , _mutlipole_Hexadecapole = newHexadecapoles
+                 }
+ where
+  combine f x y = case (x, y) of
+    (Nothing, Nothing) -> Nothing
+    (Just x', Just y') -> x' `f` y'
+    (Just x', Nothing) -> Just x'
+    (Nothing, Just y') -> Just y'
+
+----------------------------------------------------------------------------------------------------
+{-|
+Multiplies a multipole with a constant factor.
+-}
+multiplyMultipoles :: Multipoles -> Double -> Multipoles
+multiplyMultipoles m s =
+  let newMonopole = let oldMono = m ^. multipole_Monopole in (s *) <$> oldMono
+      newDipole =
+          let oldDi = Massiv.delay . getVectorS <$> m ^. multipole_Dipole
+          in  VectorS . Massiv.computeAs Massiv.S . (s *.) <$> oldDi
+      newQuadrupole =
+          let oldQuadro = Massiv.delay . getMatrixS <$> m ^. multipole_Quadrupole
+          in  MatrixS . Massiv.computeAs Massiv.S . (s *.) <$> oldQuadro
+      newOctopole =
+          let oldOcto = Massiv.delay . getArray3S <$> m ^. mutlipole_Octopole
+          in  Array3S . Massiv.computeAs Massiv.S . (s *.) <$> oldOcto
+      newHexadecapole =
+          let oldHexadeca = Massiv.delay . getArray4S <$> m ^. mutlipole_Hexadecapole
+          in  Array4S . Massiv.computeAs Massiv.S . (s *.) <$> oldHexadeca
+  in  Multipoles { _multipole_Monopole     = newMonopole
+                 , _multipole_Dipole       = newDipole
+                 , _multipole_Quadrupole   = newQuadrupole
+                 , _mutlipole_Octopole     = newOctopole
+                 , _mutlipole_Hexadecapole = newHexadecapole
+                 }
+
+----------------------------------------------------------------------------------------------------
+{-|
+Redistributes the multipole moments of the link atoms of a given molecule layer (not its sublayers)
+homogenously among all other atoms of the the layer.
+-}
+redistributeLinkMoments :: Molecule -> Molecule
+redistributeLinkMoments mol =
+  let
+    allAtoms          = mol ^. molecule_Atoms
+    -- Link atoms of this layer.
+    linkAtoms         = IntMap.filter (isAtomLink . _atom_IsLink) allAtoms
+    -- The model atoms without the link atoms.
+    set1Atoms         = IntMap.filter (not . isAtomLink . _atom_IsLink) allAtoms
+    nSet1Atoms        = IntMap.size set1Atoms
+    sumOfLinkMoments  = IntMap.foldl' addMultipoles def . fmap _atom_Multipoles $ linkAtoms
+    linkMomentsScaled = multiplyMultipoles sumOfLinkMoments (1 / fromIntegral nSet1Atoms)
+    -- Distribute the link atom multipoles homogenously over the set1 atoms.
+    newSet1Atoms = fmap (\a -> a & atom_Multipoles %~ addMultipoles linkMomentsScaled) set1Atoms
+    -- Remove the multipole information from the link atoms.
+    newLinkAtoms      = fmap (\a -> a & atom_Multipoles .~ def) linkAtoms
+    -- Recombine the set 1 and 2 atoms again to give the layer with redistributed multipoles.
+    newAtoms          = IntMap.union newSet1Atoms newLinkAtoms
+  in
+    mol & molecule_Atoms .~ newAtoms
+
+----------------------------------------------------------------------------------------------------
+{-|
+This function takes a local MC-ONIOM2 setup and removes link tag of atoms from the model systems, if
+they were already link atoms in the real system.
+-}
+removeRealLinkTagsFromModel
+  :: Molecule -- ^ The real system.
+  -> Molecule -- ^ A model system directly below the real system.
+  -> Molecule
+removeRealLinkTagsFromModel realMol modelCentre =
+  let realLinkAtoms =
+          IntMap.keysSet . IntMap.filter (isAtomLink . _atom_IsLink) $ realMol ^. molecule_Atoms
+      -- The model centres, but all atoms, that were already a link atom in the real system, do not
+      -- longer have the link tag.
+      newModel =
+          let modelAtoms      = modelCentre ^. molecule_Atoms
+              modelAtomsClean = IntMap.mapWithKey
+                (\atomKey atom -> if atomKey `IntSet.member` realLinkAtoms
+                  then atom & atom_IsLink .~ NotLink
+                  else atom
+                )
+                modelAtoms
+          in  modelCentre & molecule_Atoms .~ modelAtomsClean
+  in  newModel
