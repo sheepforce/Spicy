@@ -15,6 +15,7 @@ module Spicy.ONIOM.Collector
   , energyCollector
   , gradientCollector
   , hessianCollector
+  , multipoleTransferCollector
   )
 where
 import           Control.Lens
