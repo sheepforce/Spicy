@@ -5,5 +5,5 @@ Test.hs
 *.so.*
 goldentests/output/*.*
 public
-
+dist-newstyle
 *.fchk
