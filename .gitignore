@@ -7,3 +7,5 @@ goldentests/output/*.*
 public
 dist-newstyle
 *.fchk
+
+*.local
