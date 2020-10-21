@@ -9,3 +9,5 @@ dist-newstyle
 *.fchk
 
 *.local
+
+cabal.project.local~
