@@ -30,7 +30,7 @@ where
 
 import           Data.Massiv.Array             as Massiv
 import           Data.Massiv.Core.Operations    ( NumericFloat )
-import           Math.NumberTheory.Powers.Squares
+import           Math.NumberTheory.Roots
 import           RIO                     hiding ( Vector )
 import           Spicy.Class             hiding ( S )
 
@@ -93,7 +93,7 @@ This index transformation can be used to reexpand the lower triangular matrix in
 major order back to the full symmetric square matrix.
 -}
 ltMat2Square
-  :: (MonadThrow m, Manifest r Ix1 a, Mutable r Ix1 a, Resize r Ix1) => Vector r a -> m (Matrix r a)
+  :: (MonadThrow m, Manifest r Ix1 a, Mutable r Ix1 a {- ,Resize r Ix1-} ) => Vector r a -> m (Matrix r a)
 ltMat2Square ltVec = do
   let -- Elements in the lower triangular part of the matrix (including main diagonal).
       nElemLT = Massiv.elemsCount ltVec

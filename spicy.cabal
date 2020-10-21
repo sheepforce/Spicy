@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7768613eb84dbae2e7152ffbc5aea62a1b3493fb2387b32e5a4d8f0f313d075f
+-- hash: 38abae54570297395dc03b19cd3655c2e04d05e8e26fd800e9544dd7e5375bba
 
 name:           spicy
 version:        0.0.0.1
@@ -93,7 +93,6 @@ library
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
-    , arithmoi >=0.10.0.0 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -104,6 +103,7 @@ library
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
+    , integer-roots >=1.0 && <2
     , lens >=4.18 && <4.20
     , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
@@ -137,7 +137,6 @@ executable benchmarks-exe
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
-    , arithmoi >=0.10.0.0 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -149,6 +148,7 @@ executable benchmarks-exe
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
+    , integer-roots >=1.0 && <2
     , lens >=4.18 && <4.20
     , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
@@ -183,7 +183,6 @@ executable spicy
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
-    , arithmoi >=0.10.0.0 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -194,6 +193,7 @@ executable spicy
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
+    , integer-roots >=1.0 && <2
     , lens >=4.18 && <4.20
     , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
@@ -228,7 +228,6 @@ executable unittests-exe
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
-    , arithmoi >=0.10.0.0 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -239,6 +238,7 @@ executable unittests-exe
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
+    , integer-roots >=1.0 && <2
     , lens >=4.18 && <4.20
     , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
@@ -274,7 +274,6 @@ test-suite unittests
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
-    , arithmoi >=0.10.0.0 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -285,6 +284,7 @@ test-suite unittests
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
+    , integer-roots >=1.0 && <2
     , lens >=4.18 && <4.20
     , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
@@ -320,7 +320,6 @@ benchmark benchmarks
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
-    , arithmoi >=0.10.0.0 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -332,6 +331,7 @@ benchmark benchmarks
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
+    , integer-roots >=1.0 && <2
     , lens >=4.18 && <4.20
     , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3

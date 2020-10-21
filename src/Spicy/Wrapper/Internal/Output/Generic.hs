@@ -16,7 +16,7 @@ module Spicy.Wrapper.Internal.Output.Generic
 where
 import           Data.Attoparsec.Text
 import           Data.Massiv.Array             as Massiv
-import           Math.NumberTheory.Powers.Squares
+import           Math.NumberTheory.Roots
 import           RIO
 import           Spicy.Class
 
