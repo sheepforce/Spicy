@@ -22,6 +22,9 @@ import           Control.Lens            hiding ( Empty )
 import           Data.Default
 import           RIO                     hiding ( view
                                                 , (^.)
+                                                , (.~)
+                                                , (^?)
+                                                , (^..)
                                                 )
 import qualified RIO.Map                       as Map
 import           RIO.Process

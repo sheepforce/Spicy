@@ -19,6 +19,7 @@ import           Data.FileEmbed
 import           Data.List.Split
 import           RIO                     hiding ( view
                                                 , (^.)
+                                                , (.~)
                                                 )
 import qualified RIO.HashMap                   as HashMap
 import           RIO.Process

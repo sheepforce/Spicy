@@ -78,6 +78,9 @@ import           Data.Massiv.Core.Operations    ( Numeric )
 import           Data.Maybe
 import           RIO                     hiding ( Vector
                                                 , (^.)
+                                                , (.~)
+                                                , (%~)
+                                                , (^?)
                                                 )
 import qualified RIO.HashMap                   as HashMap
 import qualified RIO.HashSet                   as HashSet

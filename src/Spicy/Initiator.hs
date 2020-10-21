@@ -22,6 +22,7 @@ import           GitHash
 import           RIO                     hiding ( to
                                                 , view
                                                 , (^.)
+                                                , (.~)
                                                 )
 import           Spicy.Class
 import           Spicy.Generic

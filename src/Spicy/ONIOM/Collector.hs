@@ -28,6 +28,8 @@ import           Data.Massiv.Array             as Massiv
 import           RIO                     hiding ( Vector
                                                 , view
                                                 , (^.)
+                                                , (.~)
+                                                , (^?)
                                                 )
 import           Spicy.Class
 import           Spicy.Generic

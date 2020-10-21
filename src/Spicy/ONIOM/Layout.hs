@@ -20,6 +20,9 @@ import qualified Data.IntSet                   as IntSet
 import           Formatting
 import           RIO                     hiding ( view
                                                 , (^.)
+                                                , (.~)
+                                                , (%~)
+                                                , (^?)
                                                 )
 import qualified RIO.Map                       as Map
 import           RIO.Seq                        ( Seq(..) )

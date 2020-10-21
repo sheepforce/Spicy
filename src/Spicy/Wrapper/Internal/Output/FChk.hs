@@ -23,6 +23,7 @@ import           Data.Default
 import           RIO                     hiding ( take
                                                 , takeWhile
                                                 , (^.)
+                                                , (^?)
                                                 )
 import qualified RIO.Map                       as Map
 import qualified RIO.Text                      as Text

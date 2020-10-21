@@ -19,6 +19,8 @@ import qualified Data.ByteString.Lazy.Char8    as ByteStringLazy8
 import           Data.Foldable
 import           RIO                     hiding ( view
                                                 , (^.)
+                                                , (^?)
+                                                , (.~)
                                                 )
 import qualified RIO.Map                       as Map
 import           RIO.Process
