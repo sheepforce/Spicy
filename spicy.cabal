@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 38abae54570297395dc03b19cd3655c2e04d05e8e26fd800e9544dd7e5375bba
+-- hash: 9c420d30833a60b8c0b5ec22fe1beaa9f3720071ff72b72b7e10b1bbff0624da
 
 name:           spicy
 version:        0.0.0.1
@@ -297,52 +297,6 @@ test-suite unittests
     , tasty >=1.2.3 && <1.3
     , tasty-golden >=2.3.1 && <2.4
     , tasty-hunit >=0.10.0.2 && <0.11
-    , text >=1.2.3.1 && <1.3
-    , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
-  default-language: Haskell2010
-
-benchmark benchmarks
-  type: exitcode-stdio-1.0
-  main-is: benchmarks.hs
-  other-modules:
-      Paths_spicy
-  hs-source-dirs:
-      app
-  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
-  build-depends:
-      aeson >=1.4.4.0 && <1.6
-    , aeson-pretty >=0.8.7 && <0.9
-    , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.12
-    , attoparsec >=0.13.1.0 && <0.14
-    , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.12
-    , cmdargs >=0.10.20 && <0.11
-    , containers >=0.6.0.1 && <0.7
-    , criterion >=1.5.6.1 && <1.7
-    , data-default >=0.7.1.1 && <0.8
-    , deepseq >=1.4.2.0 && <1.5
-    , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <8
-    , githash >=0.1.3.3 && <0.2
-    , integer-roots >=1.0 && <2
-    , lens >=4.18 && <4.20
-    , massiv >=0.5.2.0 && <0.6
-    , mtl >=2.2.2 && <2.3
-    , parallel >=3.2.1.0 && <3.3
-    , pathtype >=0.8.1 && <0.9
-    , rio >=0.1.13.0 && <0.2
-    , spicy
-    , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
-    , tasty >=1.2.3 && <1.4
-    , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
