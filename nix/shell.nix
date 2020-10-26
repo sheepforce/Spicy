@@ -18,6 +18,7 @@ in
     tools = {
       cabal = "3.2.0.0";
       hlint = "2.2.11";
+      haskell-language-server = "0.5.1"; # See https://github.com/input-output-hk/haskell.nix/blob/master/overlays/tools.nix from time to time.
     };
     # See overlays/tools.nix for more details
 
