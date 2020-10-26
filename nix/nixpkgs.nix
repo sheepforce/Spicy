@@ -9,12 +9,12 @@ let
   # Could also be normal '<nixos>' or something.
   nixpkgsSrc = haskellNix.sources.nixpkgs-2009;
 
-  # Arguments to pass to the import of nixpkgs. This includes the fulll Haskell.nix overlay and some
+  # Arguments to pass to the import of nixpkgs. This includes the full Haskell.nix overlay and some
   # configuration options.
   haskellNixArgs = haskellNix.nixpkgsArgs;
 
   # Combine the Chemix and Haskell.nix overlay.
-  allOverlays = haskellNixArgs.overlays ++ [chemix];
+  allOverlays = haskellNixArgs.overlays ++ [ chemix ];
   nixpkgsArgs = haskellNixArgs // { overlays = allOverlays; };
 
   # The final package set with all overlays applied.
