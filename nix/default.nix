@@ -1,12 +1,11 @@
-let
-  pkgs = import ./nixpkgs.nix;
-in
-  pkgs.haskell-nix.project {
+{ pkgs ? import ./nixpkgs.nix {} }:
 
-    src = pkgs.haskell-nix.haskellLib.cleanGit {
-      name = "spicy";
-      src = ./..;
-    };
+pkgs.haskell-nix.project {
 
-    compiler-nix-name = "ghc8102";
-  }
+  src = pkgs.haskell-nix.haskellLib.cleanGit {
+    name = "spicy";
+    src = ./..;
+  };
+
+  compiler-nix-name = "ghc8102";
+}

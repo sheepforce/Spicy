@@ -1,14 +1,15 @@
+{ # The Chemix overlay repository. Defaults to the current master branch. Can be pinned from outside.
+  chemix ? import "${builtins.fetchTarball "https://gitlab.com/theoretical-chemistry-jena/nixwithchemistry/-/archive/master/nixwithchemistry-master.tar.bz2"}/default.nix"
+
+  # The Haskell.nix repository with the Haskell infrastructure. Defaults to the current master.
+, haskellNix ? import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {}
+
+  # A Nixpkgs channel. Defaults to a rebuild version channel of nixos-20.09 from Haskell.nix,
+  # but also <nixos>, ... are possible.
+, nixpkgsSrc ? haskellNix.sources.nixpkgs-2009
+}:
+
 let
-  # Load the current master of the Chemix overlay with Quantum chemistry packages.
-  chemix = import "${builtins.fetchTarball "https://gitlab.com/theoretical-chemistry-jena/nixwithchemistry/-/archive/master/nixwithchemistry-master.tar.bz2"}/default.nix";
-
-  # The Haskell.nix infrastructure.
-  haskellNix = import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {};
-
-  # A patched version of the nixos-20.09 channel with potentially more cache hits for Haskell.nix.
-  # Could also be normal '<nixos>' or something.
-  nixpkgsSrc = haskellNix.sources.nixpkgs-2009;
-
   # Arguments to pass to the import of nixpkgs. This includes the full Haskell.nix overlay and some
   # configuration options.
   haskellNixArgs = haskellNix.nixpkgsArgs;

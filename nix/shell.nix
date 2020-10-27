@@ -1,6 +1,6 @@
 let
-  pkgs = import ./nixpkgs.nix;
-  hsPkgs = import ./default.nix;
+  pkgs = import ./nixpkgs.nix {};
+  hsPkgs = import ./default.nix {};
 in
   hsPkgs.shellFor {
     # Include only the *local* packages of your project.
