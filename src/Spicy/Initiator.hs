@@ -16,9 +16,10 @@ module Spicy.Initiator
 where
 import           Control.Lens
 import           Data.Char
+import           Paths_spicy                    ( version )
+import           Data.Version                   ( showVersion )
 import           Data.FileEmbed
 import           Data.Maybe
-import           GitHash
 import           RIO                     hiding ( to
                                                 , view
                                                 , (^.)
@@ -39,6 +40,7 @@ import           System.Path                    ( (</>) )
 import qualified System.Path                   as Path
 import qualified System.Path.Directory         as Dir
 
+
 {-|
 The Spicy Logo as ASCII art.
 -}
@@ -49,8 +51,8 @@ spicyLogo = $(embedFile . Path.toString . Path.relFile $ "data/Fonts/SpicyLogo.t
 {-|
 Get information from the build by TemplateHaskell to be able to show a reproducible version.
 -}
-gitInfo :: GitInfo
-gitInfo = $$tGitInfoCwd
+versionInfo :: Utf8Builder
+versionInfo = displayShow . showVersion $ version
 
 ----------------------------------------------------------------------------------------------------
 --spicyStartUp :: RIO SimpleApp SpicyEnv
@@ -58,14 +60,7 @@ spicyStartUp :: IO ()
 spicyStartUp = runSimpleApp $ do
   -- Greet with the Spicy logo and emit some version information.
   logInfo . displayBytesUtf8 $ spicyLogo
-  mapM_
-    logInfo
-    [ "Running the Spicy program:"
-    , "  Commit: " <> (displayShow . giHash $ gitInfo)
-    , "  Branch: " <> (displayShow . giBranch $ gitInfo)
-    , "  Date  : " <> (displayShow . giCommitDate $ gitInfo)
-    , ""
-    ]
+  logInfo $ "Spicy version " <> versionInfo
 
   -- Get command line arguments to Spicy.
   cmdArgsAndMode <- liftIO $ cmdArgs spicyModes
