@@ -1,10 +1,5 @@
 let
-  chemix = import "${builtins.fetchGit {
-    url = "https://gitlab.com/theoretical-chemistry-jena/nixwithchemistry.git";
-    name = "chemix";
-    rev = "7596147d024bd53b2637833d839e3def61bb6381";
-    ref = "master";
-  }}/default.nix";
+  chemix = import ./chemix/default.nix;
 
   haskellNix = import (builtins.fetchGit {
     url = "https://github.com/input-output-hk/haskell.nix.git";

@@ -1,5 +1,5 @@
 { # The Chemix overlay repository. Defaults to the current master branch. Can be pinned from outside.
-  chemix ? import "${builtins.fetchTarball "https://gitlab.com/theoretical-chemistry-jena/nixwithchemistry/-/archive/master/nixwithchemistry-master.tar.bz2"}/default.nix"
+  chemix ? import ./chemix/default.nix
 
   # The Haskell.nix repository with the Haskell infrastructure. Defaults to the current master.
 , haskellNix ? import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {}
