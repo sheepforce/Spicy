@@ -20,12 +20,12 @@ in
       hlint = "2.2.11";
       haskell-language-server = "0.5.1"; # See https://github.com/input-output-hk/haskell.nix/blob/master/overlays/tools.nix from time to time.
       hpack = "0.34.2";
+      ormolu = "0.1.3.0";
     };
     # See overlays/tools.nix for more details
 
     # Some you may need to get some other way.
-    buildInputs = with pkgs.haskellPackages; [
-      ghcid
+    buildInputs = [
     ];
 
     # Prevents cabal from choosing alternate plans, so that
