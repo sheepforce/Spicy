@@ -114,21 +114,6 @@ executables:
       - -rtsopts
       - -with-rtsopts=-N
 
-  benchmarks-exe:
-    main: benchmarks.hs
-    source-dirs: app
-    dependencies:
-      - spicy
-      - criterion >= 1.4.1.0
-    default-extensions:
-      - BangPatterns
-      - OverloadedStrings
-      - NoImplicitPrelude
-      - DataKinds
-    ghc-options:
-      - -threaded
-      - -rtsopts
-
   unittests-exe:
     main: testing.hs
     source-dirs: app
