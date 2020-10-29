@@ -23,8 +23,6 @@ before_script:
   - cachix use chemix
   # Disallow unfree packages, so that everything is for sure redistributable.
   - export NIXPKGS_ALLOW_UNFREE=0
-  # Just check that the cache configuration is correct now:
-  - cat ~/.config/nix/nix.conf
 
 stages:
   - build
