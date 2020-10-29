@@ -11,6 +11,9 @@ before_script:
   - nix-channel --add https://nixos.org/channels/nixos-20.09 nixos
   - nix-channel --update
   - nix-channel --list
+  # Enable Hydra binary cache for IOHK Haskell.nix first.
+  - echo 'trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=' > ~/.config/nix/nix.conf
+  - echo 'substituters = 'https://hydra.iohk.io' >> ~/.config/nix/nix.conf
   # Make sure cachix is installed and set up.
   - nix-env -iA nixos.cachix
   - cachix authtoken $CACHIX_AUTHTOKEN
@@ -19,6 +22,8 @@ before_script:
   - cachix use chemix
   # Disallow unfree packages, so that everything is for sure redistributable.
   - export NIXPKGS_ALLOW_UNFREE=0
+  # Just check that the cache configuration is correct now:
+  - cat ~/.config/nix/nix.conf
 
 stages:
   - build
