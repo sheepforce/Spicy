@@ -1,6 +1,9 @@
 # Official Nix image. Makes sure everything is build in a well defined environment.
 image: nixos/nix
 
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
 # Stuff that is always being executed before any step.
 before_script:
   # Set the appropriate channel for the evaluation.
@@ -14,9 +17,6 @@ before_script:
   - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY
   - cachix use spicy
   - cachix use chemix
-  # Initialise the submodules.
-  - git submodule sync --recursive
-  - git submodule update --init --recursive
   # Disallow unfree packages, so that everything is for sure redistributable.
   - export NIXPKGS_ALLOW_UNFREE=0
 
