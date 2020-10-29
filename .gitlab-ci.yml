@@ -1,0 +1,29 @@
+# Official Nix image. Makes sure everything is build in a well defined environment.
+image: nixos/nix
+
+# Stuff that is always being executed before any step.
+before_script:
+  # Set the appropriate channel for the evaluation.
+  - nix-channel --list
+  - nix-channel --add https://nixos.org/channels/nixos-20.09 nixos
+  - nix-channel --update
+  - nix-channel --list
+  # Make sure cachix is installed and set up.
+  - nix-env -iA nixos.cachix
+  - cachix authtoken $CACHIX_AUTHTOKEN
+  - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY
+  - cachix use spicy
+  - cachix use chemix
+  # Disallow unfree packages, so that everything is for sure redistributable.
+  - export NIXPKGS_ALLOW_UNFREE=0
+
+stages:
+  - build
+
+# Build all packages in the list but do not push them yet to Cachix. This makes sure that only fully
+# evaluating derivations will be pushed.
+build:
+  stage: build
+  script:
+    - nix-build nix/default.nix -A spicy.components.library | cachix push spicy
+    - nix-build nix/default.nix -A spicy.components.exes    | cachix push spicy
