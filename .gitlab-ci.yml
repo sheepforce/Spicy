@@ -29,12 +29,22 @@ before_script:
 stages:
   - build
 
-# Build all packages in the list but do not push them yet to Cachix. This makes sure that only fully
-# evaluating derivations will be pushed.
-build:
+# Build with the pinnded release stuff first.
+releaseBuild:
   stage: build
   script:
-    - nix-build nix/default.nix -A spicy.components.librar
+    - nix-build nix/release.nix -A spicy.components.library
+    - nix-build nix/release.nix -A spicy.components.exes
+    - nix-build nix/release.nix -A spicy.components.tests
+  after_script:
+    # Push everything that has been build since initialisation to the Cache.
+    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push chemix"
+
+# Build with the current dev branches of dependencies.
+devBuild:
+  stage: build
+  script:
+    - nix-build nix/default.nix -A spicy.components.library
     - nix-build nix/default.nix -A spicy.components.exes
     - nix-build nix/default.nix -A spicy.components.tests
   after_script:
