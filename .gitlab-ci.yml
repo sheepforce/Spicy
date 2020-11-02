@@ -16,7 +16,7 @@ before_script:
   - echo 'trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=' > ~/.config/nix/nix.conf
   - echo 'substituters = https://hydra.iohk.io' >> ~/.config/nix/nix.conf
   # Make sure cachix is installed and set up.
-  - nix-env -iA nixos.cachix
+  - nix-env -iA nixos.cachix nixos.bash
   - cachix authtoken $CACHIX_AUTHTOKEN
   - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY
   - cachix use spicy
@@ -28,6 +28,7 @@ before_script:
 
 stages:
   - build
+  - docs
 
 # Build with the pinnded release stuff first.
 releaseBuild:
@@ -50,3 +51,8 @@ devBuild:
   after_script:
     # Push everything that has been build since initialisation to the Cache.
     - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push chemix"
+
+buildDocs:
+  stage: docs
+  script:
+    - nix-
