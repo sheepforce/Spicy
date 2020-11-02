@@ -23,6 +23,8 @@ before_script:
   - cachix use chemix
   # Disallow unfree packages, so that everything is for sure redistributable.
   - export NIXPKGS_ALLOW_UNFREE=0
+  # Save all paths that are currently present in the store.
+  - nix path-info --all > /tmp/store-path-pre-build
 
 stages:
   - build
@@ -32,6 +34,9 @@ stages:
 build:
   stage: build
   script:
-    - nix-build nix/default.nix -A spicy.components.library | cachix push spicy
-    - nix-build nix/default.nix -A spicy.components.exes    | cachix push spicy
-    - nix-build nix/default.nix -A spicy.components.tests   | cachix push spicy
+    - nix-build nix/default.nix -A spicy.components.librar
+    - nix-build nix/default.nix -A spicy.components.exes
+    - nix-build nix/default.nix -A spicy.components.tests
+  after_script:
+    # Push everything that has been build since initialisation to the Cache.
+    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push chemix"
