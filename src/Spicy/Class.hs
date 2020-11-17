@@ -150,6 +150,16 @@ module Spicy.Class
   , multipole_Quadrupole
   , mutlipole_Octopole
   , mutlipole_Hexadecapole
+  , Monopole(..)
+  , MultipoleR0
+  , Dipole(..)
+  , MultipoleR1
+  , Quadrupole(..)
+  , MultipoleR2
+  , Octopole(..)
+  , MultipoleR3
+  , Hexadecapole(..)
+  , MultipoleR4
   , EnergyDerivatives(..)
   , energyDerivatives_Energy
   , energyDerivatives_Gradient
@@ -1232,11 +1242,11 @@ Furthermore the definition of outputs obtainable from the wrappers are defined h
 Representation of multipoles for expansion of the electrostatic potential.
 -}
 data Multipoles = Multipoles
-  { _multipole_Monopole     :: !(Maybe Double)
-  , _multipole_Dipole       :: !(Maybe (Array1S Double))
-  , _multipole_Quadrupole   :: !(Maybe (Array2S Double))
-  , _mutlipole_Octopole     :: !(Maybe (Array3S Double))
-  , _mutlipole_Hexadecapole :: !(Maybe (Array4S Double))
+  { _multipole_Monopole     :: !(Maybe Monopole)
+  , _multipole_Dipole       :: !(Maybe Dipole)
+  , _multipole_Quadrupole   :: !(Maybe Quadrupole)
+  , _mutlipole_Octopole     :: !(Maybe Octopole)
+  , _mutlipole_Hexadecapole :: !(Maybe Hexadecapole)
   }
   deriving ( Eq, Show, Generic )
 
@@ -1254,13 +1264,17 @@ instance Default Multipoles where
                    }
 
 instance HumanShow Multipoles where
-  hShow poles =
+  hShow poles = ["Multipoles: - placeholder -"] {-
     let -- Monopole printing:
         monopole :: [Utf8Builder]
-        monopole = ["Monopole =", fromMaybe "-" . fmap display . _multipole_Monopole $ poles]
+        monopole =
+            let q00 = fromMaybe "-" $ doubleFormat <$> _multipole_Monopole $ poles
+            in  ["Monopole:", "  q00 = " <> q00]
         -- Dipole printing
         dipole :: [Utf8Builder]
         dipole =
+          let q20 = fr$ doubleFormat . q20 <$> _multipole_Dipole $ poles
+              q2Mag =
             let arrayRepresentation = arrayToBuilder . getVectorS <$> _multipole_Dipole poles
             in  "Dipole =" : fromMaybe ["-"] arrayRepresentation
         -- Quadrupole printing
@@ -1279,7 +1293,91 @@ instance HumanShow Multipoles where
             let arrayRepresentation = arrayToBuilder . getArray4S <$> _mutlipole_Hexadecapole poles
             in  "Hexadecapole =" : fromMaybe ["-"] arrayRepresentation
     in  monopole <> dipole <> quadrupole <> octopole <> hexadecapole
-    where arrayToBuilder array = fmap display . Text.lines . Text.pack . show $ array
+   where
+    arrayToBuilder array = fmap display . Text.lines . Text.pack . show $ array
+    doubleFormat = display . format (left 8 ' ' %. fixed 6)
+-}
+
+----------------------------------------------------------------------------------------------------
+{-|
+A monopole moment.
+-}
+type Monopole = Double
+type MultipoleR0 = Monopole
+
+----------------------------------------------------------------------------------------------------
+{-|
+A spherical dipole moment.
+-}
+data Dipole = Dipole
+    { q11c :: Double
+    , q11s :: Double
+    }
+  deriving ( Eq, Show, Generic )
+
+instance ToJSON Dipole where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON Dipole
+
+type MultipoleR1 = Dipole
+
+----------------------------------------------------------------------------------------------------
+{-|
+A spherical quadrupole moment.
+-}
+data Quadrupole = Quadrupole
+    { q20 :: Double
+    , q22c :: Double
+    , q22s :: Double
+    }
+  deriving ( Eq, Show, Generic )
+
+instance ToJSON Quadrupole where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON Quadrupole
+
+type MultipoleR2 = Quadrupole
+
+----------------------------------------------------------------------------------------------------
+{-|
+A spherical octopole moment.
+-}
+data Octopole = Octopole
+    { q31c :: Double
+    , q31s :: Double
+    , q33c :: Double
+    , q33s :: Double
+    }
+  deriving ( Eq, Show, Generic )
+
+instance ToJSON Octopole where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON Octopole
+
+type MultipoleR3 = Octopole
+
+----------------------------------------------------------------------------------------------------
+{-|
+A spherical octopole moment.
+-}
+data Hexadecapole = Hexadecapole
+    { q40 :: Double
+    , q42c :: Double
+    , q42s :: Double
+    , q44c :: Double
+    , q44s :: Double
+    }
+  deriving ( Eq, Show, Generic )
+
+instance ToJSON Hexadecapole where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON Hexadecapole
+
+type MultipoleR4 = Hexadecapole
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -1507,7 +1605,7 @@ instance HumanShow CalcInput where
               <*> pure calcInput
     in  display <$> RIO.zipWith (<>) identifiers values
    where
-    -- Formatter for the identifiers.
+-- Formatter for the identifiers.
     formatIdentifier :: Text -> Utf8Builder
     formatIdentifier indentifier = display . sformat ((right 20 ' ' %. stext) % ": ") $ indentifier
     -- Task to human readable form.

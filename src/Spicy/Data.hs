@@ -13,13 +13,15 @@ module Spicy.Data
   ( covalentRadii
   , defCovScaling
   , defElectronicScalingFactors
+  , angstrom2Bohr
+  , bohr2Angstrom
   )
 where
 
 import           RIO
 import qualified RIO.Map                       as Map
 import           Spicy.Class
-import qualified RIO.Seq as Seq
+import qualified RIO.Seq                       as Seq
 
 {-|
 Covalent radii of elements in Angstrom taken from
@@ -140,4 +142,18 @@ second entry multipoles two bonds away and so on.
 -}
 -- TODO (phillip|p=50|#Wrong) - These are just some made up values. Lookup the real ones in literature.
 defElectronicScalingFactors :: Seq Double
-defElectronicScalingFactors = Seq.fromList [0.2,0.4,0.6,0.8]
+defElectronicScalingFactors = Seq.fromList [0.2, 0.4, 0.6, 0.8]
+
+----------------------------------------------------------------------------------------------------
+{-|
+Conversion from Angstrom to Bohr.
+-}
+angstrom2Bohr :: Double -> Double
+angstrom2Bohr lenghtInAngstrom = lenghtInAngstrom * 1.889725989
+
+----------------------------------------------------------------------------------------------------
+{-|
+Conversion from Bohr to Angstrom.
+-}
+bohr2Angstrom :: Double -> Double
+bohr2Angstrom lengthInBohr = lengthInBohr / (1 / angstrom2Bohr 1)
