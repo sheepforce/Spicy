@@ -256,6 +256,7 @@ module Spicy.Class
   , PreStartUpEnv(..)
   , psEnvPsi4
   , psEnvNwchem
+  , psEnvGDMA
     -- ** Initiator Environment
     -- $appEnvInitiator
   , InitEnv(..)
@@ -1886,18 +1887,23 @@ data PreStartUpEnv = PreStartUpEnv
   , _psEnvNwchem :: !JFilePathAbs            -- ^ A wrapper around the NWChem program, that also
                                              --   provides MPI executables. All arguments are passed
                                              --   to the initial @mpiexec@, including @nwchem@.
+  , _psEnvGDMA   :: !JFilePathAbs            -- ^ A wrapper around GDMA with the same behaviour.
   }
   deriving ( Eq, Show, Generic )
 
 instance ToJSON PreStartUpEnv where
-  toJSON conf =
-    object ["psi4" .= (toJSON . _psEnvPsi4 $ conf), "nwchem" .= (toJSON . _psEnvNwchem $ conf)]
+  toJSON conf = object
+    [ "psi4" .= (toJSON . _psEnvPsi4 $ conf)
+    , "nwchem" .= (toJSON . _psEnvNwchem $ conf)
+    , "gdma" .= (toJSON . _psEnvGDMA $ conf)
+    ]
 
 instance FromJSON PreStartUpEnv where
   parseJSON = withObject "PreStartUpEnv" $ \conf -> do
     psi4   <- conf .: "psi4"
     nwchem <- conf .: "nwchem"
-    return PreStartUpEnv { _psEnvPsi4 = psi4, _psEnvNwchem = nwchem }
+    gdma   <- conf .: "gdma"
+    return PreStartUpEnv { _psEnvPsi4 = psi4, _psEnvNwchem = nwchem, _psEnvGDMA = gdma }
 
 ----------------------------------------------------------------------------------------------------
 makeLenses ''SpicyEnv

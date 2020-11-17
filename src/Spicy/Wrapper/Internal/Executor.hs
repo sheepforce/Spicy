@@ -218,10 +218,7 @@ executePsi4 calcID inputFilePath = do
         , "--prefix=" <> (calcContext ^. calcContext_Input . calcInput_PrefixName)
         , "--messy"
         ]
-      psi4ExecNam = "psi4"
-
-  -- Information about the executables used.
-  let psi4Wrapper = getFilePathAbs $ preStartUpConf ^. psEnvPsi4
+      psi4Wrapper = getFilePathAbs $ preStartUpConf ^. psEnvPsi4
   logInfoF $ "Using Psi4 wrapper at: " <> displayShow psi4Wrapper
 
   -- Debug logging before execution of Psi4.
@@ -230,7 +227,7 @@ executePsi4 calcID inputFilePath = do
   -- Launch the Psi4 process and read its stdout and stderr.
   (exitCode, psi4Out, psi4Err) <-
     local (& processContextL .~ psi4Context) . withWorkingDir (Path.toString permanentDir) $ proc
-      psi4ExecNam
+      (Path.toString psi4Wrapper)
       psi4CmdArgs
       readProcess
 
@@ -242,6 +239,69 @@ executePsi4 calcID inputFilePath = do
     logError "Psi4 stdout messsages:"
     mapM_ (logError . ("  " <>) . displayShow) . ByteStringLazy8.lines $ psi4Out
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
+
+{-|
+Run GDMA on a given FChk file. The function takes also a set of link atom indices (in dense mapping,
+suitable for GDMA), that are to be ignored in the multipole expansion. This replaces the charge
+redistribution.
+
+By the way GDMA expects its input file, to delete link atoms, the need to be named @L@ in the FChk
+file. This conversion of the FChk happens within this function.
+
+The function will return multipole moments in spherical tensor representation up to given order.
+-}
+executeGDMA
+  :: (HasPreStartUpEnv env, HasLogFunc env, HasProcessContext env)
+  => Path.AbsFile -- ^ The absolute path to the FChk file, which is the GDMA input.
+  -> IntSet       -- ^ The dense set of link atoms, which shall **not** be expansion centres.
+  -> Int          -- ^ The order of the multipole expansion. >= 0 && <= 10
+  -> RIO env (IntMap Multipoles)
+executeGDMA fchkPath linkAtoms expOrder = do
+  -- Sanity checks.
+  unless (expOrder <= 10 && expOrder >= 0) . throwM $
+    WrapperGenericException
+    "executeGDMA"
+    "The multipole expansion order in GDMA must be >= 0 && <= 10."
+  fchkExists <- liftIO . Dir.doesFileExist $ fchkPath
+  unless fchkExists
+    . throwM $ WrapperGenericException "executeGDMA" "The formatted checkpoint file does not exist."
+
+  -- TODO - Reconstruct FChk file for suitable link atom names
+
+
+  -- Look for the GDMA wrapper script.
+  gdmaWrapper <- getFilePathAbs <$> view (preStartupEnvL . psEnvGDMA)
+
+  -- Construct the GDMA input.
+  let gdmaInput = ByteStringLazy8.unlines
+        [ "file " <> (ByteStringLazy8.pack . Path.toString $ fchkPath)
+        , "multipoles"
+        , "limit " <> (ByteStringLazy8.pack . show $ expOrder)
+        , "delete L"
+        , "start"
+        ]
+
+  -- Create the process context for GDMA. Simple default context as we expect the wrapper to take
+  -- care of providing good GDMA environment.
+  context                      <- mkDefaultProcessContext
+
+  -- Execute GDMA on the input file now and pipe the input file into it.
+  (exitCode, gdmaOut, gdmaErr) <- local (& processContextL .~ context)
+    $ proc (Path.toString gdmaWrapper) mempty (readProcess . setStdin (byteStringInput gdmaInput))
+
+  -- Parse the GDMA output.
+
+  unless (exitCode == ExitSuccess) $ do
+    logError $ "GDMA execution terminated abnormally. Got exit code: " <> displayShow exitCode
+    logError "GDMA error messages:"
+    logError . displayShow $ gdmaErr
+    logError "GDMA stdout messages:"
+    logError . displayShow $ gdmaOut
+
+
+
+  return undefined
+
 
 {-
 ####################################################################################################
@@ -289,6 +349,9 @@ analysePsi4 calcID = do
       hessian        <- parse' doubleSquareMatrix hessianContent
       return . Just $ hessian
     _ -> return Nothing
+
+  -- Perform the GDMA calculation on the FChk file and obtain its results.
+  multipoles <- undefined -- gdmaAnalysis fchkPath linkAtoms
 
   -- Combine the Hessian information into the main output from the FChk.
   let calcOutput =
