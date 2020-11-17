@@ -133,6 +133,8 @@ import           Data.Massiv.Array             as Massiv
                                          hiding ( toList
                                                 , all
                                                 , mapM_
+                                                , elem
+                                                , takeWhile
                                                 )
 import           Data.Aeson
 import           Data.Yaml.Include              ( decodeFileWithWarnings )
@@ -396,7 +398,7 @@ mapSetIsBidirectorial mapSet = Map.foldrWithKey'
         -- Check for all in the Seq of found IntSet, if the current key is also a member.
         keyInTargets :: Seq Bool
         keyInTargets = fmap (key `Set.member`) targetSet
-    in  -- If the current key is a member of all target IntSet, we are fine. If not, we have a
+    in   -- If the current key is a member of all target IntSet, we are fine. If not, we have a
         -- problem.
         all (== True) keyInTargets && testBool
   )
@@ -418,7 +420,7 @@ intMapSetIsBidirectorial mapSet = IntMap.foldrWithKey'
         -- Check for all in the Seq of found IntSet, if the current key is also a member.
         keyInTargets :: Seq Bool
         keyInTargets = fmap (key `IntSet.member`) targetSet
-    in  -- If the current key is a member of all target IntSet, we are fine. If not, we have a
+    in   -- If the current key is a member of all target IntSet, we are fine. If not, we have a
         -- problem.
         all (== True) keyInTargets && testBool
   )
@@ -620,7 +622,7 @@ groupTupleSeq a =
       atomicIntMaps = traverse mapSetFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap   = foldl' (<>) Map.empty <$> atomicIntMaps
-  in  -- The only way this function can fail, is if keys would not properly be groupled. This cannot
+  in   -- The only way this function can fail, is if keys would not properly be groupled. This cannot
       -- happen if 'groupBy' is called correclty before 'mapSetFromGroupedSequence'. Therefore
       -- default to the empty Map if this case, that cannot happen, happens.
       case completeMap of
@@ -641,7 +643,7 @@ intGroupTupleSeq a =
       atomicIntMaps = traverse intMapSetFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap   = foldl' (<>) IntMap.empty <$> atomicIntMaps
-  in  -- The only way this function can fail, is if keys would not properly be groupled. This cannot
+  in   -- The only way this function can fail, is if keys would not properly be groupled. This cannot
       -- happen if 'groupBy' is called correclty before 'mapSetFromGroupedSequence'. Therefore
       -- default to the empty Map if this case, that cannot happen, happens.
       case completeMap of
@@ -1075,7 +1077,7 @@ vectorToGroups accessorF' vec' = go accessorF' vec' []
           Just accessorCond ->
             let (currentGroup, restOfVec) = takeWhileV' (\a -> accessorF a == accessorCond) vec
                 newGroupAcc               = currentGroup : groupAcc
-            -- Another recursion to consume the next group in the vector.
+                -- Another recursion to consume the next group in the vector.
             in  go accessorF restOfVec newGroupAcc
 
 ----------------------------------------------------------------------------------------------------

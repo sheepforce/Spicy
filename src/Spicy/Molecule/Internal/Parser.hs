@@ -47,6 +47,7 @@ import           Data.Massiv.Array             as Massiv
                                                 , swap
                                                 , take
                                                 , zip
+                                                , takeWhile
                                                 )
 import qualified RIO.HashMap                   as HashMap
 import qualified RIO.Map                       as Map
