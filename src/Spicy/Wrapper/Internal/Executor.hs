@@ -190,7 +190,6 @@ executePsi4 calcID inputFilePath = do
   let permanentDir   = getDirPathAbs $ calcContext ^. calcContext_Input . calcInput_PermaDir
       scratchDir     = getDirPathAbs $ calcContext ^. calcContext_Input . calcInput_ScratchDir
       software       = calcContext ^. calcContext_Input . calcInput_Software
-      psi4ConfigEnvs = preStartUpConf ^. psEnvPsi4
       outputFilePath = Path.replaceExtension inputFilePath ".out"
 
   -- Check if this function is appropiate to execute the calculation at all.
@@ -205,18 +204,11 @@ executePsi4 calcID inputFilePath = do
       <> "but this is not a Psi4 calculation."
       )
 
-  -- Check for a proper pre-startup configuration.
-  psi4Env <- case psi4ConfigEnvs of
-    Nothing -> do
-      logWarn
-        "Executing Psi4 without pre-startup environment.\
-        \ Spicy will try with the environment inherited from the console."
-      defaultEnvVars <- view envVarsL
-      return defaultEnvVars
-    Just env -> return env
+  -- Use the environment in which spicy was launched to launch Psi4.
+  defaultEnv  <- view envVarsL
 
   -- Create a new process context from the environment variables.
-  psi4Context <- mkProcessContext psi4Env
+  psi4Context <- mkProcessContext defaultEnv
   -- Prepare the command line arguments to Psi4.
   let psi4CmdArgs =
         [ "--input=" <> Path.toString inputFilePath
@@ -229,17 +221,10 @@ executePsi4 calcID inputFilePath = do
       psi4ExecNam = "psi4"
 
   -- Information about the executables used.
-  psi4ExecutableSearch <- findExecutable psi4ExecNam
-  psi4Executable       <- case psi4ExecutableSearch of
-    Left procException -> do
-      logError "Psi4 executable could not be found."
-      throwM procException
-    Right pathToPsi4 -> return pathToPsi4
-  logInfoF $ "Using Psi4 executable at: " <> displayShow psi4Executable
+  let psi4Wrapper = getFilePathAbs $ preStartUpConf ^. psEnvPsi4
+  logInfoF $ "Using Psi4 wrapper at: " <> displayShow psi4Wrapper
 
   -- Debug logging before execution of Psi4.
-  logDebug "Environment: "
-  mapM_ (logDebug . ("  " <>)) . map2Human $ psi4Env
   logDebug $ "Starting Psi4 with command line arguments: " <> displayShow psi4CmdArgs
 
   -- Launch the Psi4 process and read its stdout and stderr.

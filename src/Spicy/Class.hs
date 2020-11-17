@@ -1881,10 +1881,11 @@ definition needs to allow different start up scripts for different programs, so 
 programs with different MPIs for example can be used.
 -}
 data PreStartUpEnv = PreStartUpEnv
-  { _psEnvPsi4   :: !(Maybe (Map Text Text)) -- ^ Startup script, that brings @psi4@ executable and its
-                                             --   dependencies into the @$PATH@.
-  , _psEnvNwchem :: !(Maybe (Map Text Text)) -- ^ Startup script, that brings @nwchem@, @mpiexec@ and
-                                             --   dependencies into @PATH@.
+  { _psEnvPsi4   :: !JFilePathAbs            -- ^ The Psi4 executable or a wrapper around it
+                                             --   behaving the same. Might be a nix-shell.
+  , _psEnvNwchem :: !JFilePathAbs            -- ^ A wrapper around the NWChem program, that also
+                                             --   provides MPI executables. All arguments are passed
+                                             --   to the initial @mpiexec@, including @nwchem@.
   }
   deriving ( Eq, Show, Generic )
 
