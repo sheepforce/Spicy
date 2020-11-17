@@ -23,6 +23,7 @@ import           Data.Default
 import           RIO                     hiding ( take
                                                 , takeWhile
                                                 , (^.)
+                                                , (^?)
                                                 )
 import qualified RIO.Map                       as Map
 import qualified RIO.Text                      as Text
@@ -30,7 +31,9 @@ import           Spicy.Class
 import           Spicy.Generic
 import           Spicy.Math
 import           Data.Massiv.Array             as Massiv
-                                         hiding ( take )
+                                         hiding ( take
+                                                , takeWhile
+                                                )
 
 {-|
 A function that uses information from FChk files to obtain 'CalcOutput'. The function will not

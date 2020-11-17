@@ -40,6 +40,7 @@ import qualified Data.Text.Lazy.Builder        as TextBuilder
 import           Formatting
 import           RIO                     hiding ( view
                                                 , (^.)
+                                                , (.~)
                                                 )
 import qualified RIO.ByteString                as ByteString
 import qualified RIO.HashMap                   as HashMap

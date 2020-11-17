@@ -96,6 +96,10 @@ module Spicy.Generic
   , vectorToGroups
   , matrixFromGroupVector
   , chunksOfNColumns
+    -- * RIO And Error Handlings
+    -- $rioAndErrors
+  , maybe2MThrow
+  , getResOrErr
   )
 where
 import           Data.Attoparsec.Text
@@ -129,6 +133,8 @@ import           Data.Massiv.Array             as Massiv
                                          hiding ( toList
                                                 , all
                                                 , mapM_
+                                                , elem
+                                                , takeWhile
                                                 )
 import           Data.Aeson
 import           Data.Yaml.Include              ( decodeFileWithWarnings )
@@ -257,10 +263,8 @@ Replaces problematic characters from a string before parsing it to a path, so th
 a string with slashes can be parsed as a file without directories prepended.
 -}
 replaceProblematicChars :: String -> String
-replaceProblematicChars path2Sanitise = fmap
-  (\c -> if c `elem` Path.pathSeparators then '_' else c
-  )
-  path2Sanitise
+replaceProblematicChars path2Sanitise =
+  fmap (\c -> if c `elem` Path.pathSeparators then '_' else c) path2Sanitise
 
 {-
 ====================================================================================================
@@ -394,7 +398,7 @@ mapSetIsBidirectorial mapSet = Map.foldrWithKey'
         -- Check for all in the Seq of found IntSet, if the current key is also a member.
         keyInTargets :: Seq Bool
         keyInTargets = fmap (key `Set.member`) targetSet
-    in                     -- If the current key is a member of all target IntSet, we are fine. If not, we have a
+    in   -- If the current key is a member of all target IntSet, we are fine. If not, we have a
         -- problem.
         all (== True) keyInTargets && testBool
   )
@@ -416,7 +420,7 @@ intMapSetIsBidirectorial mapSet = IntMap.foldrWithKey'
         -- Check for all in the Seq of found IntSet, if the current key is also a member.
         keyInTargets :: Seq Bool
         keyInTargets = fmap (key `IntSet.member`) targetSet
-    in                     -- If the current key is a member of all target IntSet, we are fine. If not, we have a
+    in   -- If the current key is a member of all target IntSet, we are fine. If not, we have a
         -- problem.
         all (== True) keyInTargets && testBool
   )
@@ -618,7 +622,7 @@ groupTupleSeq a =
       atomicIntMaps = traverse mapSetFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap   = foldl' (<>) Map.empty <$> atomicIntMaps
-  in                     -- The only way this function can fail, is if keys would not properly be groupled. This cannot
+  in   -- The only way this function can fail, is if keys would not properly be groupled. This cannot
       -- happen if 'groupBy' is called correclty before 'mapSetFromGroupedSequence'. Therefore
       -- default to the empty Map if this case, that cannot happen, happens.
       case completeMap of
@@ -639,7 +643,7 @@ intGroupTupleSeq a =
       atomicIntMaps = traverse intMapSetFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap   = foldl' (<>) IntMap.empty <$> atomicIntMaps
-  in                     -- The only way this function can fail, is if keys would not properly be groupled. This cannot
+  in   -- The only way this function can fail, is if keys would not properly be groupled. This cannot
       -- happen if 'groupBy' is called correclty before 'mapSetFromGroupedSequence'. Therefore
       -- default to the empty Map if this case, that cannot happen, happens.
       case completeMap of
@@ -1073,7 +1077,7 @@ vectorToGroups accessorF' vec' = go accessorF' vec' []
           Just accessorCond ->
             let (currentGroup, restOfVec) = takeWhileV' (\a -> accessorF a == accessorCond) vec
                 newGroupAcc               = currentGroup : groupAcc
-            -- Another recursion to consume the next group in the vector.
+                -- Another recursion to consume the next group in the vector.
             in  go accessorF restOfVec newGroupAcc
 
 ----------------------------------------------------------------------------------------------------
@@ -1111,3 +1115,30 @@ chunksOfNColumns n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) E
       let (Sz (_ :. nColsRemaining)) = Massiv.size restMatrix
       in  if nColsRemaining == 0 then groupAcc else groupAcc |> restMatrix
     Just (thisChunk, restMinusThisChunk) -> go n' restMinusThisChunk (groupAcc |> thisChunk)
+
+{-
+####################################################################################################
+-}
+{- $rioAndErrors
+These are some simple helper functions for RIO and error handling patterns, commonly used in Spicy.
+-}
+{-|
+Generalisation of a 'Maybe' value to an arbitrary monad, that is an instance of 'MonadThrow'. An
+exception to throw must be provided, in case a 'Nothing' was given.
+-}
+maybe2MThrow :: (MonadThrow m, Exception e) => e -> Maybe a -> m a
+maybe2MThrow exc Nothing  = throwM exc
+maybe2MThrow _   (Just a) = return a
+
+----------------------------------------------------------------------------------------------------
+{-|
+Convenience function for a common RIO pattern. If some function returned an error, log this error
+with RIO's logging system and then throw the error. If the result is fine, obtain it in the RIO
+monad.
+-}
+getResOrErr :: (HasLogFunc env, Exception e) => Either e a -> RIO env a
+getResOrErr val = case val of
+  Right res -> return res
+  Left  exc -> do
+    logError . displayShow $ exc
+    throwM exc

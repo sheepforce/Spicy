@@ -17,7 +17,9 @@ module Spicy.Wrapper.Internal.Input.Shallow
 where
 import           Control.Lens            hiding ( (.=) )
 import           Data.Aeson
-import           RIO                     hiding ( (^.) )
+import           RIO                     hiding ( (^.)
+                                                , (^?)
+                                                )
 import qualified RIO.Text                      as Text
 import qualified RIO.Text.Lazy                 as Text
                                                 ( toStrict )

@@ -29,6 +29,7 @@ module Spicy.Class
   , Array2S
   , Array3S(..)
   , Array4S(..)
+  , MatrixD(..)
     -- ** Paths
     -- $jsonTypesPath
   , JFilePath(..)
@@ -108,11 +109,16 @@ module Spicy.Class
   , _FFTXYZ
   , _FFPDB
   , _FFXYZ
+  , LinkInfo(..)
+  , _NotLink
+  , _IsLink
+  , isLink_ModelAtom
+  , isLink_RealAtom
+  , isLink_gFactor
   , Atom(..)
   , atom_Element
   , atom_Label
-  , atom_IsPseudo
-  , atom_IsCapped
+  , atom_IsLink
   , atom_IsDummy
   , atom_FFType
   , atom_Coordinates
@@ -130,6 +136,7 @@ module Spicy.Class
   , molecule_Fragment
   , molecule_EnergyDerivatives
   , molecule_CalcContext
+  , molecule_Jacobian
   , Trajectory
   , MolID
   , CalcID(..)
@@ -397,7 +404,7 @@ instance (FromJSON a, Storable a) => FromJSON (MatrixS a) where
         fail
         $  "Size vs number of elements mismatch: Array has size: "
         <> (show . Massiv.size $ parsedArr)
-        <> "and expected was: "
+        <> " and expected was: "
         <> show sizeSupposed
 
 type Array2S = MatrixS
@@ -458,6 +465,39 @@ instance (FromJSON a, Storable a) => FromJSON (Array4S a) where
         <> (show . Massiv.size $ parsedArr)
         <> "and expected was: "
         <> show sizeSupposed
+
+----------------------------------------------------------------------------------------------------
+{-|
+Newtype wrapper for delayed matrices from Massiv.
+
+Be aware, that parsing them from file will load them into memory completely once, so you are not
+saving any memory here.
+-}
+newtype MatrixD a = MatrixD { getMatrixD :: Array Massiv.D Ix2 a }
+  deriving ( Generic, Show, Eq )
+
+instance (ToJSON a) => ToJSON (MatrixD a) where
+  toJSON arr =
+    let plainList         = Massiv.toList . getMatrixD $ arr
+        Sz (dim1 :. dim2) = Massiv.size . getMatrixD $ arr
+    in  object ["shape" .= (dim1, dim2), "elements" .= plainList]
+
+instance (FromJSON a, Unbox a) => FromJSON (MatrixD a) where
+  parseJSON = withObject "MatrixD" $ \arr -> do
+    (dim1, dim2) <- arr .: "shape"
+    let sizeSupposed = Sz (dim1 :. dim2)
+    elements <- arr .: "elements"
+    let parsedStrictArr = Massiv.fromLists' Par . chunksOf dim2 $ elements :: Matrix Massiv.U a
+        parsedArr       = Massiv.delay parsedStrictArr
+    if Massiv.size parsedArr == sizeSupposed
+      then return . MatrixD $ parsedArr
+      else
+        fail
+        $  "Size vs number of elements mismatch: Array has size: "
+        <> (show . Massiv.size $ parsedArr)
+        <> " and expected was: "
+        <> show sizeSupposed
+
 {-
 ====================================================================================================
 -}
@@ -849,7 +889,7 @@ data TheoryLayer = TheoryLayer
   , _execution    :: Execution       -- ^ Information about the execution of the computational
                                      --   chemistry software, that is not relevant for system
                                      --   description.
-  , _embedding   :: Embedding        -- ^ Defines the embedding type for the current layer.
+  , _embedding    :: Embedding        -- ^ Defines the embedding type for the current layer.
   }
   deriving ( Eq, Show, Generic )
 
@@ -998,6 +1038,29 @@ instance FromJSON FFType
 
 ----------------------------------------------------------------------------------------------------
 {-|
+Flag if an atom is a link atom. If an atom is a link atom (set 2 atom), then it will contain
+information about the linking. See "[A new ONIOM implementation in Gaussian98. Part I. The
+calculation of energies, gradients, vibrational frequencies and electric field
+derivatives](https://doi.org/10.1016/S0166-1280(98)00475-8)"
+-}
+data LinkInfo
+  = NotLink -- ^ The atom is not a link atom.
+  | IsLink  -- ^ The atom is a link atom.
+    { _isLink_ModelAtom :: Int    -- ^ The key of the atom in the model system (set 1) to which this
+                                  --   atom binds.
+    , _isLink_RealAtom  :: Int    -- ^ The key of the atom in the real system (set 3), which this
+                                  --   atom replaces for the model system.
+    , _isLink_gFactor   :: Double -- ^ The scaling factor \(g\).
+    }
+  deriving ( Show, Eq, Generic )
+
+instance ToJSON LinkInfo where
+  toEncoding = genericToEncoding defaultOptions
+
+instance FromJSON LinkInfo
+
+----------------------------------------------------------------------------------------------------
+{-|
 An Atom in a 'Molecule'. Atoms are compared by their indices only and they must therefore be unique.
 The coordinates of the 'Atom' are defined as 'Seq', as this is extremely easy to concatenate when
 building a coordinate vector.
@@ -1006,11 +1069,9 @@ data Atom = Atom
   { _atom_Element     :: !Element           -- ^ Chemical 'Element' of the atom.
   , _atom_Label       :: !AtomLabel         -- ^ Label, e.g. from a pdb, just for identification,
                                             --   can be empty.
-  , _atom_IsPseudo    :: !Bool              -- ^ Boolean, telling if this is a pseudo atom,
+  , _atom_IsLink      :: !LinkInfo          -- ^ Boolean, telling if this is a Link atom,
                                             --   introduced because a bond was broken. Also known as
                                             --   link atom in ONIOM.
-  , _atom_IsCapped    :: !Bool              -- ^ Boolean, telling if this is a high level atom,
-                                            --   whose bond to a lower layer has been capped.
   , _atom_IsDummy     :: !Bool              -- ^ Whether the atom is a dummy atom, only providing
                                             --   multipole information.
   , _atom_FFType      :: !FFType            -- ^ Label depending on the MM software used,
@@ -1064,20 +1125,20 @@ the whole/real system, its fragments would be at recursion depth \(1\) and fragm
 recursion depth \(1\) would be labeled \(1.f\).
 
 Starting from a top level molecule, all atoms and bonds of the system are expected to be in the in
-this top layer (except pseudoatoms of deeper layers). Therefore if atoms are in a deeper layers of
+this top layer (except linkatoms of deeper layers). Therefore if atoms are in a deeper layers of
 the recursion, their information is not used to describe a higher lying layer (which is lower with
-respect to computational cost). Instead, all atoms of deeper layers (except pseudoatoms) must be
+respect to computational cost). Instead, all atoms of deeper layers (except linkatoms) must be
 also replicated in a higher layer. While the atoms of deeper layers keep the same indices as in the
 higher layers, it is acceptable, that an index, that was used for an atom in layer \(n\) is used for
-a pseudoatom in layer \(n + m, m > 0\).
+a link atom in layer \(n + m, m > 0\).
 
-Pseudo atoms are specific to layers and may be passed down the recursion to deeper layers but not
-passed up to higher layers. Therefore, while the counting of non-pseudoatoms must be consistent
-through all layers, the pseudoatoms must be only consitent the recursion downwards but not
-necessarily between fragments of the same layer. If a layer \(n\) contains a pseudoatom with index
-\(p\), for example, and layer \(n + 1\) still contains this pseudoatom, it must still be given index
-\(p\). If layer \(n + 1\) on the other hand side would be stripped of this pseudoatom, the index
-\(p\) could be used for another pseudoatom.
+Link atoms are specific to layers and may be passed down the recursion to deeper layers but not
+passed up to higher layers. Therefore, while the counting of non-link-atoms must be consistent
+through all layers, the link atoms must be only consitent the recursion downwards but not
+necessarily between fragments of the same layer. If a layer \(n\) contains a link atom with index
+\(p\), for example, and layer \(n + 1\) still contains this link atom, it must still be given index
+\(p\). If layer \(n + 1\) on the other hand side would be stripped of this link atom, the index
+\(p\) could be used for another link atom.
 
 The data structure makes it necessary to construct the 'Molecule' top down, not bottom up.
 -}
@@ -1115,6 +1176,9 @@ data Molecule = Molecule
                                                               --   The 'Text' values of the 'Map'
                                                               --   serve as unique identifiers for a
                                                               --   calculation on this molecule.
+  , _molecule_Jacobian          :: !(Maybe (MatrixS Double))  -- ^ The Jacobian matrix for energy
+                                                              --   derivative transformation from
+                                                              --   this system to its parent system.
   }
   deriving ( Show, Eq, Generic )
 
@@ -1572,6 +1636,8 @@ makeLenses ''CalcInput
 makeLenses ''CalcOutput
 makeLenses ''CalcContext
 makePrisms ''FFType
+makePrisms ''LinkInfo
+makeLenses ''LinkInfo
 makeLenses ''Atom
 makeLenses ''Fragment
 makeLenses ''Molecule

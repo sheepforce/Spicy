@@ -47,6 +47,7 @@ import           Data.Massiv.Array             as Massiv
                                                 , swap
                                                 , take
                                                 , zip
+                                                , takeWhile
                                                 )
 import qualified RIO.HashMap                   as HashMap
 import qualified RIO.Map                       as Map
@@ -70,6 +71,7 @@ parseXYZ = do
                   , _molecule_Fragment          = IntMap.empty
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
   xyzLineParser :: Parser Atom
@@ -82,8 +84,7 @@ parseXYZ = do
     endOfLine
     return Atom { _atom_Element     = fromMaybe H . readMaybe $ cElement
                 , _atom_Label       = ""
-                , _atom_IsPseudo    = False
-                , _atom_IsCapped    = False
+                , _atom_IsLink      = NotLink
                 , _atom_IsDummy     = False
                 , _atom_FFType      = FFXYZ
                 , _atom_Multipoles  = def
@@ -119,6 +120,7 @@ parseTXYZ = do
                   , _molecule_Fragment          = IntMap.empty
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
   -- Parsing a single line of atomSeq. Tinker's format keeps bonds associated with atomSeq. So a tuple
@@ -136,8 +138,7 @@ parseTXYZ = do
     let atom = Atom
           { _atom_Element     = fromMaybe H . readMaybe $ cElement
           , _atom_Label       = ""
-          , _atom_IsPseudo    = False
-          , _atom_IsCapped    = False
+          , _atom_IsLink      = NotLink
           , _atom_IsDummy     = True
           , _atom_FFType      = case mFFType of
                                   Nothing -> FFTXYZ 0
@@ -169,6 +170,7 @@ parseMOL2 = do
                   , _molecule_Fragment          = fragments
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
    -- Parse the @<TRIPOS>MOLECULE block of MOL2.
@@ -255,8 +257,7 @@ parseMOL2 = do
               <> fromMaybe "" ffType
           atom = Atom { _atom_Element     = fromMaybe H . readMaybe $ cElem
                       , _atom_Label       = label
-                      , _atom_IsPseudo    = False
-                      , _atom_IsCapped    = False
+                      , _atom_IsLink      = NotLink
                       , _atom_IsDummy     = False
                       , _atom_FFType      = FFMol2 mol2FFText
                       , _atom_Coordinates = VectorS . Massiv.fromList Seq $ [x, y, z]
@@ -331,6 +332,7 @@ parsePDB = do
                   , _molecule_Fragment          = fragments
                   , _molecule_EnergyDerivatives = def
                   , _molecule_CalcContext       = Map.empty
+                  , _molecule_Jacobian          = Nothing
                   }
  where
   -- Parser fot HETATM and ATOM records.
@@ -389,8 +391,7 @@ parsePDB = do
     let atom = Atom
           { _atom_Element     = element
           , _atom_Label       = atomLabel
-          , _atom_IsPseudo    = False
-          , _atom_IsCapped    = False
+          , _atom_IsLink      = NotLink
           , _atom_IsDummy     = False
           , _atom_FFType      = FFPDB atomLabel
           , _atom_Coordinates = VectorS . Massiv.fromList Massiv.Seq $ [xCoord, yCoord, zCoord]

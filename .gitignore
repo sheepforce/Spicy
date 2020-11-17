@@ -5,5 +5,13 @@ Test.hs
 *.so.*
 goldentests/output/*.*
 public
-
+dist-newstyle
 *.fchk
+
+*.local
+
+cabal.project.local~
+
+result
+
+result-2

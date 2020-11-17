@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.31.2.
+-- This file has been generated from package.yaml by hpack version 0.34.2.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5388634498ec3306a8a4ad3d6ae6067818c1dc556b0abb53baafca3feac44dc0
+-- hash: fd85ab1861a7896569d704fbf01e75079920b65bf91c46ab1ab7a7e6ef6d8ba8
 
 name:           spicy
 version:        0.0.0.1
@@ -21,6 +21,7 @@ extra-source-files:
     goldentests/input/1hfe.pdb
     goldentests/input/4ndg.pdb
     goldentests/input/6cvr.pdb
+    goldentests/input/Ethanal.mol2
     goldentests/input/FePorphyrine.mol2
     goldentests/input/FePorphyrine.txyz
     goldentests/input/FePorphyrine.xyz
@@ -88,76 +89,30 @@ library
   default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
-      aeson >=1.4.4.0 && <1.5
+      aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.11
-    , arithmoi >=0.10.0.0 && <0.11
+    , ansi-terminal >=0.10.3 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.11
+    , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
     , data-default >=0.7.1.1 && <0.8
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <6.4
+    , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
-    , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , integer-roots >=1.0 && <2
+    , lens >=4.18 && <4.20
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.2
-    , tasty >=1.2.3 && <1.3
-    , tasty-golden >=2.3.3 && <2.4
-    , text >=1.2.3.1 && <1.3
-    , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
-  default-language: Haskell2010
-
-executable benchmarks-exe
-  main-is: benchmarks.hs
-  other-modules:
-      Paths_spicy
-  hs-source-dirs:
-      app
-  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude DataKinds
-  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
-  build-depends:
-      aeson >=1.4.4.0 && <1.5
-    , aeson-pretty >=0.8.7 && <0.9
-    , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.11
-    , arithmoi >=0.10.0.0 && <0.11
-    , attoparsec >=0.13.1.0 && <0.14
-    , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.11
-    , cmdargs >=0.10.20 && <0.11
-    , containers >=0.6.0.1 && <0.7
-    , criterion >=1.4.1.0
-    , data-default >=0.7.1.1 && <0.8
-    , deepseq >=1.4.2.0 && <1.5
-    , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <6.4
-    , githash >=0.1.3.3 && <0.2
-    , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
-    , mtl >=2.2.2 && <2.3
-    , parallel >=3.2.1.0 && <3.3
-    , pathtype >=0.8.1 && <0.9
-    , rio >=0.1.13.0 && <0.2
-    , spicy
-    , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.2
-    , tasty >=1.2.3 && <1.3
+    , stache >=2.1.0 && <2.3
+    , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
     , yaml >=0.11.2.0 && <0.12
@@ -178,31 +133,31 @@ executable spicy
   default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      aeson >=1.4.4.0 && <1.5
+      aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.11
-    , arithmoi >=0.10.0.0 && <0.11
+    , ansi-terminal >=0.10.3 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.11
+    , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
     , data-default >=0.7.1.1 && <0.8
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <6.4
+    , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
-    , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , integer-roots >=1.0 && <2
+    , lens >=4.18 && <4.20
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.2
-    , tasty >=1.2.3 && <1.3
+    , stache >=2.1.0 && <2.3
+    , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
     , yaml >=0.11.2.0 && <0.12
@@ -223,30 +178,30 @@ executable unittests-exe
   default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
   build-depends:
-      aeson >=1.4.4.0 && <1.5
+      aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.11
-    , arithmoi >=0.10.0.0 && <0.11
+    , ansi-terminal >=0.10.3 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.11
+    , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
     , data-default >=0.7.1.1 && <0.8
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <6.4
+    , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
-    , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , integer-roots >=1.0 && <2
+    , lens >=4.18 && <4.20
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.2
+    , stache >=2.1.0 && <2.3
     , tasty >=0.11.3
     , tasty-golden >=2.3.1
     , tasty-hunit
@@ -269,79 +224,33 @@ test-suite unittests
       app
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
   build-depends:
-      aeson >=1.4.4.0 && <1.5
+      aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.11
-    , arithmoi >=0.10.0.0 && <0.11
+    , ansi-terminal >=0.10.3 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.11
+    , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
     , data-default >=0.7.1.1 && <0.8
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <6.4
+    , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
-    , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
+    , integer-roots >=1.0 && <2
+    , lens >=4.18 && <4.20
+    , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.2
+    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.3
     , tasty-golden >=2.3.1 && <2.4
     , tasty-hunit >=0.10.0.2 && <0.11
-    , text >=1.2.3.1 && <1.3
-    , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
-  default-language: Haskell2010
-
-benchmark benchmarks
-  type: exitcode-stdio-1.0
-  main-is: benchmarks.hs
-  other-modules:
-      Paths_spicy
-  hs-source-dirs:
-      app
-  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
-  build-depends:
-      aeson >=1.4.4.0 && <1.5
-    , aeson-pretty >=0.8.7 && <0.9
-    , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.11
-    , arithmoi >=0.10.0.0 && <0.11
-    , attoparsec >=0.13.1.0 && <0.14
-    , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.11
-    , cmdargs >=0.10.20 && <0.11
-    , containers >=0.6.0.1 && <0.7
-    , criterion >=1.5.6.1 && <1.7
-    , data-default >=0.7.1.1 && <0.8
-    , deepseq >=1.4.2.0 && <1.5
-    , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <6.4
-    , githash >=0.1.3.3 && <0.2
-    , lens >=4.18.1 && <4.19
-    , massiv >=0.5.0.0 && <0.6
-    , mtl >=2.2.2 && <2.3
-    , parallel >=3.2.1.0 && <3.3
-    , pathtype >=0.8.1 && <0.9
-    , rio >=0.1.13.0 && <0.2
-    , spicy
-    , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.2
-    , tasty >=1.2.3 && <1.3
-    , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)

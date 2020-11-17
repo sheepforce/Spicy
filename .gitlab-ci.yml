@@ -1,60 +1,53 @@
-image: debian:buster
+# Official Nix image. Makes sure everything is build in a well defined environment.
+image: nixos/nix
 
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+# Stuff that is always being executed before any step.
 before_script:
-  - mkdir -p /root/stack
-  - export STACK_ROOT=$(pwd)/.stack
-  - apt clean
-  - apt update
-  - apt install -y wget
-  - wget -qO- https://get.haskellstack.org/ | sh
-  - wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-  - echo "deb http://apt.llvm.org/buster/ llvm-toolchain-buster-8 main" | tee -a /etc/apt/sources.list
-  - apt update
-  - apt install -y llvm-8-dev llvm-8-tools xz-utils make curl libgmp-dev llvm-6.0-dev llvm-6.0-tools libffi-dev pkg-config libopenblas-dev
-  - mkdir -p ~/.local/bin
-  - export PATH=$HOME/.local/bin:$PATH
-  - ln -s /usr/lib/x86_64-linux-gnu/libffi.so.6 /usr/lib/x86_64-linux-gnu/libffi.so.7
+  # Set the appropriate channel for the evaluation.
+  - nix-channel --list
+  - nix-channel --add https://nixos.org/channels/nixos-20.09 nixos
+  - nix-channel --update
+  - nix-channel --list
+  # Enable Hydra binary cache for IOHK Haskell.nix first.
+  - mkdir -p ~/.config/nix/
+  - echo 'trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=' > ~/.config/nix/nix.conf
+  - echo 'substituters = https://hydra.iohk.io' >> ~/.config/nix/nix.conf
+  # Make sure cachix is installed and set up.
+  - nix-env -iA nixos.cachix nixos.bash
+  - cachix authtoken $CACHIX_AUTHTOKEN
+  - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY
+  - cachix use spicy
+  - cachix use chemix
+  # Disallow unfree packages, so that everything is for sure redistributable.
+  - export NIXPKGS_ALLOW_UNFREE=0
+  # Save all paths that are currently present in the store.
+  - nix path-info --all > /tmp/store-path-pre-build
 
 stages:
   - build
-  - test
-  - deploy
+  - docs
 
-buildSpicy:
+# Build with the pinnded release stuff first.
+releaseBuild:
   stage: build
-  cache:
-    paths:
-      - .stack
-      - $HOME/.stack
-      - $HOME/.ghc
-      - $HOME/.cabal
   script:
-    - stack --no-terminal --install-ghc build --only-dependencies
+    - nix-build nix/release.nix -A spicy.components.library
+    - nix-build nix/release.nix -A spicy.components.exes
+    - nix-build nix/release.nix -A spicy.components.tests
+  after_script:
+    # Push everything that has been build since initialisation to the Cache.
+    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push chemix"
 
-testSpicy:
-  stage: test
-  cache:
-    paths:
-      - .stack
-      - $HOME/.stack
-      - $HOME/.ghc
-      - $HOME/.cabal
+# Build with the current dev branches of dependencies.
+devBuild:
+  stage: build
   script:
-    - stack --no-terminal test
-
-pages:
-  stage: deploy
-  cache:
-    paths:
-      - .stack
-      - $HOME/.stack
-      - $HOME/.ghc
-      - $HOME/.cabal
-  script:
-    - export LC_ALL=C.UTF-8
-    - stack --no-terminal --install-ghc haddock --haddock-arguments "--odir=./public"
-  artifacts:
-    paths:
-      - public
-  only:
-    - develop
+    - nix-build nix/default.nix -A spicy.components.library
+    - nix-build nix/default.nix -A spicy.components.exes
+    - nix-build nix/default.nix -A spicy.components.tests
+  after_script:
+    # Push everything that has been build since initialisation to the Cache.
+    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push chemix"
