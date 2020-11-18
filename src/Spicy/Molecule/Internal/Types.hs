@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
+
 -- |
 -- Module      : Spicy.Molecule.Internal.Types
 -- Description : Definitions of a molecule and its context
@@ -90,7 +92,6 @@ import Data.Massiv.Array as Massiv hiding
 import Formatting
 import Optics hiding (element)
 import RIO hiding (lens, (^.))
-import qualified RIO.List as List
 import qualified RIO.Text as Text
 import Spicy.Aeson
 import Spicy.Common
@@ -656,7 +657,7 @@ instance Default Multipoles where
       }
 
 instance PrettyPrint Multipoles where
-  prettyP poles = "placeholder"
+  prettyP = ppMultipoles
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Maybe Monopole, b ~ a) => LabelOptic "monopole" k Multipoles Multipoles a b where
@@ -688,10 +689,10 @@ instance ToJSON Monopole where
 
 instance FromJSON Monopole
 
-type MultipoleR0 = Monopole
-
 instance PrettyPrint Monopole where
-  prettyP = undefined
+  prettyP = ppMonopole
+
+type MultipoleR0 = Monopole
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q00" k Monopole Monopole a b where
@@ -711,6 +712,9 @@ instance ToJSON Dipole where
   toEncoding = genericToEncoding spicyJOption
 
 instance FromJSON Dipole
+
+instance PrettyPrint Dipole where
+  prettyP = ppDipole
 
 type MultipoleR1 = Dipole
 
@@ -736,6 +740,9 @@ instance ToJSON Quadrupole where
   toEncoding = genericToEncoding spicyJOption
 
 instance FromJSON Quadrupole
+
+instance PrettyPrint Quadrupole where
+  prettyP = ppQuadrupole
 
 type MultipoleR2 = Quadrupole
 
@@ -765,6 +772,9 @@ instance ToJSON Octopole where
   toEncoding = genericToEncoding spicyJOption
 
 instance FromJSON Octopole
+
+instance PrettyPrint Octopole where
+  prettyP = ppOctopole
 
 type MultipoleR3 = Octopole
 
@@ -798,6 +808,9 @@ instance ToJSON Hexadecapole where
   toEncoding = genericToEncoding spicyJOption
 
 instance FromJSON Hexadecapole
+
+instance PrettyPrint Hexadecapole where
+  prettyP = ppHexadecapole
 
 type MultipoleR4 = Hexadecapole
 
@@ -869,71 +882,12 @@ instance ToJSON EnergyDerivatives where
 instance FromJSON EnergyDerivatives
 
 instance Default EnergyDerivatives where
-  def = EnergyDerivatives {energy = Nothing, gradient = Nothing, hessian = Nothing}
-
-instance PrettyPrint EnergyDerivatives where
-  prettyP enDeriv = "placeholder"
-
-{-
-  let -- Print simply as a double.
-    energyPrint :: [Utf8Builder]
-    energyPrint = case _energyDerivatives_Energy enDeriv of
-      Nothing -> []
-      Just energy ->
-        ["Energy / Hartree = ", display . format ("  " % (left 16 ' ' %. fixed 8)) $ energy]
-
-    -- Print as a cartesian gradient in the order of atoms. Therefore groups of 3 values per line.
-    gradientPrint :: [Utf8Builder]
-    gradientPrint = case _energyDerivatives_Gradient enDeriv of
-      Nothing -> []
-      Just gradient ->
-        let
-          nAtoms = (Massiv.elemsCount . getVectorS $ gradient) `div` 3
-          massiv3NMatrix :: Maybe (Matrix S Double)
-          massiv3NMatrix = Massiv.resizeM (Sz (nAtoms :. 3)) . getVectorS $ gradient
-          massivTextMatrix =
-            Massiv.map (display . format (left 16 ' ' %. fixed 8)) <$> massiv3NMatrix
-          massivBuilderVector :: Maybe (Massiv.Vector D Utf8Builder)
-          massivBuilderVector = Massiv.map ("  " <>) . Massiv.foldInner <$> massivTextMatrix
-          gradientUtf8 = fromMaybe ["*Unexpected size of the gradient vector. Cannot print.*"]
-                                   (Massiv.toList <$> massivBuilderVector)
-        in
-          "Gradient / Hartree Angstrom⁻¹ =" : gradientUtf8
-
-    -- Print the hessian in blocks of 5 columns.
-    hessianPrint :: [Utf8Builder]
-    hessianPrint = case _energyDerivatives_Hessian enDeriv of
-      Nothing -> []
-      Just hessian ->
-        let massivBuilderMatrix =
-                Massiv.computeAs Massiv.B
-                  . Massiv.map (display . format (left 16 ' ' %. fixed 8))
-                  . getMatrixS
-                  $ hessian
-            massivColumnGroups :: Seq (Matrix B Utf8Builder)
-            massivColumnGroups = chunksOfNColumns 5 massivBuilderMatrix
-            massivColumnsBuilder :: Seq (Massiv.Vector D Utf8Builder)
-            massivColumnsBuilder = Massiv.map ("  " <>) . Massiv.foldInner <$> massivColumnGroups
-            hessianBuilder :: [Utf8Builder]
-            hessianBuilder = List.concat . toList . fmap Massiv.toList $ massivColumnsBuilder
-        in  "Hessian / Hartree Angstrom⁻² =" : hessianBuilder
-  in
-    energyPrint <> gradientPrint <> hessianPrint
- where
-  chunksOfNColumns
-    :: (Mutable r1 Ix2 e, Manifest r2 Ix2 e)
-    => Int
-    -> Massiv.Array r2 Ix2 e
-    -> Seq (Massiv.Array r1 Ix2 e)
-  chunksOfNColumns n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) Empty
-   where
-    go :: Int -> Matrix M a -> Seq (Matrix M a) -> Seq (Matrix M a)
-    go n' restMatrix groupAcc = case Massiv.splitAtM (Dim 1) n' restMatrix of
-      Nothing ->
-        let (Sz (_ :. nColsRemaining)) = Massiv.size restMatrix
-        in  if nColsRemaining == 0 then groupAcc else groupAcc |> restMatrix
-      Just (thisChunk, restMinusThisChunk) -> go n' restMinusThisChunk (groupAcc |> thisChunk)
-  -}
+  def =
+    EnergyDerivatives
+      { energy = Nothing,
+        gradient = Nothing,
+        hessian = Nothing
+      }
 
 {-
 ====================================================================================================
@@ -1146,9 +1100,6 @@ instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "template" k CalcInput Calc
 instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInput CalcInput a b where
   labelOptic = lens (\s -> embedding s) $ \s b -> s {embedding = b}
 
-instance PrettyPrint CalcInput where
-  prettyP calcInput = undefined
-
 ----------------------------------------------------------------------------------------------------
 
 -- |
@@ -1180,38 +1131,6 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
   labelOptic = lens (\s -> (multipoles :: CalcOutput -> IntMap Multipoles) s) $
     \s b -> (s {multipoles = b} :: CalcOutput)
 
-instance PrettyPrint CalcOutput where
-  prettyP calcOutput = "placeholder"
-
-{-
-  let -- Normal printing of energy derivatives.
-      eDerivativePrinting = prettyP . _calcOutput_EnergyDerivatives $ calcOutput
-      -- Just a summary for the multipoles, as they otherwise become very long for showing
-      -- calculation outputs atomwise.
-      mutipolePrinting =
-          let
-            atomsWithMonopoles     = filterForAtomsWithPoles _multipole_Monopole multipoleInfos
-            atomsWithDipoles       = filterForAtomsWithPoles _multipole_Dipole multipoleInfos
-            atomsWithQuadrupoles   = filterForAtomsWithPoles _multipole_Quadrupole multipoleInfos
-            atomsWithOctopoles     = filterForAtomsWithPoles _mutlipole_Octopole multipoleInfos
-            atomsWithHexadecapoles = filterForAtomsWithPoles _mutlipole_Hexadecapole multipoleInfos
-          in
-            [ "Multipoles:"
-            , "  Monopoles    : " <> polePrinter atomsWithMonopoles
-            , "  Dipoles      : " <> polePrinter atomsWithDipoles
-            , "  Quadrupoles  : " <> polePrinter atomsWithQuadrupoles
-            , "  Octopoles    : " <> polePrinter atomsWithOctopoles
-            , "  Hexadecapoles: " <> polePrinter atomsWithHexadecapoles
-            ]
-  in  eDerivativePrinting <> mutipolePrinting
- where
-  multipoleInfos = _calcOutput_Multipoles calcOutput
-  allAtomInds    = IntMap.keys multipoleInfos
-  filterForAtomsWithPoles accessF = IntMap.keys . IntMap.filter (isJust . accessF)
-  polePrinter atomsWithPolesMap = case atomsWithPolesMap of
-    []   -> "✘"
-    inds -> if inds == allAtomInds then "✔" else "(Atoms " <> displayShow inds <> ")"
--}
 {-
 ====================================================================================================
 -}
@@ -1243,6 +1162,8 @@ fShortDouble = sformat (left 8 ' ' %. fixed 6)
 fLongDouble :: Double -> Text
 fLongDouble = sformat (left 8 ' ' %. fixed 6)
 
+----------------------------------------------------------------------------------------------------
+
 -- | Formatter for the multipole labels.
 fMPLabel :: Text -> Text
 fMPLabel = sformat ((fitRight 4 %. right 4 ' ' %. stext) Formatting.% " = ")
@@ -1253,9 +1174,13 @@ fMPComp (mLabel, value) = (fMPLabel mLabel) <> (fShortDouble value)
 
 -- | Formatter for components of the multipole.
 fMP :: [(Text, Double)] -> Utf8Builder
-fMP components = display . Text.unlines . fmap ((<> "  ") . fMPComp) $ components
-
-----------------------------------------------------------------------------------------------------
+fMP components =
+  display
+    . Text.unlines
+    . fmap (foldl' (<>) mempty)
+    . chunksOf 5
+    . fmap ((<> "  ") . fMPComp)
+    $ components
 
 -- | PrettyPrinter for Monopoles.
 ppMonopole :: Monopole -> Utf8Builder
@@ -1274,10 +1199,66 @@ ppDipole pole =
 -- | PrettyPrinter for Quadrupoles.
 ppQuadrupole :: Quadrupole -> Utf8Builder
 ppQuadrupole pole =
-  let magnitude = sqrt $ (pole ^. #q20) ** 2 + (pole ^. #q22c) ** 2 + (pole ^. #q22s) ** 2
+  let magnitude =
+        sqrt $
+          (pole ^. #q20) ** 2
+            + (pole ^. #q22c) ** 2
+            + (pole ^. #q22s) ** 2
    in fMP
         [ ("|Q2|", magnitude),
           ("Q20", pole ^. #q20),
           ("Q22c", pole ^. #q22c),
           ("Q22s", pole ^. #q22s)
         ]
+
+-- | PrettyPrinter for Quadrupoles.
+ppOctopole :: Octopole -> Utf8Builder
+ppOctopole pole =
+  let magnitude =
+        sqrt $
+          (pole ^. #q31c) ** 2
+            + (pole ^. #q31s) ** 2
+            + (pole ^. #q33c) ** 2
+            + (pole ^. #q33s) ** 2
+   in fMP
+        [ ("|Q3|", magnitude),
+          ("Q31c", pole ^. #q31c),
+          ("Q31s", pole ^. #q31s),
+          ("Q33c", pole ^. #q33c),
+          ("Q33s", pole ^. #q33s)
+        ]
+
+-- | PrettyPrinter for Quadrupoles.
+ppHexadecapole :: Hexadecapole -> Utf8Builder
+ppHexadecapole pole =
+  let magnitude =
+        sqrt $
+          (pole ^. #q40) ** 2
+            + (pole ^. #q42c) ** 2
+            + (pole ^. #q42s) ** 2
+            + (pole ^. #q44c) ** 2
+            + (pole ^. #q44s) ** 2
+   in fMP
+        [ ("|Q4|", magnitude),
+          ("Q40", pole ^. #q40),
+          ("Q42c", pole ^. #q42c),
+          ("Q42s", pole ^. #q42s),
+          ("Q44c", pole ^. #q44c),
+          ("Q44s", pole ^. #q44s)
+        ]
+
+-- | PrettyPrinter for the Multipoles.
+ppMultipoles :: Multipoles -> Utf8Builder
+ppMultipoles mp =
+  let mono = prettyP <$> mp ^. #monopole
+      di = prettyP <$> mp ^. #dipole
+      quadru = prettyP <$> mp ^. #quadrupole
+      octo = prettyP <$> mp ^. #octopole
+      hexadeca = prettyP <$> mp ^. #hexadecapole
+   in "Multipole moments / atomic units (ea_0^k for rank k):\n"
+        <> (if mp == def then "x" else mempty)
+        <> (fromMaybe mempty mono <> "\n")
+        <> (fromMaybe mempty di <> "\n")
+        <> (fromMaybe mempty quadru <> "\n")
+        <> (fromMaybe mempty octo <> "\n")
+        <> (fromMaybe mempty hexadeca <> "\n")
