@@ -41,7 +41,7 @@ flags:
 
 dependencies:
   - base >= 4.7 && <5
-  - lens >= 4.18 && < 4.20
+  - optics >= 0.3 && < 0.4
   - attoparsec >= 0.13.1.0 && < 0.14
   - deepseq >= 1.4.2.0 && < 1.5
   - parallel >= 3.2.1.0 && < 3.3
@@ -98,6 +98,22 @@ library:
     - NoImplicitPrelude
     - FlexibleContexts
     - ScopedTypeVariables
+    - OverloadedLabels
+    - DataKinds
+    - FlexibleInstances
+    - MultiParamTypeClasses
+    - UndecidableInstances
+    - TypeFamilies
+    - DuplicateRecordFields
+    - ScopedTypeVariables
+    - DataKinds
+    - DeriveAnyClass
+    - DeriveDataTypeable
+    - DeriveGeneric
+    - DeriveTraversable
+    - FlexibleInstances
+    - GeneralizedNewtypeDeriving
+
 
 executables:
   spicy:

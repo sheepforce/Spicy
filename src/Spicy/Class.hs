@@ -153,6 +153,8 @@ module Spicy.Class
   , Monopole(..)
   , MultipoleR0
   , Dipole(..)
+  , q11c
+  , q11s
   , MultipoleR1
   , Quadrupole(..)
   , MultipoleR2
@@ -1263,7 +1265,7 @@ instance Default Multipoles where
                    , _mutlipole_Hexadecapole = Nothing
                    }
 
-instance HumanShow Multipoles where
+instance PrettyPrint Multipoles where
   hShow poles = ["Multipoles: - placeholder -"] {-
     let -- Monopole printing:
         monopole :: [Utf8Builder]
@@ -1310,8 +1312,8 @@ type MultipoleR0 = Monopole
 A spherical dipole moment.
 -}
 data Dipole = Dipole
-    { q11c :: Double
-    , q11s :: Double
+    { _q11c :: Double
+    , _q11s :: Double
     }
   deriving ( Eq, Show, Generic )
 
@@ -1401,7 +1403,7 @@ instance Default EnergyDerivatives where
                           , _energyDerivatives_Hessian  = Nothing
                           }
 
-instance HumanShow EnergyDerivatives where
+instance PrettyPrint EnergyDerivatives where
   hShow enDeriv =
     let -- Print simply as a double.
       energyPrint :: [Utf8Builder]
@@ -1571,7 +1573,7 @@ instance ToJSON CalcInput where
 
 instance FromJSON CalcInput
 
-instance HumanShow CalcInput where
+instance PrettyPrint CalcInput where
   hShow calcInput =
     let identifiers :: [Utf8Builder]
         identifiers =
@@ -1643,8 +1645,9 @@ instance ToJSON CalcOutput where
 
 instance FromJSON CalcOutput
 
-instance HumanShow CalcOutput where
-  hShow calcOutput =
+instance PrettyPrint CalcOutput where
+  hShow calcOutput = "placeholder"
+    {-
     let -- Normal printing of energy derivatives.
         eDerivativePrinting = hShow . _calcOutput_EnergyDerivatives $ calcOutput
         -- Just a summary for the multipoles, as they otherwise become very long for showing
@@ -1672,6 +1675,7 @@ instance HumanShow CalcOutput where
     polePrinter atomsWithPolesMap = case atomsWithPolesMap of
       []   -> "✘"
       inds -> if inds == allAtomInds then "✔" else "(Atoms " <> displayShow inds <> ")"
+  -}
 
 ----------------------------------------------------------------------------------------------------
 {-|
@@ -1725,6 +1729,10 @@ instance FromJSON ONIOMHierarchy
 ----------------------------------------------------------------------------------------------------
 -- All lenses and prisms for molecular types.
 makeLenses ''Multipoles
+makeLenses ''Dipole
+makeLenses ''Quadrupole
+makeLenses ''Octopole
+makeLenses ''Hexadecapole
 makeLenses ''EnergyDerivatives
 makePrisms ''NumericalEfficiency
 makePrisms ''WrapperTask

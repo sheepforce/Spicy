@@ -9,10 +9,21 @@ Portability : POSIX, Windows
 
 Definition of generic functions, agnostic of a Spicy specific data type, and generic classes.
 -}
-module Spicy.Generic
-  ( -- * Parser Helper Functions
+module Spicy.Common
+  ( -- * Exception Types
+    -- $exceptionTypes
+    DataStructureException(..)
+  , ParserException(..)
+  , MolLogicException(..)
+  , WrapperGenericException(..)
+  , SpicyIndirectionException(..)
+    -- * Abstract and Generic Classes
+    -- $class
+  , Check(..)
+  , PrettyPrint(..)
+    -- * Parser Helper Functions
     -- $parserHelper
-    parse'
+  , parse'
   , skipHorizontalSpace
   , maybeOption
   , parseYamlFile
@@ -21,6 +32,12 @@ module Spicy.Generic
     -- $dataOperations
     -- ** Path Types
     -- $pathOperations
+  , JFilePath(..)
+  , JFilePathAbs(..)
+  , JFilePathRel(..)
+  , JDirPath(..)
+  , JDirPathAbs(..)
+  , JDirPathRel(..)
   , path2Text
   , path2Utf8Builder
   , makeJFilePathAbsFromCwd
@@ -79,6 +96,7 @@ module Spicy.Generic
   , intMapSetRemoveConnectionBidirectorial
     -- ** Bond Matrix Operations
     -- $bondMatrixOperations
+  , BondMatrix
   , isBondMatrixBidirectorial
   , isRepMapCompleteforBondMatrix
   , replaceBondMatrixInds
@@ -89,6 +107,10 @@ module Spicy.Generic
   , bondMat2ImIs
   , makeBondMatUnidirectorial
     -- ** Massiv
+  , VectorS(..)
+  , MatrixS(..)
+    -- *** Wrapper Types
+    -- *** Operations on Massiv Types
     -- $massivOperations
   , takeWhileV'
   , takeWhileV
@@ -127,7 +149,6 @@ import           System.IO                      ( hSetEncoding
 import qualified System.Path                   as Path
 import           System.Path.IO                as Path
 import           System.Path.PartClass
-import           Spicy.Class
 import qualified RIO.HashMap                   as HashMap
 import           Data.Massiv.Array             as Massiv
                                          hiding ( toList
@@ -136,8 +157,107 @@ import           Data.Massiv.Array             as Massiv
                                                 , elem
                                                 , takeWhile
                                                 )
-import           Data.Aeson
+import qualified Data.Massiv.Array             as Massiv
+import           Data.Aeson              hiding ( Array )
 import           Data.Yaml.Include              ( decodeFileWithWarnings )
+import Data.List.Split (chunksOf)
+
+{-
+####################################################################################################
+-}
+{- $exceptionTypes
+Different types of exception used throughout Spicy.
+-}
+{-|
+Exception type for operations on data structures, which are not meeting necessary criteria for the
+operation to perform.
+-}
+data DataStructureException = DataStructureException
+  { functionName :: String -- ^ Function which is causing the exception.
+  , description  :: String -- ^ Description of the problem.
+  }
+
+instance Show DataStructureException where
+  show (DataStructureException f e) = "DataStructureException in function \"" <> f <> "\":" <> e
+
+instance Exception DataStructureException
+
+----------------------------------------------------------------------------------------------------
+{-|
+Exception type for textual or binary data, that could not be parsed.
+-}
+newtype ParserException = ParserException String
+
+instance Show ParserException where
+  show (ParserException e) = "ParserException in parser: \"" <> e <> "\""
+
+instance Exception ParserException
+
+----------------------------------------------------------------------------------------------------
+{-|
+Exception type for operations on 'Molecule's, which lead to a logical error. This can be caused
+because some Spicy assumptions are not met, for example.
+-}
+data MolLogicException = MolLogicException
+  { functionName :: !String
+  , description  :: !String
+  }
+
+instance Show MolLogicException where
+  show (MolLogicException f e) = "MoleculeLogicException in function \"" <> f <> "\": " <> e
+
+instance Exception MolLogicException
+
+----------------------------------------------------------------------------------------------------
+{-|
+Exceptions for a computational chemistry wrapper, that are unspecific to a program.
+-}
+data WrapperGenericException = WrapperGenericException
+  { function    :: !String
+  , description :: !String
+  }
+
+instance Show WrapperGenericException where
+  show (WrapperGenericException f e) = "WrapperGenericException: " <> f <> e
+
+instance Exception WrapperGenericException
+
+----------------------------------------------------------------------------------------------------
+{-|
+An exception when the program control flow did a wrong turn and the information present are
+inadequate to describe the program flow.
+-}
+data SpicyIndirectionException = SpicyIndirectionException
+  { functionName :: !String
+  , description  :: !String
+  }
+
+instance Show SpicyIndirectionException where
+  show (SpicyIndirectionException f e) =
+    "SpicyIndirectionException in function \"" <> f <> "\": " <> e
+
+instance Exception SpicyIndirectionException
+
+{-
+####################################################################################################
+-}
+{- $classDefinitions
+Definitions of classes used in Spicy.
+-}
+{-|
+A class for various data structures, which use some assumptions in Spicy. Running a check on them
+allows to be sure about the correctnes of their assumptions.
+-}
+class Check a where
+  check :: MonadThrow m => a -> m a
+
+----------------------------------------------------------------------------------------------------
+{-|
+A class for data, that can be printed nicely to a human friendly format with the purpose of logging.
+Each line is a separate 'UTF8Builder', which allows prepending the log info string before each line.
+-}
+class PrettyPrint a where
+  prettyP :: a -> Utf8Builder
 
 {-
 ####################################################################################################
@@ -224,7 +344,114 @@ Operations on generic data formats, which are commonly used in Spicy.
 ====================================================================================================
 -}
 {- $pathOperations
+Newtype wrappers around typed paths with JSON serialisation enabled and operations on them.
 -}
+{-|
+Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-}
+newtype JFilePath = JFilePath { getFilePath :: Path.AbsRelFile }
+  deriving ( Generic, Show, Eq )
+
+instance ToJSON JFilePath where
+  toJSON path = let plainPath = getFilePath path in object ["filepath" .= Path.toString plainPath]
+
+instance FromJSON JFilePath where
+  parseJSON = withObject "JFilePath" $ \path -> do
+    plainPath <- path .: "filepath"
+    case Path.parse plainPath of
+      Left  err -> fail err
+      Right res -> return . JFilePath $ res
+
+----------------------------------------------------------------------------------------------------
+{-|
+Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
+-}
+newtype JFilePathAbs = JFilePathAbs { getFilePathAbs :: Path.AbsFile }
+  deriving ( Generic, Show, Eq )
+
+instance ToJSON JFilePathAbs where
+  toJSON path =
+    let plainPath = getFilePathAbs path in object ["filepath" .= Path.toString plainPath]
+
+instance FromJSON JFilePathAbs where
+  parseJSON = withObject "JFilePath" $ \path -> do
+    plainPath <- path .: "filepath"
+    case Path.parse plainPath of
+      Left  err -> fail err
+      Right res -> return . JFilePathAbs $ res
+
+----------------------------------------------------------------------------------------------------
+{-|
+Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
+-}
+newtype JFilePathRel = JFilePathRel { getFilePathRel :: Path.RelFile }
+  deriving ( Generic, Show, Eq )
+
+instance ToJSON JFilePathRel where
+  toJSON path =
+    let plainPath = getFilePathRel path in object ["filepath" .= Path.toString plainPath]
+
+instance FromJSON JFilePathRel where
+  parseJSON = withObject "JFilePath" $ \path -> do
+    plainPath <- path .: "filepath"
+    case Path.parse plainPath of
+      Left  err -> fail err
+      Right res -> return . JFilePathRel $ res
+
+----------------------------------------------------------------------------------------------------
+{-|
+Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-}
+newtype JDirPath = JDirPath { getDirPath :: Path.AbsRelDir }
+  deriving ( Generic, Show, Eq )
+
+instance ToJSON JDirPath where
+  toJSON path = let plainPath = getDirPath path in object ["dirpath" .= Path.toString plainPath]
+
+instance FromJSON JDirPath where
+  parseJSON = withObject "JDirPath" $ \path -> do
+    plainPath <- path .: "dirpath"
+    case Path.parse plainPath of
+      Left  err -> fail err
+      Right res -> return . JDirPath $ res
+
+----------------------------------------------------------------------------------------------------
+{-|
+Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-}
+newtype JDirPathAbs = JDirPathAbs { getDirPathAbs :: Path.AbsDir }
+  deriving ( Generic, Show, Eq )
+
+instance ToJSON JDirPathAbs where
+  toJSON path =
+    let plainPath = getDirPathAbs path in object ["dirpath" .= Path.toString plainPath]
+
+instance FromJSON JDirPathAbs where
+  parseJSON = withObject "JDirPath" $ \path -> do
+    plainPath <- path .: "dirpath"
+    case Path.parse plainPath of
+      Left  err -> fail err
+      Right res -> return . JDirPathAbs $ res
+
+----------------------------------------------------------------------------------------------------
+{-|
+Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-}
+newtype JDirPathRel = JDirPathRel { getDirPathRel :: Path.RelDir }
+  deriving ( Generic, Show, Eq )
+
+instance ToJSON JDirPathRel where
+  toJSON path =
+    let plainPath = getDirPathRel path in object ["dirpath" .= Path.toString plainPath]
+
+instance FromJSON JDirPathRel where
+  parseJSON = withObject "JDirPath" $ \path -> do
+    plainPath <- path .: "dirpath"
+    case Path.parse plainPath of
+      Left  err -> fail err
+      Right res -> return . JDirPathRel $ res
+
+----------------------------------------------------------------------------------------------------
 {-|
 Converts a pathtype Path to a textual representation as obtained with 'Path.toString' in 'TL.Text'
 representation instead of 'String'.
@@ -398,7 +625,7 @@ mapSetIsBidirectorial mapSet = Map.foldrWithKey'
         -- Check for all in the Seq of found IntSet, if the current key is also a member.
         keyInTargets :: Seq Bool
         keyInTargets = fmap (key `Set.member`) targetSet
-    in   -- If the current key is a member of all target IntSet, we are fine. If not, we have a
+    in    -- If the current key is a member of all target IntSet, we are fine. If not, we have a
         -- problem.
         all (== True) keyInTargets && testBool
   )
@@ -420,7 +647,7 @@ intMapSetIsBidirectorial mapSet = IntMap.foldrWithKey'
         -- Check for all in the Seq of found IntSet, if the current key is also a member.
         keyInTargets :: Seq Bool
         keyInTargets = fmap (key `IntSet.member`) targetSet
-    in   -- If the current key is a member of all target IntSet, we are fine. If not, we have a
+    in    -- If the current key is a member of all target IntSet, we are fine. If not, we have a
         -- problem.
         all (== True) keyInTargets && testBool
   )
@@ -622,7 +849,7 @@ groupTupleSeq a =
       atomicIntMaps = traverse mapSetFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap   = foldl' (<>) Map.empty <$> atomicIntMaps
-  in   -- The only way this function can fail, is if keys would not properly be groupled. This cannot
+  in    -- The only way this function can fail, is if keys would not properly be groupled. This cannot
       -- happen if 'groupBy' is called correclty before 'mapSetFromGroupedSequence'. Therefore
       -- default to the empty Map if this case, that cannot happen, happens.
       case completeMap of
@@ -643,7 +870,7 @@ intGroupTupleSeq a =
       atomicIntMaps = traverse intMapSetFromGroupedSequence keyValGroups
       -- Fold all atom IntMap in the sequence into one.
       completeMap   = foldl' (<>) IntMap.empty <$> atomicIntMaps
-  in   -- The only way this function can fail, is if keys would not properly be groupled. This cannot
+  in    -- The only way this function can fail, is if keys would not properly be groupled. This cannot
       -- happen if 'groupBy' is called correclty before 'mapSetFromGroupedSequence'. Therefore
       -- default to the empty Map if this case, that cannot happen, happens.
       case completeMap of
@@ -831,6 +1058,13 @@ intMapSetRemoveConnectionBidirectorial mapSet (a, b) =
 Operations on the 'HashMap (Int, Int) Bool' type
 -}
 {-|
+The bond matrix is represented sparsely by a HashMap with an '(Int, Int)' tuple as the atom indices.
+The order is @(Origin, Target)@.
+-}
+type BondMatrix = HashMap (Int, Int) Bool
+
+----------------------------------------------------------------------------------------------------
+{-|
 Check if the bond matrix is defined bidirectorial.
 -}
 isBondMatrixBidirectorial :: BondMatrix -> Bool
@@ -949,6 +1183,65 @@ makeBondMatUnidirectorial bondMat =
 {-
 ====================================================================================================
 -}
+{- $massivWrapper
+JSON enabled wrapper types around Massiv.
+-}
+{-|
+Newtype wrapper for JSON serialisation around Massiv's unboxed 1D arrays.
+-}
+newtype VectorS a = VectorS { getVectorS :: Array Massiv.S Ix1 a }
+  deriving (Generic, Show, Eq )
+
+instance (ToJSON a, Storable a) => ToJSON (VectorS a) where
+  toJSON arr =
+    let plainList = Massiv.toList . getVectorS $ arr
+        Sz dim1   = Massiv.size . getVectorS $ arr
+    in  object ["shape" .= dim1, "elements" .= plainList]
+
+instance (FromJSON a, Storable a) => FromJSON (VectorS a) where
+  parseJSON = withObject "VectorS" $ \arr -> do
+    dim1 <- arr .: "shape"
+    let sizeSupposed = Sz dim1
+    elements <- arr .: "elements"
+    let parsedArr = Massiv.fromList Par elements
+    if Massiv.size parsedArr == sizeSupposed
+      then return . VectorS $ parsedArr
+      else
+        fail
+        $  "Size vs number of elements mismatch: Array has size: "
+        <> (show . Massiv.size $ parsedArr)
+        <> "and expected was: "
+        <> show sizeSupposed
+
+----------------------------------------------------------------------------------------------------
+{-|
+Newtype wrapper for JSON serialisation around Massiv's unboxed 2D arrays.
+-}
+newtype MatrixS a = MatrixS { getMatrixS :: Array Massiv.S Ix2 a }
+  deriving (Generic, Show, Eq )
+
+instance (ToJSON a, Storable a) => ToJSON (MatrixS a) where
+  toJSON arr =
+    let plainList         = Massiv.toList . getMatrixS $ arr
+        Sz (dim1 :. dim2) = Massiv.size . getMatrixS $ arr
+    in  object ["shape" .= (dim1, dim2), "elements" .= plainList]
+
+instance (FromJSON a, Storable a) => FromJSON (MatrixS a) where
+  parseJSON = withObject "MatrixS" $ \arr -> do
+    (dim1, dim2) <- arr .: "shape"
+    let sizeSupposed = Sz (dim1 :. dim2)
+    elements <- arr .: "elements"
+    let parsedArr = Massiv.fromLists' Par . chunksOf dim2 $ elements
+    if Massiv.size parsedArr == sizeSupposed
+      then return . MatrixS $ parsedArr
+      else
+        fail
+        $  "Size vs number of elements mismatch: Array has size: "
+        <> (show . Massiv.size $ parsedArr)
+        <> " and expected was: "
+        <> show sizeSupposed
+
+----------------------------------------------------------------------------------------------------
 {- $massivOperations
 -}
 {-|
@@ -1077,7 +1370,7 @@ vectorToGroups accessorF' vec' = go accessorF' vec' []
           Just accessorCond ->
             let (currentGroup, restOfVec) = takeWhileV' (\a -> accessorF a == accessorCond) vec
                 newGroupAcc               = currentGroup : groupAcc
-                -- Another recursion to consume the next group in the vector.
+                    -- Another recursion to consume the next group in the vector.
             in  go accessorF restOfVec newGroupAcc
 
 ----------------------------------------------------------------------------------------------------

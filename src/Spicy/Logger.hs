@@ -11,11 +11,8 @@ This module implements the styling of Spicy's logging functions. It is built on 
 and it's ideas, but uses a custom Options type, as the original one is too deeply hidden in RIO.
 -}
 module Spicy.Logger
-  ( -- * Logging Behaviour and Appearance
-    newLogFunction
-  , logInfoF
-    -- * Printing & Human Readable
-  , formatPadFoldable
+  ( -- * Printing & Human Readable
+    formatPadFoldable
   , getModelAsBuilder
   , molID2OniomHumandID
   , map2Human
@@ -39,116 +36,6 @@ import           System.Console.ANSI
 import qualified System.Path                   as Path
 import qualified RIO.Map                       as Map
 
-{-|
-Maximum width of a log message, if applicable.
--}
-maxWidth :: Int
-maxWidth = 100
-
-----------------------------------------------------------------------------------------------------
-{-|
-Prefix strings for Spicy's logging function.
--}
-logLevelString :: LogLevel -> Text
-logLevelString level = case level of
-  LevelDebug     -> "Debug"
-  LevelInfo      -> "Info"
-  LevelWarn      -> "Warn"
-  LevelError     -> "Error"
-  LevelOther lvl -> lvl
-
-----------------------------------------------------------------------------------------------------
-{-|
-Additional space after the log level opening to add, to have a body ad consistent indentation.
--}
-logLevelPostSpacing :: LogLevel -> Text
-logLevelPostSpacing level =
-  let openingLength = Text.length . logLevelString $ level
-  in  Text.replicate (10 - openingLength) " "
-
-----------------------------------------------------------------------------------------------------
-{-|
-Colour styling for different printing levels for the line opening.
--}
-logLevelStyle :: LogLevel -> [SGR]
-logLevelStyle level = case level of
-  LevelDebug   -> [SetColor Foreground Dull White]
-  LevelInfo    -> [SetColor Foreground Vivid Green]
-  LevelWarn    -> [SetColor Foreground Vivid Yellow]
-  LevelError   -> [SetColor Foreground Vivid Red]
-  LevelOther _ -> [SetColor Foreground Vivid Cyan]
-
-----------------------------------------------------------------------------------------------------
-{-|
-Style of the body of a log message.
--}
-logStyleDefault :: [SGR]
--- logStyleDefault = [SetColor Background Vivid Black, SetColor Foreground Vivid White]
-logStyleDefault = [SetColor Foreground Vivid White]
-
-----------------------------------------------------------------------------------------------------
-{-|
-Style of the verbose part of a log message.
--}
-logStyleVeboseInfo :: [SGR]
-logStyleVeboseInfo = [SetColor Foreground Dull White]
-
-----------------------------------------------------------------------------------------------------
-{-|
-Creates a new logging function from 'MyLogOptions'.
--}
-newLogFunction :: MyLogOptions -> LogFunc
-newLogFunction options = mkLogFunc $ \_callStack logSource logLevel' message -> do
-  -- Get option information.
-  doVerboseLogging <- _logVerbose options
-  logThresh        <- _logMinLevel options
-  doColor          <- _logUseColor options
-  let useTime = _logUseTime options
-  -- Create a formatted logging function.
-  when (logLevel' >= logThresh) $ do
-    when doColor $ setSGR logStyleDefault
-    Text.putStr "["
-    when doColor . setSGR . logLevelStyle $ logLevel'
-    Text.putStr . logLevelString $ logLevel'
-    when doColor $ setSGR logStyleDefault
-    Text.putStr "]"
-    Text.putStr . logLevelPostSpacing $ logLevel'
-    when doColor $ setSGR logStyleDefault
-    Text.putStrLn
-      . RIO.decodeUtf8With RIO.lenientDecode
-      . ByteString.toStrict
-      . ByteString.toLazyByteString
-      . getUtf8Builder
-      . _logFormat options
-      $ message
-    when doVerboseLogging $ do
-      when doColor $ setSGR logStyleVeboseInfo
-      when useTime $ do
-        currentTime <- Time.getZonedTime
-        let localTime  = Time.zonedTimeToLocalTime currentTime
-            timeString = Time.formatTime Time.defaultTimeLocale "%d.%m.%Y-%T" localTime
-        Text.putStr . Text.pack $ timeString
-        Text.putStr "  "
-      if logSource == ""
-        then return ()
-        else do
-          Text.putStr . textDisplay $ logSource
-          Text.putStrLn ""
-    when doColor $ setSGR [Reset]
-
-----------------------------------------------------------------------------------------------------
-{-|
-Using RIO's logging at the Info level to also write the LogFile.
--}
-logInfoF :: (HasLogFile env, HasLogFunc env) => Utf8Builder -> RIO env ()
-logInfoF info = do
-  logInfo info
-  logPath <- Path.toAbsRel <$> view logFileL
-  appendFileUTF8 logPath . flip Text.snoc '\n' . utf8BuilderToText $ info
-
-{-
-####################################################################################################
--}
 {-|
 For logging purposes build lines of formatted values. Custom formatters for the values and custom
 delimiters can be specified. This function will try to obey the maximum width of the log messages

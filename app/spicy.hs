@@ -4,5 +4,4 @@ import Spicy.Initiator
 
 
 main :: IO ()
-main = do
-  spicyStartUp
+main = undefined
