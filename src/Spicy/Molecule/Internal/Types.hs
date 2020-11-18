@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-incomplete-record-updates #-}
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- |
@@ -47,7 +48,7 @@ module Spicy.Molecule.Internal.Types
     ONIOMHierarchy (..),
 
     -- ** Multipole Properties
-    Multipoles,
+    Multipoles (..),
     Monopole,
     MultipoleR0,
     Dipole (..),
@@ -606,7 +607,6 @@ instance FromJSON CalcK
 _ONIOMKey :: Prism' CalcK ONIOMHierarchy
 _ONIOMKey = prism' (\b -> ONIOMKey b) $ \s -> case s of
   ONIOMKey b -> Just b
-  _ -> Nothing
 
 ----------------------------------------------------------------------------------------------------
 
