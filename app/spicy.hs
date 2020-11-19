@@ -1,6 +1,6 @@
 module Main where
 import RIO
-import Spicy.Initiator
+-- import Spicy.Initiator
 
 
 main :: IO ()

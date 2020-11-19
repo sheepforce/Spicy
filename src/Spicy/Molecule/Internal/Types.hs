@@ -49,7 +49,7 @@ module Spicy.Molecule.Internal.Types
 
     -- ** Multipole Properties
     Multipoles (..),
-    Monopole,
+    Monopole(..),
     MultipoleR0,
     Dipole (..),
     MultipoleR1,
