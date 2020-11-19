@@ -57,20 +57,20 @@ flag llvm
 
 library
   exposed-modules:
-      -- Spicy.Aeson
+      Spicy.Aeson
       -- Spicy.Class
-      -- Spicy.Data
+      Spicy.Data
       Spicy.Common
       -- Spicy.Initiator
       -- Spicy.JobDriver
-      -- Spicy.Logger
-      -- Spicy.Math
+      Spicy.Logger
+      Spicy.Math
       -- Spicy.Math.SparseArray
-      -- Spicy.Molecule
-      -- Spicy.Molecule.Internal.Parser
+      Spicy.Molecule
+      Spicy.Molecule.Internal.Parser
       Spicy.Molecule.Internal.Types
-      -- Spicy.Molecule.Internal.Util
-      -- Spicy.Molecule.Internal.Writer
+      Spicy.Molecule.Internal.Util
+      Spicy.Molecule.Internal.Writer
       -- Spicy.ONIOM.AtomicDriver
       -- Spicy.ONIOM.Collector
       -- Spicy.ONIOM.Layout
@@ -107,6 +107,7 @@ library
     , massiv >=0.5.2.0 && <0.6
     , mtl >=2.2.2 && <2.3
     , optics >=0.3 && <0.4
+    , optics-vl >= 0.2.1 && <0.3
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2

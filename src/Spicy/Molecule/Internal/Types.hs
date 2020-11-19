@@ -27,6 +27,7 @@ module Spicy.Molecule.Internal.Types
     Element (..),
     Atom (..),
     Molecule (..),
+    HasMolecule (..),
     LinkInfo (..),
     _NotLink,
     _IsLink,
@@ -96,7 +97,7 @@ import Data.Massiv.Array as Massiv hiding
   )
 import Formatting
 import Optics hiding (element)
-import RIO hiding (lens, (^.))
+import RIO hiding (Lens', lens, view, (^.))
 import qualified RIO.Text as Text
 import Spicy.Aeson
 import Spicy.Common
@@ -406,6 +407,13 @@ instance (k ~ A_Lens, a ~ Map CalcK CalcContext, b ~ a) => LabelOptic "calcConte
 
 instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "jacobian" k Molecule Molecule a b where
   labelOptic = lens (\s -> jacobian s) $ \s b -> s {jacobian = b}
+
+-- Reader Class
+class HasMolecule env where
+  moleculeL :: Lens' env Molecule
+
+instance HasMolecule Molecule where
+  moleculeL = castOptic simple
 
 ----------------------------------------------------------------------------------------------------
 
