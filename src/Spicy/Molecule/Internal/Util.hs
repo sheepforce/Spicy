@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 -- |
 -- Module      : Spicy.Molecule.Internal.Util
 -- Description : Utilities to manipulate basic molecular data structures.
@@ -545,24 +546,11 @@ getMolByID mol (i :<| is) =
 -- @
 --
 -- **I am a little bit proud that i figured this out.**
-molIDLensGen ::
-  ( Is (IxKind v) (Join k (IxKind v)),
-    Is k (Join k (IxKind v)),
-    LabelOptic "subMol" k (IxValue v) (IxValue v) v v,
-    Ixed v
-  ) =>
-  Seq (Index v) ->
-  Optic
-    (Join k (IxKind v))
-    NoIx
-    (IxValue v)
-    (IxValue v)
-    (IxValue v)
-    (IxValue v)
+molIDLensGen :: MolID -> Optic' An_AffineTraversal NoIx Molecule Molecule
 molIDLensGen molID' =
   let layerLenses = fmap (\subMolIx -> #subMol % ix subMolIx) molID'
-      fstLens :<| tailLenses = layerLenses
-   in foldl (%) fstLens tailLenses
+      -- identityMolLens = castOptic simple -- :: Lens' a Molecule
+   in castOptic @An_AffineTraversal $ foldl (%) (castOptic @An_AffineTraversal simple) layerLenses
 
 {-
 let stepThroughLayers = fmap (\subMolIx -> #subMol % ix subMolIx) molID'
@@ -592,31 +580,8 @@ getCalcByID mol calcID = do
 -- @
 --
 -- This will create a normal lens to be used with '(^?)'.
-calcIDLensGen ::
-  ( Is k (Join k (IxKind v1)),
-    Is (IxKind v1) (Join k (IxKind v1)),
-    Is l (Join (Join k (IxKind v1)) l),
-    Is (Join k (IxKind v1)) (Join (Join k (IxKind v1)) l),
-    Is (IxKind v2) (Join (Join (Join k (IxKind v1)) l) (IxKind v2)),
-    Is
-      (Join (Join k (IxKind v1)) l)
-      (Join (Join (Join k (IxKind v1)) l) (IxKind v2)),
-    LabelOptic "calcContext" l (IxValue v1) (IxValue v1) v2 v2,
-    LabelOptic "subMol" k (IxValue v1) (IxValue v1) v1 v1,
-    Ixed v1,
-    Ixed v2,
-    Index v2 ~ CalcK,
-    Index v1 ~ Int
-  ) =>
-  CalcID ->
-  Optic
-    (Join (Join (Join k (IxKind v1)) l) (IxKind v2))
-    NoIx
-    (IxValue v1)
-    (IxValue v1)
-    (IxValue v2)
-    (IxValue v2)
-calcIDLensGen (CalcID molID' calcKey') = (molIDLensGen molID') % #calcContext % ix calcKey'
+calcIDLensGen :: CalcID -> Optic' An_AffineTraversal NoIx Molecule CalcContext
+calcIDLensGen (CalcID molID' calcKey') = castOptic @An_AffineTraversal (molIDLensGen molID') % #calcContext % ix calcKey'
 
 ----------------------------------------------------------------------------------------------------
 
