@@ -49,7 +49,7 @@ module Spicy.Molecule.Internal.Types
 
     -- ** Multipole Properties
     Multipoles (..),
-    Monopole(..),
+    Monopole (..),
     MultipoleR0,
     Dipole (..),
     MultipoleR1,
@@ -82,6 +82,10 @@ module Spicy.Molecule.Internal.Types
 
     -- ** Programs
     Program (..),
+
+    -- * Local Helper Types
+    FragmentAtomInfo (..),
+    TXYZAtomInfo (..),
   )
 where
 
@@ -1262,3 +1266,40 @@ ppMultipoles mp =
         <> (fromMaybe mempty quadru <> "\n")
         <> (fromMaybe mempty octo <> "\n")
         <> (fromMaybe mempty hexadeca <> "\n")
+
+{-
+####################################################################################################
+-}
+
+-- $localHelperTypes
+-- These types are not meant to be returned or consumed by any exported function. Instead they are used
+-- only locally to pass information around, which would otherwise need to be stored in unannotated
+-- tuples or something.
+
+-- |
+-- Type to pass atomwise information from parsers with atom-fragment associations around.
+data FragmentAtomInfo = FragmentAtomInfo
+  { -- | The index of the atom in the whole structure.
+    faiAtomIndex :: Int,
+    -- | The index of the fragment in the whole structure.
+    faiFragmentIndex :: Int,
+    -- | The atom of this line, associated to an fragment.
+    faiAtom :: Atom,
+    -- | The fragment associated to this atom. Possibly the selection
+    --   of atom indices in the fragment contains only one atom and
+    --   matching fragments must then be joined.
+    faiFragment :: Fragment
+  }
+
+----------------------------------------------------------------------------------------------------
+
+-- |
+-- Type just to handle the information obtained from parsing a single atom line of a TXYZ file.
+data TXYZAtomInfo = TXYZAtomInfo
+  { -- | Index of this atom in the TXYZ file. First number in a row.
+    txyzIndex :: Int,
+    -- | The atom of this line.
+    txyzAtom :: Atom,
+    -- | The indices of the atoms, to which this atom has a bond.
+    txyzBondTargets :: [Int]
+  }
