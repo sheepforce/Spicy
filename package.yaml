@@ -114,6 +114,7 @@ library:
     - FlexibleInstances
     - GeneralizedNewtypeDeriving
     - TypeApplications
+    - RecordWildCards
 
 
 executables:

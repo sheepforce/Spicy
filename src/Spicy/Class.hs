@@ -1955,17 +1955,17 @@ state is then propagated by the drivers for calculations and molecule handling.
 Definition of the current 'State' in the execution of Spicy.
 -}
 data SpicyEnv = SpicyEnv
-  { _sLogFile     :: !Path.AbsFile     -- ^ A log file for the spicy execution.
-  , _sMolecule    :: !MoleculeEnv      -- ^ The current state of the molecule with all information
+  { logFile     :: !Path.AbsFile     -- ^ A log file for the spicy execution.
+  , molecule    :: !MoleculeEnv      -- ^ The current state of the molecule with all information
                                        --   up to date. This also includes the 'Seq' of
                                        --   calculations to perform on each layer.
-  , _sCalculation :: !InputFile        -- ^ This is the input file and contains the definition of
+  , calculation :: !InputFile        -- ^ This is the input file and contains the definition of
                                        --   which kind of calculation to do. This should be set in
                                        --   the beginning and never change.
-  , _sPreStartUp  :: !PreStartUpEnv    -- ^ Configuration files with Maps of environment variables
+  , preStartUp  :: !PreStartUpEnv    -- ^ Configuration files with Maps of environment variables
                                        --   to set before launching a program.
-  , _sLogFunction :: !LogFunc          -- ^ Logging function for RIO.
-  , _sProcContext :: !ProcessContext   -- ^ Context for external processes. Must be updated for each
+  , logFunction :: !LogFunc          -- ^ Logging function for RIO.
+  , procContext :: !ProcessContext   -- ^ Context for external processes. Must be updated for each
                                        --   wrapper call.
   }
 

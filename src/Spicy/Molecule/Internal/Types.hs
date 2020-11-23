@@ -450,7 +450,7 @@ _NotLink = prism' (const NotLink) $ \s -> case s of
   _ -> Nothing
 
 _IsLink :: Prism' LinkInfo (Int, Int, Double)
-_IsLink = prism' (const NotLink) $ \s -> case s of
+_IsLink = prism' (\(a, b, c) -> IsLink a b c) $ \s -> case s of
   IsLink mP rP g -> Just (mP, rP, g)
   _ -> Nothing
 

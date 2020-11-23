@@ -61,16 +61,19 @@ library
       -- Spicy.Class
       Spicy.Data
       Spicy.Common
-      -- Spicy.Initiator
+      Spicy.Initiator
       -- Spicy.JobDriver
       Spicy.Logger
       Spicy.Math
       -- Spicy.Math.SparseArray
+      Spicy.InputFile
+      Spicy.CmdArgs
       Spicy.Molecule
       Spicy.Molecule.Internal.Parser
       Spicy.Molecule.Internal.Types
       Spicy.Molecule.Internal.Util
       Spicy.Molecule.Internal.Writer
+      Spicy.RuntimeEnv
       -- Spicy.ONIOM.AtomicDriver
       -- Spicy.ONIOM.Collector
       -- Spicy.ONIOM.Layout
@@ -86,7 +89,7 @@ library
       Paths_spicy
   hs-source-dirs:
       src
-  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables OverloadedLabels DataKinds FlexibleInstances MultiParamTypeClasses UndecidableInstances TypeFamilies DuplicateRecordFields ScopedTypeVariables DataKinds DeriveAnyClass DeriveDataTypeable DeriveGeneric DeriveTraversable FlexibleInstances GeneralizedNewtypeDeriving
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables OverloadedLabels DataKinds FlexibleInstances MultiParamTypeClasses UndecidableInstances TypeFamilies DuplicateRecordFields ScopedTypeVariables DataKinds DeriveAnyClass DeriveDataTypeable DeriveGeneric DeriveTraversable FlexibleInstances GeneralizedNewtypeDeriving RecordWildCards
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       aeson >=1.4.4.0 && <1.6
