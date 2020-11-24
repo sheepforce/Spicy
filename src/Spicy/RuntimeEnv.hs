@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-incomplete-record-updates #-}
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- |
@@ -25,10 +26,10 @@ where
 import Data.Aeson
 import Optics
 import RIO hiding (Lens', lens)
+import RIO.Process (HasProcessContext (..), ProcessContext)
 import Spicy.Aeson
 import Spicy.InputFile hiding (MD, molecule)
 import Spicy.Molecule
-import RIO.Process (ProcessContext, HasProcessContext(..))
 
 -- | Definition of the current 'State' in the execution of Spicy.
 data SpicyEnv = SpicyEnv
