@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeApplications #-}
 -- |
 -- Module      : Spicy.Molecule.Internal.Util
 -- Description : Utilities to manipulate basic molecular data structures.
@@ -70,7 +69,7 @@ import Data.Massiv.Array as Massiv hiding
     sum,
     toList,
   )
-import Data.Massiv.Core.Operations (Numeric)
+import Data.Massiv.Core.Operations ()
 import Data.Maybe
 import Optics hiding (Empty, element, (:>))
 import RIO hiding
@@ -549,8 +548,8 @@ getMolByID mol (i :<| is) =
 molIDLensGen :: MolID -> Optic' An_AffineTraversal NoIx Molecule Molecule
 molIDLensGen molID' =
   let layerLenses = fmap (\subMolIx -> #subMol % ix subMolIx) molID'
-      -- identityMolLens = castOptic simple -- :: Lens' a Molecule
-   in castOptic @An_AffineTraversal $ foldl (%) (castOptic @An_AffineTraversal simple) layerLenses
+   in -- identityMolLens = castOptic simple -- :: Lens' a Molecule
+      castOptic @An_AffineTraversal $ foldl (%) (castOptic @An_AffineTraversal simple) layerLenses
 
 {-
 let stepThroughLayers = fmap (\subMolIx -> #subMol % ix subMolIx) molID'

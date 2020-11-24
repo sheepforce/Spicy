@@ -30,7 +30,7 @@ module Spicy.Math
 where
 
 import Data.Massiv.Array as Massiv
-import Data.Massiv.Core.Operations (NumericFloat)
+import Data.Massiv.Core.Operations()
 import Math.NumberTheory.Roots
 import RIO hiding (Vector)
 import Spicy.Common
