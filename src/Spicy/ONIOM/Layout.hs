@@ -1,269 +1,297 @@
-{-|
-Module      : Spicy.ONIOM.Layout
-Description : Layouting the molecule for ONIOM calculations.
-Copyright   : Phillip Seeber, 2020
-License     : GPL-3
-Maintainer  : phillip.seeber@uni-jena.de
-Stability   : experimental
-Portability : POSIX, Windows
-
-This module takes care of initial preparation of the 'Molecule' type from a simple structured input
-molecule to the ONIOM setup used in subsequent steps.
--}
+-- |
+-- Module      : Spicy.ONIOM.Layout
+-- Description : Layouting the molecule for ONIOM calculations.
+-- Copyright   : Phillip Seeber, 2020
+-- License     : GPL-3
+-- Maintainer  : phillip.seeber@uni-jena.de
+-- Stability   : experimental
+-- Portability : POSIX, Windows
+--
+-- This module takes care of initial preparation of the 'Molecule' type from a simple structured input
+-- molecule to the ONIOM setup used in subsequent steps.
 module Spicy.ONIOM.Layout
-  ( oniomNLayout
+  ( oniomNLayout,
   )
 where
-import           Control.Lens            hiding ( Empty )
-import qualified Data.IntMap.Strict            as IntMap
-import qualified Data.IntSet                   as IntSet
-import           Formatting
-import           RIO                     hiding ( view
-                                                , (^.)
-                                                , (.~)
-                                                , (%~)
-                                                , (^?)
-                                                )
-import qualified RIO.Map                       as Map
-import           RIO.Seq                        ( Seq(..) )
-import           Spicy.Class
-import           Spicy.Generic
-import           Spicy.Logger
-import           Spicy.Molecule
-import           Spicy.Wrapper.Internal.Generic
-import qualified RIO.Text                      as Text
-import           System.Path                   as Path
 
-{-|
-Prepare the layout for an ONIOM-n calculation, potentially with multi-centre layout at each level.
-The top level (real system) is the one obtained from the uppermost theorylayer, not necessarily the
-complete system as read from file.
--}
-oniomNLayout
-  :: (HasInputFile env, HasMolecule env, HasLogFunc env, HasLogFile env) => RIO env Molecule
+import qualified Data.IntMap.Strict as IntMap
+import qualified Data.IntSet as IntSet
+import Formatting hiding ((%))
+import Optics hiding (Empty, view)
+import RIO hiding
+  ( view,
+    (%~),
+    (.~),
+    (^.),
+    (^?),
+  )
+import qualified RIO.Map as Map
+import RIO.Seq (Seq (..))
+import qualified RIO.Text as Text
+import Spicy.Common
+import Spicy.InputFile
+import Spicy.Logger
+import Spicy.Molecule
+import Spicy.Wrapper.Internal.Generic
+import System.Path as Path
+
+-- |
+-- Prepare the layout for an ONIOM-n calculation, potentially with multi-centre layout at each level.
+-- The top level (real system) is the one obtained from the uppermost theorylayer, not necessarily the
+-- complete system as read from file.
+oniomNLayout :: (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
 oniomNLayout = do
-  logInfoF "Preparing ONIOM layout of input molecule."
+  logInfo "Preparing ONIOM layout of input molecule."
 
-  inputFile        <- view inputFileL
+  inputFile <- view inputFileL
   originalMolecule <- view moleculeL
 
   -- Step through the theorylayers of the input file and create new layers accordingly. Fail if no
   -- ONIOMn method is specified.
-  theoryLayers     <- case inputFile ^? model . _ONIOMn of
+  (theoryLayers :: TheoryLayer) <- case (inputFile ^? #model % #theoryLayer) of
     Just layers -> return layers
-    Nothing     -> throwM $ SpicyIndirectionException
-      "oniomNLayout"
-      "This function can not be used to prepare the molecule layout for calculations,\
-      \ that are not ONIOM-n."
+    Nothing ->
+      throwM $
+        SpicyIndirectionException
+          "oniomNLayout"
+          "This function can not be used to prepare the molecule layout for calculations,\
+          \ that are not ONIOM-n."
 
   -- Create a calculation context for the top layer, which will be inherited for the next layer.
-  template   <- readFileUTF8 $ getFilePath (theoryLayers ^. templateFile)
-  permaDir   <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. permanent
-  scratchDir <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. scratch
-  let
-    prefixNameTop =
-      let saneOniomID = "ONIOMn_Level-0"
-          saneDescriptor =
-              replaceProblematicChars . Text.unpack . removeWhiteSpace $ theoryLayers ^. name
-      in  saneOniomID <> "@" <> saneDescriptor
-    calcInput = CalcInput
-      { _calcInput_Task        = WTEnergy
-      , _calcInput_RestartFile = Nothing
-      , _calcInput_Software    = theoryLayers ^. program
-      , _calcInput_PrefixName  = prefixNameTop
-      , _calcInput_PermaDir    = permaDir
-      , _calcInput_ScratchDir  = scratchDir
-      , _calcInput_NProcs      = theoryLayers ^. execution . nProcesses
-      , _calcInput_NThreads    = theoryLayers ^. execution . nThreads
-      , _calcInput_Memory      = theoryLayers ^. execution . memory
-      , _calcInput_QMMMSpec    = prepareQMMMSpec (theoryLayers ^. program)
-                                                 (theoryLayers ^. charge)
-                                                 (theoryLayers ^. mult)
-      , _calcInput_Template    = template
-      , _calcInput_Embedding   = theoryLayers ^. embedding
-      }
-    calcContextTop = CalcContext { _calcContext_Input = calcInput, _calcContext_Output = Nothing }
+  template <- readFileUTF8 $ getFilePath (theoryLayers ^. #templateFile)
+  permaDir <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. #permanent
+  scratchDir <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. #scratch
+  let prefixNameTop =
+        let saneOniomID = "ONIOMn_Level-0"
+            saneDescriptor =
+              replaceProblematicChars . Text.unpack . removeWhiteSpace $ theoryLayers ^. #name
+         in saneOniomID <> "@" <> saneDescriptor
+      calcInput =
+        CalcInput
+          { task = WTEnergy,
+            restartFile = Nothing,
+            software = theoryLayers ^. #program,
+            prefixName = prefixNameTop,
+            permaDir = permaDir,
+            scratchDir = scratchDir,
+            nProcs = theoryLayers ^. #execution % #nProcesses,
+            nThreads = theoryLayers ^. #execution % #nThreads,
+            memory = theoryLayers ^. #execution % #memory,
+            qMMMSpec =
+              prepareQMMMSpec
+                (theoryLayers ^. #program)
+                (theoryLayers ^. #charge)
+                (theoryLayers ^. #mult),
+            template = template,
+            embedding = theoryLayers ^. #embedding
+          }
+      calcContextTop =
+        CalcContext
+          { input = calcInput,
+            output = Nothing
+          }
 
   -- Clean the molecule, that was read from the file from all its sublayers, that might have been
   -- generated by the parser.
-  let molCleaned = originalMolecule & molecule_SubMol .~ IntMap.empty
+  let molCleaned = originalMolecule & #subMol .~ IntMap.empty
 
   -- Find the maximum atom index in the input molecule (usually parsed from file).
   maxAtomKey <- getMaxAtomIndex molCleaned
 
   -- Create the new sublayer, which is the topmost ONIOM layer (the real system) and use this one as
   -- the new top. Also has first calculation context for the real system added.
-  let atomSelection = theoryLayers ^. selection
+  let atomSelection = theoryLayers ^. #selection
 
-  logInfoF "  Layer 0 (real system) with atoms:"
-  mapM_ (logInfoF . ("    " <>)) . formatPadFoldable 6 int "," . IntSet.toAscList $ atomSelection
+  logInfo "  Layer 0 (real system) with atoms:"
+  mapM_ (logInfo . ("    " <>)) . formatPadFoldable 6 int "," . IntSet.toAscList $ atomSelection
 
-  molONIOMTopLayer       <- newSubLayer maxAtomKey molCleaned atomSelection Nothing Nothing
-  molRealSystemNoContext <- if IntMap.size (molONIOMTopLayer ^. molecule_SubMol) == 1
-    then case IntMap.lookupMax $ molONIOMTopLayer ^. molecule_SubMol of
-      Just (_, realSystemLayer) -> return realSystemLayer
-      Nothing                   -> throwM $ MolLogicException
-        "oniomNLayout"
-        "During creation of the real system ONIOM-layout something went wrong."
-    else throwM $ MolLogicException
-      "oniomNLayout"
-      "Tried to create the real system layer for ONIOM but the molecule was not clean and\
-      \ already contained submolecules."
+  molONIOMTopLayer <- newSubLayer maxAtomKey molCleaned atomSelection Nothing Nothing
+  molRealSystemNoContext <-
+    if IntMap.size (molONIOMTopLayer ^. #subMol) == 1
+      then case IntMap.lookupMax $ molONIOMTopLayer ^. #subMol of
+        Just (_, realSystemLayer) -> return realSystemLayer
+        Nothing ->
+          throwM $
+            MolLogicException
+              "oniomNLayout"
+              "During creation of the real system ONIOM-layout something went wrong."
+      else
+        throwM $
+          MolLogicException
+            "oniomNLayout"
+            "Tried to create the real system layer for ONIOM but the molecule was not clean and\
+            \ already contained submolecules."
   let molRealSystem =
         molRealSystemNoContext
-          &  molecule_CalcContext
+          & #calcContext
           .~ Map.singleton (ONIOMKey Original) calcContextTop
 
   -- Now step through the deeper ONIOM layers recursively and do the layout for everything.
-  let deeperLayers = theoryLayers ^. deeperLayer
+  let deeperLayers = theoryLayers ^. #deeperLayer
   maxKeyOniomReal <- getMaxAtomIndex molRealSystem
   case deeperLayers of
     Empty -> return molRealSystem
     moreLayers ->
       fst <$> createNextLayers maxKeyOniomReal Empty molRealSystem calcContextTop moreLayers
+  where
+    createNextLayers ::
+      (HasInputFile env, HasLogFunc env) =>
+      -- | The max key of atoms that is currently present in the overall
+      --   system.
+      Int ->
+      -- | MolID of the molecule layer, which requests to build the
+      --   deeper layers.
+      MolID ->
+      -- | Current ONIOM layer, below which no submolecules should exist
+      --   yet.
+      Molecule ->
+      CalcContext -> --   Calculation context of the current layer, which needs to be
+      --   inherited for the new layers below.
 
- where
-  createNextLayers
-    :: (HasInputFile env, HasLogFunc env, HasLogFile env)
-    => Int                       -- ^ The max key of atoms that is currently present in the overall
-                                 --   system.
-    -> MolID                     -- ^ MolID of the molecule layer, which requests to build the
-                                 --   deeper layers.
-    -> Molecule                  -- ^ Current ONIOM layer, below which no submolecules should exist
-                                 --   yet.
-    -> CalcContext               --   Calculation context of the current layer, which needs to be
-                                 --   inherited for the new layers below.
-    -> Seq TheoryLayer           -- ^ The 'TheoryLayer's, from which deeper submolecules will be
-                                 --   created.
-    -> RIO env (Molecule, MolID) -- ^ The original input molecule with layers added as by
-                                 --   theorylayers and the ID of the last oniom layer reached in the
-                                 --   recursion. The ID is only used internally as a fold
-                                 --   accumulator
-  createNextLayers maxKeyFullSystem oniomIDAbove molAbove contextAbove theoryLayers = foldl'
-    (\accumulator currentTheoLayer -> do
+      -- | The 'TheoryLayer's, from which deeper submolecules will be
+      --   created.
+      Seq TheoryLayer ->
+      -- | The original input molecule with layers added as by
+      --   theorylayers and the ID of the last oniom layer reached in the
+      --   recursion. The ID is only used internally as a fold
+      --   accumulator
+      RIO env (Molecule, MolID)
+    createNextLayers maxKeyFullSystem oniomIDAbove molAbove contextAbove theoryLayers =
+      foldl'
+        ( \accumulator currentTheoLayer -> do
+            -- Unwrap the current accumulator. Contains the accumulator of the molecule and the ID, which
+            -- are updated synchronously.
+            (molAcc, idAcc) <- accumulator
 
-      -- Unwrap the current accumulator. Contains the accumulator of the molecule and the ID, which
-      -- are updated synchronously.
-      (molAcc, idAcc)            <- accumulator
+            -- Get input information.
+            inputFile <- view inputFileL
 
-      -- Get input information.
-      inputFile                  <- view inputFileL
+            -- Handle the MolIDs for the layers. The ID of the first foldl recursion (ONIOM centre) is
+            -- given by the idAcc and subsequent centre IDs will be updated here. Deeper layers are
+            -- handled outside the recurion of this fold by updating the accumulator.
+            (oniomInitID, oniomLastID) <- case idAcc of
+              initID :|> lastID -> return (initID, lastID)
+              Empty ->
+                throwM $
+                  MolLogicException
+                    "createNextLayers"
+                    "The inner fold cannot create the real system, only use this for deeper ONIOM layers."
+            let oniomIDNextCentre :: MolID
+                oniomIDNextCentre = oniomInitID |> (oniomLastID + 1)
 
-      -- Handle the MolIDs for the layers. The ID of the first foldl recursion (ONIOM centre) is
-      -- given by the idAcc and subsequent centre IDs will be updated here. Deeper layers are
-      -- handled outside the recurion of this fold by updating the accumulator.
-      (oniomInitID, oniomLastID) <- case idAcc of
-        initID :|> lastID -> return (initID, lastID)
-        Empty             -> throwM $ MolLogicException
-          "createNextLayers"
-          "The inner fold cannot create the real system, only use this for deeper ONIOM layers."
-      let oniomIDNextCentre :: MolID
-          oniomIDNextCentre = oniomInitID |> (oniomLastID + 1)
+            -- For logging and context prepare a human readable identifier of this ONIOM layer.
+            let oniomID = molID2OniomHumandID idAcc
 
-      -- For logging and context prepare a human readable identifier of this ONIOM layer.
-      let oniomID       = molID2OniomHumandID idAcc
+            -- Get the atom selection of this layer.
+            let atomSelection = currentTheoLayer ^. #selection
 
-      -- Get the atom selection of this layer.
-      let atomSelection = currentTheoLayer ^. selection
+            -- Logging for the current layer.
+            logInfo $ oniomID <> " (MolID " <> displayShow idAcc <> ") with atoms:"
+            mapM_ (logInfo . ("    " <>))
+              . formatPadFoldable 6 int ","
+              . IntSet.toAscList
+              $ atomSelection
 
-      -- Logging for the current layer.
-      logInfoF $ oniomID <> " (MolID " <> displayShow idAcc <> ") with atoms:"
-      mapM_ (logInfoF . ("    " <>))
-        . formatPadFoldable 6 int ","
-        . IntSet.toAscList
-        $ atomSelection
+            -- Prepare stuff for the calculation context.
+            template <- readFileUTF8 $ getFilePath (currentTheoLayer ^. #templateFile)
+            permaDir <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. #permanent
+            scratchDir <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. #scratch
+            let prefixNameThis =
+                  let saneOniomID = Text.unpack . removeWhiteSpace . textDisplay $ oniomID
+                      saneDescriptor =
+                        replaceProblematicChars . Text.unpack . removeWhiteSpace $ currentTheoLayer ^. #name
+                   in saneOniomID <> "_Original@" <> saneDescriptor
+                calcInputThis =
+                  CalcInput
+                    { task = WTEnergy,
+                      restartFile = Nothing,
+                      software = currentTheoLayer ^. #program,
+                      prefixName = prefixNameThis,
+                      permaDir = permaDir,
+                      scratchDir = scratchDir,
+                      nProcs = currentTheoLayer ^. #execution % #nProcesses,
+                      nThreads = currentTheoLayer ^. #execution % #nThreads,
+                      memory = currentTheoLayer ^. #execution % #memory,
+                      qMMMSpec =
+                        prepareQMMMSpec
+                          (currentTheoLayer ^. #program)
+                          (currentTheoLayer ^. #charge)
+                          (currentTheoLayer ^. #mult),
+                      template = template,
+                      embedding = currentTheoLayer ^. #embedding
+                    }
+                calcContextThis =
+                  CalcContext
+                    { input = calcInputThis,
+                      output = Nothing
+                    }
 
-      -- Prepare stuff for the calculation context.
-      template   <- readFileUTF8 $ getFilePath (currentTheoLayer ^. templateFile)
-      permaDir   <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. permanent
-      scratchDir <- liftIO . makeJDirPathAbsFromCwd $ inputFile ^. scratch
-      let
-        prefixNameThis =
-          let saneOniomID = Text.unpack . removeWhiteSpace . textDisplay $ oniomID
-              saneDescriptor =
-                  replaceProblematicChars . Text.unpack . removeWhiteSpace $ currentTheoLayer ^. name
-          in  saneOniomID <> "_Original@" <> saneDescriptor
-        calcInputThis = CalcInput
-          { _calcInput_Task        = WTEnergy
-          , _calcInput_RestartFile = Nothing
-          , _calcInput_Software    = currentTheoLayer ^. program
-          , _calcInput_PrefixName  = prefixNameThis
-          , _calcInput_PermaDir    = permaDir
-          , _calcInput_ScratchDir  = scratchDir
-          , _calcInput_NProcs      = currentTheoLayer ^. execution . nProcesses
-          , _calcInput_NThreads    = currentTheoLayer ^. execution . nThreads
-          , _calcInput_Memory      = currentTheoLayer ^. execution . memory
-          , _calcInput_QMMMSpec    = prepareQMMMSpec (currentTheoLayer ^. program)
-                                                     (currentTheoLayer ^. charge)
-                                                     (currentTheoLayer ^. mult)
-          , _calcInput_Template    = template
-          , _calcInput_Embedding   = currentTheoLayer ^. embedding
-          }
-        calcContextThis =
-          CalcContext { _calcContext_Input = calcInputThis, _calcContext_Output = Nothing }
+                prefixNameInherited =
+                  let saneOniomID = Text.unpack . removeWhiteSpace . textDisplay $ oniomID
+                      saneDescriptor =
+                        replaceProblematicChars
+                          . Text.unpack
+                          . removeWhiteSpace
+                          . Text.pack
+                          $ contextAbove
+                            ^. #input
+                              % #prefixName
+                   in saneOniomID <> "_Inherited@" <> saneDescriptor
+                calcContextInherited =
+                  contextAbove
+                    & #input
+                      % #prefixName
+                    .~ prefixNameInherited
+                    & #input
+                      % #permaDir
+                    .~ JDirPathAbs (getDirPathAbs permaDir </> Path.relDir "Inherited")
+                    & #input
+                      % #scratchDir
+                    .~ JDirPathAbs (getDirPathAbs scratchDir </> Path.relDir "Inherited")
+                    & #input
+                      % #qMMMSpec
+                    .~ prepareQMMMSpec
+                      (contextAbove ^. #input % #software)
+                      (currentTheoLayer ^. #charge)
+                      (currentTheoLayer ^. #mult)
 
-        prefixNameInherited =
-          let saneOniomID = Text.unpack . removeWhiteSpace . textDisplay $ oniomID
-              saneDescriptor =
-                  replaceProblematicChars
-                    .  Text.unpack
-                    .  removeWhiteSpace
-                    .  Text.pack
-                    $  contextAbove
-                    ^. calcContext_Input
-                    .  calcInput_PrefixName
-          in  saneOniomID <> "_Inherited@" <> saneDescriptor
-        calcContextInherited =
-          contextAbove
-            &  calcContext_Input
-            .  calcInput_PrefixName
-            .~ prefixNameInherited
-            &  calcContext_Input
-            .  calcInput_PermaDir
-            .~ JDirPathAbs (getDirPathAbs permaDir </> Path.relDir "Inherited")
-            &  calcContext_Input
-            .  calcInput_ScratchDir
-            .~ JDirPathAbs (getDirPathAbs scratchDir </> Path.relDir "Inherited")
-            &  calcContext_Input
-            .  calcInput_QMMMSpec
-            .~ prepareQMMMSpec (contextAbove ^. calcContext_Input . calcInput_Software)
-                               (currentTheoLayer ^. charge)
-                               (currentTheoLayer ^. mult)
+            -- Create the new sub layer below the current one.
+            molLayerAddedNoContext <- newSubLayer maxKeyFullSystem molAcc atomSelection Nothing Nothing
+            (newHighestSubMolIndex, newSubMolOnly) <-
+              case IntMap.lookupMax $ molLayerAddedNoContext ^. #subMol of
+                Just (newIndex, newSubMol) -> return (newIndex, newSubMol)
+                Nothing ->
+                  throwM $
+                    MolLogicException
+                      "oniomNLayout"
+                      "A new layer should have been added to the molecule, but none could be found."
 
-      -- Create the new sub layer below the current one.
-      molLayerAddedNoContext <- newSubLayer maxKeyFullSystem molAcc atomSelection Nothing Nothing
-      (newHighestSubMolIndex, newSubMolOnly) <-
-        case IntMap.lookupMax $ molLayerAddedNoContext ^. molecule_SubMol of
-          Just (newIndex, newSubMol) -> return (newIndex, newSubMol)
-          Nothing                    -> throwM $ MolLogicException
-            "oniomNLayout"
-            "A new layer should have been added to the molecule, but none could be found."
+            -- Add calculation context information to the new sublayer.
+            let subMolCalcContext =
+                  Map.fromList
+                    [(ONIOMKey Original, calcContextThis), (ONIOMKey Inherited, calcContextInherited)]
+                subMolWithContext = newSubMolOnly & #calcContext .~ subMolCalcContext
 
-      -- Add calculation context information to the new sublayer.
-      let subMolCalcContext = Map.fromList
-            [(ONIOMKey Original, calcContextThis), (ONIOMKey Inherited, calcContextInherited)]
-          subMolWithContext = newSubMolOnly & molecule_CalcContext .~ subMolCalcContext
+            -- Get the new maximum key after the submolecule has been created.
+            newMaxAtomKey <- getMaxAtomIndex subMolWithContext
 
-      -- Get the new maximum key after the submolecule has been created.
-      newMaxAtomKey <- getMaxAtomIndex subMolWithContext
+            -- Recursively also step through all deeper theory layers of this one, creating the even
+            -- deeper layers here.
+            let deeperLayersOfThis = currentTheoLayer ^. #deeperLayer
+            finalNewSubMol <- case deeperLayersOfThis of
+              -- If no deeper layers are found, we are done here with creation of the deeper layers and
+              -- the submolecule can be used.
+              Empty -> return subMolWithContext
+              -- If deeper layers can be found, use this function recursively to also create thus.
+              moreLayers ->
+                fst <$> createNextLayers newMaxAtomKey idAcc subMolWithContext calcContextThis moreLayers
 
-      -- Recursively also step through all deeper theory layers of this one, creating the even
-      -- deeper layers here.
-      let deeperLayersOfThis = currentTheoLayer ^. deeperLayer
-      finalNewSubMol <- case deeperLayersOfThis of
-        -- If no deeper layers are found, we are done here with creation of the deeper layers and
-        -- the submolecule can be used.
-        Empty -> return subMolWithContext
-        -- If deeper layers can be found, use this function recursively to also create thus.
-        moreLayers ->
-          fst <$> createNextLayers newMaxAtomKey idAcc subMolWithContext calcContextThis moreLayers
-
-      -- Now that the context of this sublayer and all its sublayers below have been prepared,
-      -- return the layer that was given as input with the new sublayer created. Use it as the new
-      -- accumulator.
-      let molUpdated =
-            molAcc & molecule_SubMol %~ IntMap.insert newHighestSubMolIndex finalNewSubMol
-      return (molUpdated, oniomIDNextCentre)
-    )
-    (return (molAbove, oniomIDAbove |> 0))
-    theoryLayers
+            -- Now that the context of this sublayer and all its sublayers below have been prepared,
+            -- return the layer that was given as input with the new sublayer created. Use it as the new
+            -- accumulator.
+            let molUpdated =
+                  molAcc & #subMol %~ IntMap.insert newHighestSubMolIndex finalNewSubMol
+            return (molUpdated, oniomIDNextCentre)
+        )
+        (return (molAbove, oniomIDAbove |> 0))
+        theoryLayers

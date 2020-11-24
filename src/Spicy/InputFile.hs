@@ -255,7 +255,7 @@ instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "selection" k TheoryLayer
 instance (k ~ A_Lens, a ~ Seq TheoryLayer, b ~ a) => LabelOptic "deeperLayer" k TheoryLayer TheoryLayer a b where
   labelOptic = lens (\s -> deeperLayer s) $ \s b -> s {deeperLayer = b}
 
-instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "harge" k TheoryLayer TheoryLayer a b where
+instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "charge" k TheoryLayer TheoryLayer a b where
   labelOptic = lens (\s -> charge s) $ \s b -> s {charge = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "mult" k TheoryLayer TheoryLayer a b where

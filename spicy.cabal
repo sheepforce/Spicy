@@ -76,8 +76,8 @@ library
       Spicy.RuntimeEnv
       -- Spicy.ONIOM.AtomicDriver
       -- Spicy.ONIOM.Collector
-      -- Spicy.ONIOM.Layout
-      -- Spicy.Wrapper
+      Spicy.ONIOM.Layout
+      Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
       Spicy.Wrapper.Internal.Generic
       Spicy.Wrapper.Internal.Input.Shallow
@@ -89,7 +89,7 @@ library
       Paths_spicy
   hs-source-dirs:
       src
-  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables OverloadedLabels DataKinds FlexibleInstances MultiParamTypeClasses UndecidableInstances TypeFamilies DuplicateRecordFields ScopedTypeVariables DataKinds DeriveAnyClass DeriveDataTypeable DeriveGeneric DeriveTraversable FlexibleInstances GeneralizedNewtypeDeriving RecordWildCards NamedFieldPuns
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables OverloadedLabels DataKinds FlexibleInstances MultiParamTypeClasses UndecidableInstances TypeFamilies DuplicateRecordFields ScopedTypeVariables DataKinds DeriveAnyClass DeriveDataTypeable DeriveGeneric DeriveTraversable FlexibleInstances GeneralizedNewtypeDeriving RecordWildCards NamedFieldPuns TypeApplications
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       aeson >=1.4.4.0 && <1.6
