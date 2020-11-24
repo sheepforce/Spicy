@@ -34,7 +34,7 @@ import RIO hiding
   )
 import Spicy.Common
 import Spicy.InputFile
-import Spicy.Molecule
+import Spicy.Molecule hiding (S)
 
 -- |
 -- Collector for multicentre ONIOM-N calculations.
@@ -307,7 +307,7 @@ gradientCollector mol = do
                         $ lowOutputGradient
                 jacobian <- getMatrixS <$> modelCentre ^. #jacobian
                 -- Calculate the transformed gradient.
-                transformedGradient <- outputGradientAsRowVec |*| jacobian
+                transformedGradient <- outputGradientAsRowVec .><. jacobian
                 transformedGradient !?> 0
             )
             modelCentresWithTheirRealGradients
@@ -333,7 +333,7 @@ gradientCollector mol = do
                         . getVectorS
                         $ extractedGradient
                 jacobian <- getMatrixS <$> modelCentre ^. #jacobian
-                transformedGradient <- extractedGradientAsRowVec |*| jacobian
+                transformedGradient <- extractedGradientAsRowVec .><. jacobian
                 transformedGradient !?> 0
             )
             modelCentresWithTheirRealGradients
@@ -472,7 +472,7 @@ hessianCollector mol = do
                       jT <- jacobianT
                       j <- jacobian
                       h <- lowOutputHessian
-                      jT |*| h >>= (|*| j)
+                      (Massiv.computeAs S . Massiv.setComp Par <$> jT .><. h) >>= (.><. j)
                  in transformedHessian
             )
             modelCentresWithTheirRealHessians
@@ -496,12 +496,12 @@ hessianCollector mol = do
                           % #hessian
                     jacobian = getMatrixS <$> modelCentre ^. #jacobian
                     jacobianT =
-                      Massiv.computeAs Massiv.S . Massiv.setComp Par . Massiv.transpose <$> jacobian
+                      Massiv.computeAs S . Massiv.setComp Par . Massiv.transpose <$> jacobian
                     transformedHessian = do
                       jT <- jacobianT
                       j <- jacobian
                       h <- maybeExtractedHessian
-                      jT |*| h >>= (|*| j)
+                      (Massiv.computeAs S . Massiv.setComp Par <$> jT .><. h) >>= (.><. j)
                  in transformedHessian
             )
             modelCentresWithTheirRealHessians
