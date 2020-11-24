@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-incomplete-record-updates #-}
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- |
@@ -12,7 +13,7 @@
 -- This defines the spicy command line modes and options to them.
 module Spicy.CmdArgs
   ( SpicyArgs (..),
-    HasSpicyArgs(..),
+    HasSpicyArgs (..),
     exec,
     translate,
     spicyModes,
@@ -20,7 +21,7 @@ module Spicy.CmdArgs
 where
 
 import Optics
-import RIO hiding (lens, Lens')
+import RIO hiding (Lens', lens)
 import Spicy.InputFile
 import System.Console.CmdArgs hiding
   ( Default,
@@ -56,13 +57,19 @@ instance (k ~ A_Lens, a ~ FilePath, b ~ a) => LabelOptic "input" k SpicyArgs Spi
   labelOptic = lens (\s -> input s) $ \s b -> s {input = b}
 
 instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "logfile" k SpicyArgs SpicyArgs a b where
-  labelOptic = lens (\s -> logfile s) $ \s b -> s {logfile = b}
+  labelOptic = lens (\s -> logfile s) $ \s b -> case s of
+    Translate {} -> s
+    Exec {} -> s {logfile = b}
 
 instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "startupconf" k SpicyArgs SpicyArgs a b where
-  labelOptic = lens (\s -> startupconf s) $ \s b -> s {startupconf = b}
+  labelOptic = lens (\s -> startupconf s) $ \s b -> case s of
+    Translate {} -> s
+    Exec {} -> s {startupconf = b}
 
 instance (k ~ A_Lens, a ~ FileType, b ~ a) => LabelOptic "inputFormat" k SpicyArgs SpicyArgs a b where
-  labelOptic = lens (\s -> inputFormat s) $ \s b -> s {inputFormat = b}
+  labelOptic = lens (\s -> inputFormat s) $ \s b -> case s of
+    Translate {} -> s
+    Exec {} -> s {inputFormat = b}
 
 -- Reader Class.
 class HasSpicyArgs env where

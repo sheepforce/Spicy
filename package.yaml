@@ -115,7 +115,7 @@ library:
     - GeneralizedNewtypeDeriving
     - TypeApplications
     - RecordWildCards
-
+    - NamedFieldPuns
 
 executables:
   spicy:
