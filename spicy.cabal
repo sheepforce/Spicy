@@ -65,7 +65,7 @@ library
       -- Spicy.JobDriver
       Spicy.Logger
       Spicy.Math
-      -- Spicy.Math.SparseArray
+      Spicy.Math.SparseArray
       Spicy.InputFile
       Spicy.CmdArgs
       Spicy.Molecule
@@ -75,7 +75,7 @@ library
       Spicy.Molecule.Internal.Writer
       Spicy.RuntimeEnv
       -- Spicy.ONIOM.AtomicDriver
-      -- Spicy.ONIOM.Collector
+      Spicy.ONIOM.Collector
       Spicy.ONIOM.Layout
       Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
