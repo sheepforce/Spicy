@@ -116,6 +116,13 @@ instance ToJSON InputMolecule where
 
 instance FromJSON InputMolecule
 
+-- Lenses
+instance (k ~ A_Lens, a ~ Maybe FileType, b ~ a) => LabelOptic "fileType" k InputMolecule InputMolecule a b where
+  labelOptic = lens (\s -> fileType s) $ \s b -> s {fileType = b}
+
+instance (k ~ A_Lens, a ~ JFilePath, b ~ a) => LabelOptic "path" k InputMolecule InputMolecule a b where
+  labelOptic = lens (\s -> path s) $ \s b -> s {path = b}
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Filetypes for molecules, that can be read as input.

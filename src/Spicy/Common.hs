@@ -131,6 +131,7 @@ module Spicy.Common
 
     -- * RIO And Error Handlings
     -- $rioAndErrors
+    view,
     maybe2MThrow,
     getResOrErr,
   )
@@ -155,9 +156,13 @@ import qualified Data.Massiv.Array as Massiv
 import Data.Maybe
 import qualified Data.Text.IO as T
 import Data.Yaml.Include (decodeFileWithWarnings)
+import Optics (A_Getter, Is, Optic', (^.))
 import RIO hiding
   ( Vector,
+    lens,
     takeWhile,
+    view,
+    (^.),
   )
 import qualified RIO.HashMap as HashMap
 import qualified RIO.Map as Map
@@ -1525,8 +1530,12 @@ chunksOfNColumns n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) E
 -- $rioAndErrors
 -- These are some simple helper functions for RIO and error handling patterns, commonly used in Spicy.
 
--- |
--- Generalisation of a 'Maybe' value to an arbitrary monad, that is an instance of 'MonadThrow'. An
+-- | A function as @view@ in RIO. It fetches the 'MonadReader' environment with an Optics' Lens.
+-- view :: MonadReader env m => Lens' env a -> m a
+view :: (Is k A_Getter, MonadReader s f) => Optic' k is s b -> f b
+view lens = (^. lens) <$> ask
+
+-- | Generalisation of a 'Maybe' value to an arbitrary monad, that is an instance of 'MonadThrow'. An
 -- exception to throw must be provided, in case a 'Nothing' was given.
 maybe2MThrow :: (MonadThrow m, Exception e) => e -> Maybe a -> m a
 maybe2MThrow exc Nothing = throwM exc
@@ -1534,8 +1543,7 @@ maybe2MThrow _ (Just a) = return a
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Convenience function for a common RIO pattern. If some function returned an error, log this error
+-- | Convenience function for a common RIO pattern. If some function returned an error, log this error
 -- with RIO's logging system and then throw the error. If the result is fine, obtain it in the RIO
 -- monad.
 getResOrErr :: (HasLogFunc env, Exception e) => Either e a -> RIO env a

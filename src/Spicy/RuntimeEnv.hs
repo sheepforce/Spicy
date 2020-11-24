@@ -22,10 +22,13 @@ module Spicy.RuntimeEnv
   )
 where
 
+import Data.Aeson
 import Optics
 import RIO hiding (Lens', lens)
+import Spicy.Aeson
 import Spicy.InputFile hiding (MD, molecule)
 import Spicy.Molecule
+import RIO.Process (ProcessContext, HasProcessContext(..))
 
 -- | Definition of the current 'State' in the execution of Spicy.
 data SpicyEnv = SpicyEnv
@@ -41,9 +44,13 @@ data SpicyEnv = SpicyEnv
     --   to set before launching a program.
     wrapperConfigs :: !WrapperConfigs,
     -- | Contains optimisation counters, MD counters and so on.
-    motion :: !Motion
+    motion :: !(Maybe Motion),
+    -- | A logging function for RIO.
+    logFunc :: LogFunc,
+    -- | A process context for RIO.
+    procCntxt :: ProcessContext
   }
-  deriving (Show, Generic)
+  deriving (Generic)
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Molecule, b ~ a) => LabelOptic "molecule" k SpicyEnv SpicyEnv a b where
@@ -55,8 +62,14 @@ instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "calculation" k SpicyE
 instance (k ~ A_Lens, a ~ WrapperConfigs, b ~ a) => LabelOptic "wrapperConfigs" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> wrapperConfigs s) $ \s b -> s {wrapperConfigs = b}
 
-instance (k ~ A_Lens, a ~ Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
+instance (k ~ A_Lens, a ~ Maybe Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> motion s) $ \s b -> s {motion = b}
+
+instance (k ~ A_Lens, a ~ LogFunc, b ~ a) => LabelOptic "logFunc" k SpicyEnv SpicyEnv a b where
+  labelOptic = lens (\s -> logFunc s) $ \s b -> s {logFunc = b}
+
+instance (k ~ A_Lens, a ~ ProcessContext, b ~ a) => LabelOptic "procCntxt" k SpicyEnv SpicyEnv a b where
+  labelOptic = lens (\s -> procCntxt s) $ \s b -> s {procCntxt = b}
 
 -- Reader Classes
 instance HasMolecule SpicyEnv where
@@ -65,7 +78,13 @@ instance HasMolecule SpicyEnv where
 instance HasWrapperConfigs SpicyEnv where
   wrapperConfigsL = #wrapperConfigs
 
-----------------------------, ------------------------------------------------------------------------
+instance HasLogFunc SpicyEnv where
+  logFuncL = toLensVL #logFunc
+
+instance HasProcessContext SpicyEnv where
+  processContextL = toLensVL #procCntxt
+
+----------------------------------------------------------------------------------------------------
 
 -- | The command to use for launching the wrapped programs. Alls arguments are meant to be passed to
 -- those wrappers.
@@ -75,6 +94,11 @@ data WrapperConfigs = WrapperConfigs
     gdma :: Maybe FilePath
   }
   deriving (Show, Generic)
+
+instance ToJSON WrapperConfigs where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON WrapperConfigs
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "psi4" k WrapperConfigs WrapperConfigs a b where

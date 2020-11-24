@@ -11,19 +11,16 @@
 --
 -- This module provides translation from the initial input structure to the initial spicy state.
 module Spicy.Initiator
-  ( spicyStartUp,
+  ( spicyMain,
   )
 where
 
 import Data.Char
--- import           Paths_spicy                    ( version )
-
-import Data.Default
 import Data.FileEmbed
 import Data.Maybe
 import Data.Version (showVersion)
-import Data.Yaml.Pretty
-import Optics
+import Optics hiding (view)
+import Paths_spicy (version)
 import RIO hiding
   ( to,
     view,
@@ -31,33 +28,31 @@ import RIO hiding
     (^.),
   )
 import RIO.Process
-import qualified RIO.Text as Text
 import Spicy.CmdArgs
 import Spicy.Common
 import Spicy.InputFile
 import Spicy.Molecule
 -- import           Spicy.JobDriver
 -- import           Spicy.Logger
+
+import Spicy.RuntimeEnv
 import System.Console.CmdArgs hiding (def)
+import System.Environment
 import System.Path ((</>))
 import qualified System.Path as Path
 import qualified System.Path.Directory as Dir
-import Spicy.RuntimeEnv
 
--- |
--- The Spicy Logo as ASCII art.
+-- | The Spicy Logo as ASCII art.
 spicyLogo :: Utf8Builder
 spicyLogo = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/Fonts/SpicyLogo.txt")
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Get information from the build by TemplateHaskell to be able to show a reproducible version.
+-- | Get information from the build by TemplateHaskell to be able to show a reproducible version.
 versionInfo :: Utf8Builder
 versionInfo = displayShow . showVersion $ version
 
 ----------------------------------------------------------------------------------------------------
--- :: RIO SimpleApp SpicyEnv
 spicyMain :: IO ()
 spicyMain = runSimpleApp $ do
   -- Greet with the Spicy logo and emit some version information.
@@ -65,24 +60,21 @@ spicyMain = runSimpleApp $ do
   logInfo $ "Spicy version " <> versionInfo
 
   -- Get command line arguments to Spicy.
-  cmdArgsAndMode <- liftIO $ cmdArgs spicyModes
-  let doVerboseLogging = verbose cmdArgsAndMode
+  spicyArgs <- liftIO $ cmdArgs spicyModes
 
-  -- Assemble everything for the "real" Spicy run in a SpicyEnv and use the custom logging function.
-  let initEnv = InitEnv {_logFunction = logFunction, _spicyArgs = cmdArgsAndMode}
-  runRIO initEnv $ do
-    spicyArgs <- view cmdArgsL
-    case spicyArgs of
-      Exec {} -> do
-        spicyEnv <- prepareSpicyExec
-        runRIO spicyEnv spicyExecMain
-      Translate {} -> logInfo "Running Spicy in translator mode:"
+  case spicyArgs of
+    Exec {} -> do
+      spicyEnv <- inputToEnv
+      runRIO spicyEnv $ do
+        -- spicyExecMain
+        logError "Not implemented yet."
+    Translate {} -> do
+      logError "Not implemented yet."
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Prepare 'SpicyEnv' for a normal execution run by reading necessary files from disk and converting
--- into data structures according to input format.
+-- | Prepare 'SpicyEnv' for a normal execution run by reading necessary files from disk and
+-- converting into data structures according to input format.
 --
 -- This function will behave in the following way:
 --
@@ -93,107 +85,43 @@ spicyMain = runSimpleApp $ do
 -- - The molecule will be read from a file as specified in the input file. It will be used directly as
 --   obtained from the parser. Layouting for subsequent calculations is subject to the main call of
 --   spicy.
-prepareSpicyExec :: (HasLogFunc env, HasSpicyArgs env) => RIO env SpicyEnv
-prepareSpicyExec = do
-  spicyArgs <- view cmdArgsL
-  logFunc <- view logFuncL
+inputToEnv :: (HasLogFunc env) => RIO env SpicyEnv
+inputToEnv = do
+  spicyArgs <- liftIO $ cmdArgs spicyModes
 
-  -- Check if Spicy took the right turn and we got an exec argument from the command line.
-  case spicyArgs of
-    Exec {} -> return ()
-    _ -> do
-      logError
-        "Spicy was attempting to prepare for a normal execution run, but was given a different mode."
-      throwM $
-        SpicyIndirectionException
-          "prepareSpicyExec"
-          "Wrong mode on command line specified for normal execution run preparation."
-
-  -- Setup the logfile. If none was given on the command line, this will default to "Spicy.log" in
-  -- the current directory. If it already exists, a warning will be given and then it will be
-  -- overwritten
-  spicyEnvLogFile <-
-    liftIO . Path.dynamicMakeAbsoluteFromCwd . Path.filePath $
-      fromMaybe
-        "Spicy.log"
-        (logfile spicyArgs)
-  logFileExists <- liftIO $ Dir.doesFileExist spicyEnvLogFile
-  when logFileExists $ do
-    logWarn "Log file does already exist. Will be overwritten."
-    liftIO $ Dir.removeFile spicyEnvLogFile
-
-  -- Read pre-startup configuration file. If no argument has been given, try finding
-  -- @${HOME}/.spicyrc@. If nothing works, we must fail here!
-  let logSource = "Pre-Startup scripts"
-  homeDir <- liftIO Dir.getHomeDirectory
-  pathToPSEnvFile <- case startupconf spicyArgs of
-    Just psusPath -> do
-      path' <- liftIO . Path.dynamicMakeAbsoluteFromCwd . Path.filePath $ psusPath
-      logDebugS logSource $
-        "Using "
-          <> path2Utf8Builder path'
-          <> " as pre-startup configuration file."
-      return path'
-    Nothing -> do
-      let defaultPath = homeDir </> Path.relFile ".spicyrc"
-      logDebugS logSource $
-        "No custom pre-startup configuration supplied. Trying "
-          <> path2Utf8Builder defaultPath
-          <> "."
-      return defaultPath
-  spicyPreStartUpConf <- parseYamlFile pathToPSEnvFile
+  -- Look for a the spicyrc in the environment or alternatively in the home directory.
+  homeDir <- liftIO $ Dir.getHomeDirectory
+  maybeSpicyrcPath <- liftIO . lookupEnv $ "SPICYRC"
+  let spicyrcPath = case maybeSpicyrcPath of
+        Nothing -> homeDir </> (Path.relFile ".spicyrc")
+        Just p -> Path.absFile p
+  wrapperConfigs' <- parseYamlFile spicyrcPath
 
   -- Read the input file.
-  let pathToInput = input spicyArgs
-  case pathToInput of
-    "" -> do
-      mapM_
-        logError
-        [ "No input file was specified but for the Spicy execution this is required.",
-          "Specify an input file as: spicy exec --input"
-        ]
-      throwM $
-        SpicyIndirectionException
-          "prepareSpicyExec"
-          "No log file given but log file is required."
-    _ -> return ()
-  inputFilePath <- liftIO . Path.dynamicMakeAbsoluteFromCwd . Path.filePath $ pathToInput
-  inputFile <- parseYamlFile inputFilePath
+  let inputPathRel = Path.toAbsRel . Path.relFile $ spicyArgs ^. #input
+  inputPathAbs <- liftIO $ Path.dynamicMakeAbsoluteFromCwd inputPathRel
+  inputFile <- parseYamlFile inputPathAbs
 
-  -- Read the input molecule as referenced in the input file.
-  let inputMolecule = inputFile ^. molecule
-  originalMolecule <- loadInputMolecule inputMolecule
+  -- Read the input molecule.
+  molecule' <- loadInputMolecule $ inputFile ^. #molecule
 
-  -- Create a default process context.
-  defProcContext <- mkDefaultProcessContext
+  -- Construct the process context
+  procCntxt' <- mkDefaultProcessContext
 
-  -- Some final logging information before entering the Spicy main function.
-  mapM_
-    logInfo
-    [ "Spicy Execution run:",
-      "  Pre-startup configuration file: " <> path2Utf8Builder pathToPSEnvFile,
-      "  Spicy input file              : " <> path2Utf8Builder inputFilePath,
-      "  Molecule file                 : "
-        <> (path2Utf8Builder . getFilePath $ inputFile ^. molecule . path),
-      "  Log file                      : " <> path2Utf8Builder spicyEnvLogFile
-    ]
-  -- Input file information.
-  logDebug "  Input file:"
-  mapM_ (logDebug . text2Utf8Builder . ("    " <>))
-    . Text.lines
-    . decodeUtf8Lenient
-    . encodePretty defConfig
-    $ inputFile
-
-  return
-    SpicyEnv
-      { _sLogFile = spicyEnvLogFile,
-        _sMolecule = MoleculeEnv {_meNative = originalMolecule},
-        _sCalculation = inputFile,
-        _sPreStartUp = spicyPreStartUpConf,
-        _sLogFunction = logFunc,
-        _sProcContext = defProcContext
-      }
+  -- Construct the LogFunction and return the runtime environment
+  logOptions' <- logOptionsHandle stdout (spicyArgs ^. #verbose)
+  let logOptions = setLogUseTime True $ logOptions'
+  withLogFunc logOptions $ \lf -> do
+    let spicyEnv =
+          SpicyEnv
+            { molecule = molecule',
+              calculation = inputFile,
+              wrapperConfigs = wrapperConfigs',
+              motion = Nothing,
+              procCntxt = procCntxt',
+              logFunc = lf
+            }
+    runRIO spicyEnv $ ask >>= return
 
 ----------------------------------------------------------------------------------------------------
 
@@ -203,16 +131,16 @@ prepareSpicyExec = do
 -- defaulting to XYZ. If nothing works, this will simply fail.
 loadInputMolecule :: InputMolecule -> RIO env Molecule
 loadInputMolecule inputMolecule = do
-  let pathToMolFile = getFilePath $ inputMolecule ^. path
+  let pathToMolFile = getFilePath $ inputMolecule ^. #path
       molFileExtension = filter (/= '.') . Path.takeExtension $ pathToMolFile
-      fileFormat = fromMaybe (guessType molFileExtension) (inputMolecule ^. fileType)
+      fileFormat = fromMaybe (guessType molFileExtension) (inputMolecule ^. #fileType)
 
   moleculeText <- readFileUTF8 pathToMolFile
   case fileFormat of
-    XYZ -> parse' parseXYZ moleculeText
-    PDB -> parse' parsePDB moleculeText
-    MOL2 -> parse' parseMOL2 moleculeText
-    TXYZ -> parse' parseTXYZ moleculeText
+    XYZ -> parse' xyz moleculeText
+    PDB -> parse' pdb moleculeText
+    MOL2 -> parse' mol2 moleculeText
+    TXYZ -> parse' txyz moleculeText
   where
     guessType :: String -> FileType
     guessType ext' =
@@ -223,8 +151,3 @@ loadInputMolecule inputMolecule = do
             "mol2" -> MOL2
             "txyz" -> TXYZ
             _ -> XYZ
-
-----------------------------------------------------------------------------------------------------
-
--- |
--- This functions restructures the 'Molecule' initially loaded from file
