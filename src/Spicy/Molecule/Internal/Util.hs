@@ -2295,8 +2295,7 @@ redistributeLinkMoments mol =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This function takes a local MC-ONIOM2 setup and removes link tag of atoms from the model systems, if
+-- | This function takes a local MC-ONIOM2 setup and removes link tag of atoms from the model systems, if
 -- they were already link atoms in the real system.
 removeRealLinkTagsFromModel ::
   -- | The real system.

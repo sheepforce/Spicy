@@ -84,6 +84,9 @@ module Spicy.Molecule
     guessBondMatrix,
     fragmentDetectionDetached,
     getPolarisationCloudFromAbove,
+    redistributeLinkMoments,
+    isAtomLink,
+    removeRealLinkTagsFromModel,
 
     -- * Writer
     writeXYZ,
