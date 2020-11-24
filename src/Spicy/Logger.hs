@@ -12,6 +12,7 @@
 module Spicy.Logger
   ( -- * Printing & Human Readable
     formatPadFoldable,
+    molID2OniomHumandID,
     map2Human,
   )
 where
@@ -19,10 +20,13 @@ where
 import Data.Foldable
 import Data.List.Split
 import Formatting
-import RIO
+import RIO hiding (view)
 import qualified RIO.Map as Map
+import qualified RIO.Partial as RIO'
+import qualified RIO.Seq as Seq
 import qualified RIO.Text as Text
 import Spicy.Common
+import Spicy.Molecule
 
 -- | The maximum width in characters a message might be wide.
 maxWidth :: Int
@@ -53,37 +57,25 @@ formatPadFoldable padSize formatter delimiter values =
     nChunks = max (maxWidth `div` (padSize + delimiterWidth)) 1
     delimiterWidth = Text.length delimiter
 
-{-
 ----------------------------------------------------------------------------------------------------
-{-|
-A calculation/hamiltonian model has been defined by 'SpicyEnv' in the '_sCalculation' field. Get a
-string for printing it.
--}
-getModelAsBuilder :: (MonadReader env m, HasInputFile env) => m Utf8Builder
-getModelAsBuilder = do
-  inputFile <- view inputFileL
-  let calcModel = inputFile ^. model
-  case calcModel of
-    ONIOMn{} -> return "ONIOM-n"
 
-----------------------------------------------------------------------------------------------------
-{-|
-Translation of a 'MolID' to a more human readable text. Valid in the context of ONIOM calculations.
--}
+-- |
+-- Translation of a 'MolID' to a more human readable text. Valid in the context of ONIOM calculations.
 molID2OniomHumandID :: MolID -> Utf8Builder
-molID2OniomHumandID Empty = "Layer 0 (real system)"
+molID2OniomHumandID Seq.Empty = "Layer 0 (real system)"
 molID2OniomHumandID molID =
-  let depth  = Seq.length molID
-      idTree = foldr'
-        (\currentID textAcc ->
-          let offSet   = fromEnum 'A'
-              idLetter = RIO'.toEnum $ currentID + offSet
-          in  textAcc `Text.snoc` idLetter
-        )
-        ("Layer " <> tShow depth <> " ")
-        molID
-  in  display idTree
--}
+  let depth = Seq.length molID
+      idTree =
+        foldr'
+          ( \currentID textAcc ->
+              let offSet = fromEnum 'A'
+                  idLetter = RIO'.toEnum $ currentID + offSet
+               in textAcc `Text.snoc` idLetter
+          )
+          ("Layer " <> tShow depth <> " ")
+          molID
+   in display idTree
+
 ----------------------------------------------------------------------------------------------------
 
 -- |

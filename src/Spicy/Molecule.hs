@@ -72,6 +72,7 @@ module Spicy.Molecule
     molFoldlWithMolID,
     molIDLensGen,
     calcIDLensGen,
+    getCalcByID,
     getMaxAtomIndex,
     newSubLayer,
     createLinkAtom,

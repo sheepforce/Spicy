@@ -1,132 +1,295 @@
-{-|
-Module      : Spicy.Wrapper.Internal.Output.FChk
-Description : Parsers for Gaussian FChk files.
-Copyright   : Phillip Seeber, 2019
-License     : GPL-3
-Maintainer  : phillip.seeber@uni-jena.de
-Stability   : experimental
-Portability : POSIX, Windows
-
-This module provides parsers for FChk outputs.
--}
+-- |
+-- Module      : Spicy.Wrapper.Internal.Output.FChk
+-- Description : Parsers for Gaussian FChk files.
+-- Copyright   : Phillip Seeber, 2019
+-- License     : GPL-3
+-- Maintainer  : phillip.seeber@uni-jena.de
+-- Stability   : experimental
+-- Portability : POSIX, Windows
+--
+-- This module provides parsers for FChk outputs.
 module Spicy.Wrapper.Internal.Output.FChk
-  ( -- * Analyser
-    getResultsFromFChk
-    -- * Parser
-  , fChk
+  ( FChk (..),
+    getResultsFromFChk,
+    fChk,
   )
 where
-import           Control.Applicative
-import           Control.Lens            hiding ( Empty )
-import           Data.Attoparsec.Text
-import           Data.Default
-import           RIO                     hiding ( take
-                                                , takeWhile
-                                                , (^.)
-                                                , (^?)
-                                                )
-import qualified RIO.Map                       as Map
-import qualified RIO.Text                      as Text
-import           Spicy.Class
-import           Spicy.Generic
-import           Spicy.Math
-import           Data.Massiv.Array             as Massiv
-                                         hiding ( take
-                                                , takeWhile
-                                                )
 
-{-|
-A function that uses information from FChk files to obtain 'CalcOutput'. The function will not
-fill in a value ('Just') if it cannot be found in the FChk and fail if the FChk cannot be parsed or
-a block occurs multiple times.
--}
+import Control.Applicative
+import Data.Attoparsec.Text
+import Data.Default
+import Data.Massiv.Array ()
+import Data.Massiv.Array as Massiv hiding
+  ( take,
+    takeWhile,
+  )
+import Optics
+import RIO hiding
+  ( Vector,
+    lens,
+    take,
+    takeWhile,
+    (^.),
+    (^?),
+  )
+import qualified RIO.Map as Map
+import qualified RIO.Text as Text
+import Spicy.Common
+import Spicy.Math
+import Spicy.Molecule
+
+-- | The contents of an FChk.
+data FChk = FChk
+  { -- | Short title from the header of the FChk.
+    title :: !Text,
+    -- | Calculation type from the header.
+    calcType :: !CalcType,
+    -- | Primary orbital basis from the FChk header.
+    basis :: !Text,
+    -- | Calculation method (such as CCSD, HF, MP2) from the header.
+    method :: !Text,
+    -- | Labeled of 'Content's.
+    blocks :: !(Map Text Content)
+  }
+  deriving (Eq, Show)
+
+-- Lenses
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "title" k FChk FChk a b where
+  labelOptic = lens (\s -> title s) $ \s b -> s {title = b}
+
+instance (k ~ A_Lens, a ~ CalcType, b ~ a) => LabelOptic "calcType" k FChk FChk a b where
+  labelOptic = lens (\s -> calcType s) $ \s b -> s {calcType = b}
+
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "basis" k FChk FChk a b where
+  labelOptic = lens (\s -> basis s) $ \s b -> s {basis = b}
+
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "method" k FChk FChk a b where
+  labelOptic = lens (\s -> method s) $ \s b -> s {method = b}
+
+instance (k ~ A_Lens, a ~ Map Text Content, b ~ a) => LabelOptic "blocks" k FChk FChk a b where
+  labelOptic = lens (\s -> blocks s) $ \s b -> s {blocks = b}
+
+----------------------------------------------------------------------------------------------------
+
+-- | In the FChk format after 2 lines of header an arbitrary amount of contents will follow. These are
+-- either scalar values or arrays of values. The arrays are always printed as vectors but might
+-- actually refer to matrices. The meaning of the content blocks must be obtained by the label fields.
+data Content
+  = Scalar !ScalarVal
+  | Array !ArrayVal
+  deriving (Eq, Show)
+
+-- Prisms
+_Scalar :: Prism' Content ScalarVal
+_Scalar = prism (\b -> Scalar b) $ \s -> case s of
+  Scalar b -> Right b
+  a -> Left a
+
+_Array :: Prism' Content ArrayVal
+_Array = prism (\b -> Array b) $ \s -> case s of
+  Array b -> Right b
+  a -> Left a
+
+----------------------------------------------------------------------------------------------------
+
+-- | Data types an array can hold.
+
+-- The text value is very strange. A normal text is split into chunks of 12 or 8 characters and
+-- print without separator. Therefore it appears as a normal text but for Fortran it is actually an
+-- array of text fragments. I don't care about the crazy Fortran internals and treat it as a single
+-- text, which it actually is.
+data ArrayVal
+  = ArrayInt !(Vector S Int)
+  | ArrayDouble !(Vector S Double)
+  | ArrayText !Text
+  | ArrayLogical !(Vector S Bool)
+  deriving (Eq, Show)
+
+-- Prisms
+_ArrayInt :: Prism' ArrayVal (Vector S Int)
+_ArrayInt = prism (\b -> ArrayInt b) $ \s -> case s of
+  ArrayInt b -> Right b
+  a -> Left a
+
+_ArrayDouble :: Prism' ArrayVal (Vector S Double)
+_ArrayDouble = prism (\b -> ArrayDouble b) $ \s -> case s of
+  ArrayDouble b -> Right b
+  a -> Left a
+
+_ArrayText :: Prism' ArrayVal Text
+_ArrayText = prism (\b -> ArrayText b) $ \s -> case s of
+  ArrayText b -> Right b
+  a -> Left a
+
+_ArrayLogical :: Prism' ArrayVal (Vector S Bool)
+_ArrayLogical = prism (\b -> ArrayLogical b) $ \s -> case s of
+  ArrayLogical b -> Right b
+  a -> Left a
+
+----------------------------------------------------------------------------------------------------
+
+-- | Possible scalar values in an FChk.
+data ScalarVal
+  = ScalarInt !Int
+  | ScalarDouble !Double
+  | ScalarText !Text
+  | ScalarLogical !Bool
+  deriving (Eq, Show)
+
+-- Prisms
+_ScalarInt :: Prism' ScalarVal Int
+_ScalarInt = prism' (\b -> ScalarInt b) $ \s -> case s of
+  ScalarInt b -> Just b
+  _ -> Nothing
+
+_ScalarDouble :: Prism' ScalarVal Double
+_ScalarDouble = prism' (\b -> ScalarDouble b) $ \s -> case s of
+  ScalarDouble b -> Just b
+  _ -> Nothing
+
+_ScalarText :: Prism' ScalarVal Text
+_ScalarText = prism' (\b -> ScalarText b) $ \s -> case s of
+  ScalarText b -> Just b
+  _ -> Nothing
+
+_ScalarLogical :: Prism' ScalarVal Bool
+_ScalarLogical = prism' (\b -> ScalarLogical b) $ \s -> case s of
+  ScalarLogical b -> Just b
+  _ -> Nothing
+
+----------------------------------------------------------------------------------------------------
+
+-- | Possible types of calculation types from an FChk file.
+data CalcType
+  = -- | Single point
+    SP
+  | -- | Full optimisation to minimum
+    FOPT
+  | -- | Partial optimisation to an minimum
+    POPT
+  | -- | Full optimisation to a transition state
+    FTS
+  | -- | Partial optimisation to a transition state
+    PTS
+  | -- | Full optimisation to a saddle point of higher order
+    FSADDLE
+  | -- | Partial optimisation to a saddle point of higher order
+    PSADDLE
+  | -- | Energy + gradient calculation
+    FORCE
+  | -- | Frequency calculation (2nd derivative)
+    FREQ
+  | -- | Potential energy surface scan
+    SCAN
+  | -- | Generates molecular orbitals only, also orbital localisation
+    GUESS
+  | -- | Linear synchronous transit calculation
+    LST
+  | -- | SCF stability analysis
+    STABILITY
+  | -- | Generate archive information from checkpoint file
+    REARCHIVE
+  | -- | Generate archive information from checkpoint file
+    MSRESTART
+  | -- | Compound models such as G2, G3, ...
+    MIXED
+  deriving (Eq, Show)
+
+----------------------------------------------------------------------------------------------------
+
+-- | A function that uses information from FChk files to obtain 'CalcOutput'. The function will not
+-- fill in a value ('Just') if it cannot be found in the FChk and fail if the FChk cannot be parsed
+-- or a block occurs multiple times.
 getResultsFromFChk :: MonadThrow m => Text -> m CalcOutput
 getResultsFromFChk content = do
   -- Parse the complete FChk. The Hessian is obtained in row major order as a vector representing
   -- the lower triangular matrix and needs to be expanded to the full square matrix here.
   fchk <- parse' fChk content
-  let fchkBlocks     = fchk ^. blocks
-      energy         = fchkBlocks Map.!? "Total Energy"
-      gradient       = fchkBlocks Map.!? "Cartesian Gradient"
+  let fchkBlocks = fchk ^. #blocks
+      energy = fchkBlocks Map.!? "Total Energy"
+      gradient = fchkBlocks Map.!? "Cartesian Gradient"
       hessianContent = fchkBlocks Map.!? "Cartesian Force Constants"
 
-  let hessianLTVec = hessianContent ^? _Just . _Array . _ArrayDouble
+  let hessianLTVec = hessianContent ^? _Just % _Array % _ArrayDouble
   hessian <- case hessianLTVec of
     Just vec -> Just . MatrixS <$> ltMat2Square vec
-    Nothing  -> return Nothing
+    Nothing -> return Nothing
 
-  return CalcOutput
-    { _calcOutput_Multipoles        = def
-    , _calcOutput_EnergyDerivatives = EnergyDerivatives
-                                        { _energyDerivatives_Energy   = energy
-                                                                        ^? _Just
-                                                                        .  _Scalar
-                                                                        .  _ScalarDouble
-                                        , _energyDerivatives_Gradient = VectorS
-                                                                        <$> gradient
-                                                                        ^?  _Just
-                                                                        .   _Array
-                                                                        .   _ArrayDouble
-                                        , _energyDerivatives_Hessian  = hessian
-                                        }
-    }
+  return
+    CalcOutput
+      { multipoles = def,
+        energyDerivatives =
+          EnergyDerivatives
+            { energy =
+                energy
+                  ^? _Just
+                    % _Scalar
+                    % _ScalarDouble,
+              gradient =
+                VectorS
+                  <$> gradient
+                  ^? _Just
+                    % _Array
+                    % _ArrayDouble,
+              hessian = hessian
+            }
+      }
 
-{-
-####################################################################################################
--}
-{-|
-Parser for Gaussian Formatted Checkpoint files version 3. See
-<http://wild.life.nctu.edu.tw/~jsyu/compchem/g09/g09ur/f_formchk.htm> for details.
--}
+----------------------------------------------------------------------------------------------------
+
+-- | Parser for Gaussian Formatted Checkpoint files version 3. See
+-- <http://wild.life.nctu.edu.tw/~jsyu/compchem/g09/g09ur/f_formchk.htm> for details.
 fChk :: Parser FChk
 fChk = do
   -- Line 1: "Initial 72 characters of the title section"
-  initTitle  <- takeWhile (not <$> isEndOfLine) <* endOfLine
+  initTitle <- takeWhile (not <$> isEndOfLine) <* endOfLine
 
   -- Line2: "Type, Method, Basis"
   -- Calculation type (format: A10)
   typeString <- Text.toUpper . Text.strip <$> take 10
-  readType   <- case typeString of
-    "SP"                   -> return SP
-    "FOPT"                 -> return FOPT
-    "POPT"                 -> return POPT
-    "FTS"                  -> return FTS
-    "PTS"                  -> return PTS
-    "FSADDLE"              -> return FSADDLE
-    "PSADDLE"              -> return PSADDLE
-    "FORCE"                -> return FORCE
-    "FREQ"                 -> return FREQ
-    "SCAN"                 -> return SCAN
-    "GUESS=ONLY"           -> return GUESS
-    "LST"                  -> return LST
-    "STABILITY"            -> return STABILITY
-    "REARCHIVE"            -> return REARCHIVE
-    "MS-RESTART"           -> return MSRESTART
+  readType <- case typeString of
+    "SP" -> return SP
+    "FOPT" -> return FOPT
+    "POPT" -> return POPT
+    "FTS" -> return FTS
+    "PTS" -> return PTS
+    "FSADDLE" -> return FSADDLE
+    "PSADDLE" -> return PSADDLE
+    "FORCE" -> return FORCE
+    "FREQ" -> return FREQ
+    "SCAN" -> return SCAN
+    "GUESS=ONLY" -> return GUESS
+    "LST" -> return LST
+    "STABILITY" -> return STABILITY
+    "REARCHIVE" -> return REARCHIVE
+    "MS-RESTART" -> return MSRESTART
     "REARCHIVE/MS-RESTART" -> return REARCHIVE
-    "MIXED"                -> return MIXED
-    _                      -> fail "Could not assign calculation string to calculation type."
+    "MIXED" -> return MIXED
+    _ -> fail "Could not assign calculation string to calculation type."
   -- Calculation method such as MP2 (format: A30)
   methodString <- Text.strip <$> take 30
   -- Basis set (format: A30)
-  basisString  <- Text.strip <$> (takeWhile (not <$> isEndOfLine) <* endOfLine)
+  basisString <- Text.strip <$> (takeWhile (not <$> isEndOfLine) <* endOfLine)
   -- An arbitrary amount of scalar fields or array blocks with labels
-  content      <- many1 (scalar <|> array)
-  return FChk { _title    = initTitle
-              , _calcType = readType
-              , _basis    = basisString
-              , _method   = methodString
-              , _blocks   = Map.fromList content
-              }
+  content <- many1 (scalar <|> array)
+  return
+    FChk
+      { title = initTitle,
+        calcType = readType,
+        basis = basisString,
+        method = methodString,
+        blocks = Map.fromList content
+      }
 
 ----------------------------------------------------------------------------------------------------
-{-|
-Parser for 'Scalar' fields in FChk files.
--}
+
+-- |
+-- Parser for 'Scalar' fields in FChk files.
 scalar :: Parser (Text, Content)
 scalar = do
-  label    <- Text.strip <$> take 40 <* count 3 (char ' ')
+  label <- Text.strip <$> take 40 <* count 3 (char ' ')
   typeChar <- take 1 <* count 5 (char ' ')
-  value    <- case typeChar of
+  value <- case typeChar of
     "I" -> ScalarInt <$> (skipHorizontalSpace *> decimal)
     "R" -> ScalarDouble <$> (skipHorizontalSpace *> double)
     "C" -> ScalarText <$> (skipHorizontalSpace *> takeWhile (not <$> isEndOfLine))
@@ -135,52 +298,59 @@ scalar = do
       case textBool of
         "T" -> return $ ScalarLogical True
         "F" -> return $ ScalarLogical False
-        _   -> fail "Could not parse boolean scalar expression."
+        _ -> fail "Could not parse boolean scalar expression."
     _ -> fail "Unknown identifier for scalar expression."
   skipHorizontalSpace
   endOfLine
   return (label, Scalar value)
 
 ----------------------------------------------------------------------------------------------------
-{-|
-Parser for 'Array' fields in FChk files.
--}
+
+-- |
+-- Parser for 'Array' fields in FChk files.
+
 -- Text arrays appear in no way to be actual arrays of strings. Nevertheles for Fortran they are, as
 -- the format for those is 5A12 per line (C) or 9A8 (H). In the FChk they appear as a single normal
 -- string, but need to be parsed in those chunks to comply with the strange Fortran string handling.
 -- This format makes me wanna cry ...
 array :: Parser (Text, Content)
 array = do
-  label     <- Text.strip <$> take 40 <* count 3 (char ' ')
-  typeChar  <- (char 'I' <|> char 'R' <|> char 'C' <|> char 'H' <|> char 'L') <* count 3 (char ' ')
-  _         <- string "N="
+  label <- Text.strip <$> take 40 <* count 3 (char ' ')
+  typeChar <- (char 'I' <|> char 'R' <|> char 'C' <|> char 'H' <|> char 'L') <* count 3 (char ' ')
+  _ <- string "N="
   nElements <- skipHorizontalSpace *> decimal <* endOfLine
-  values    <- case typeChar of
-    'I' -> do -- Integer arrays, safely separated by spaces.
+  values <- case typeChar of
+    'I' -> do
+      -- Integer arrays, safely separated by spaces.
       intVals <- count nElements $ skipSpace *> signed decimal
       endOfLine
       return . ArrayInt . Massiv.fromList Par $ intVals
-    'R' -> do -- Real arrays, safely separated by spaces.
+    'R' -> do
+      -- Real arrays, safely separated by spaces.
       doubleVals <- count nElements $ skipSpace *> double
       endOfLine
       return . ArrayDouble . Massiv.fromList Par $ doubleVals
-    'C' -> do -- The horror of Fortran string parsing begins ...
+    'C' -> do
+      -- The horror of Fortran string parsing begins ...
       -- let linesToExcpect = nElements `div` 5 + if nElements `mod` 5 /= 0 then 1 else 0
       --     elementsInLastLine = nElements `mod` 5
       textChunks <- count nElements (take 12 <* option () endOfLine)
       return . ArrayText . Text.concat $ textChunks
-    'H' -> do -- Another strange fortran format for chunks of text.
+    'H' -> do
+      -- Another strange fortran format for chunks of text.
       textChunks <- count nElements (take 9 <* option () endOfLine)
       return . ArrayText . Text.concat $ textChunks
-    'L' -> do -- Logical arrays. Single characters and no separation.
+    'L' -> do
+      -- Logical arrays. Single characters and no separation.
       boolChars <- count nElements ((char 'T' <|> char 'F') <* option () endOfLine)
-      bools     <- traverse
-        (\c -> case c of
-          'T'   -> return True
-          'F'   -> return False
-          other -> fail $ "Character \"" <> [other] <> "\" cannot be parsed as Boolean."
-        )
-        boolChars
+      bools <-
+        traverse
+          ( \c -> case c of
+              'T' -> return True
+              'F' -> return False
+              other -> fail $ "Character \"" <> [other] <> "\" cannot be parsed as Boolean."
+          )
+          boolChars
       return . ArrayLogical . Massiv.fromList Par $ bools
     _ -> fail $ "Character \"" <> [typeChar] <> " \" is not a valid type character. Cannot parse."
   return (label, Array values)

@@ -876,8 +876,7 @@ _Electronic = prism' (\b -> Electronic b) $ \s -> case s of
 ====================================================================================================
 -}
 
--- |
--- Derivatives of the potential energy, that can be calculated for a 'Molecule' or molecular layer.
+-- | Derivatives of the potential energy, that can be calculated for a 'Molecule' or molecular layer.
 data EnergyDerivatives = EnergyDerivatives
   { -- | The potential energy.
     energy :: !(Maybe Double),
@@ -900,6 +899,16 @@ instance Default EnergyDerivatives where
         gradient = Nothing,
         hessian = Nothing
       }
+
+-- Lenses
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "energy" k EnergyDerivatives EnergyDerivatives a b where
+  labelOptic = lens (\s -> energy s) $ \s b -> s {energy = b}
+
+instance (k ~ A_Lens, a ~ Maybe (VectorS Double), b ~ a) => LabelOptic "gradient" k EnergyDerivatives EnergyDerivatives a b where
+  labelOptic = lens (\s -> gradient s) $ \s b -> s {gradient = b}
+
+instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "hessian" k EnergyDerivatives EnergyDerivatives a b where
+  labelOptic = lens (\s -> hessian s) $ \s b -> s {hessian = b}
 
 {-
 ====================================================================================================

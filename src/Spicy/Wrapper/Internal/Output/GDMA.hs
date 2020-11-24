@@ -1,32 +1,32 @@
-{-|
-Module      : Spicy.Wrapper.Internal.Output.GDMA
-Description : Parsers for GDMA output files
-Copyright   : Phillip Seeber, 2020
-License     : GPL-3
-Maintainer  : phillip.seeber@uni-jena.de
-Stability   : experimental
-Portability : POSIX, Windows
-
-This module provides parsers for GDMA outputs.
--}
+-- |
+-- Module      : Spicy.Wrapper.Internal.Output.GDMA
+-- Description : Parsers for GDMA output files
+-- Copyright   : Phillip Seeber, 2020
+-- License     : GPL-3
+-- Maintainer  : phillip.seeber@uni-jena.de
+-- Stability   : experimental
+-- Portability : POSIX, Windows
+--
+-- This module provides parsers for GDMA outputs.
 module Spicy.Wrapper.Internal.Output.GDMA
   ( -- * Analyser
-  -- * Parser
-    gdmaMultipoles
+
+    -- * Parser
+    gdmaMultipoles,
   )
 where
-import           Control.Applicative
-import           RIO
-import           RIO.Text
-import           Data.Attoparsec.Text
-import           Spicy.Class
-import           Spicy.Generic
-import           Spicy.Data
-import           Data.Char
+
+import Control.Applicative
+import Data.Attoparsec.Text
+import Data.Char
+import RIO
+import RIO.Text
+import Spicy.Common
+import Spicy.Data
+import Spicy.Molecule
 
 gdmaMultipoles :: Parser (IntMap Multipoles)
 gdmaMultipoles = do
-
   return undefined
 
 -- Parse all multipole data of an expansion centre.
@@ -41,26 +41,31 @@ multipoleCentre = do
   maxRank <- skipHorizontalSpace *> string "Maximum rank =" *> skipHorizontalSpace *> decimal
   radius <-
     skipHorizontalSpace
-    *> string "Radius ="
-    *> skipHorizontalSpace
-    *> double
-    <* skipHorizontalSpace
-    <* string "bohr"
-    <* endOfLine
+      *> string "Radius ="
+      *> skipHorizontalSpace
+      *> double
+      <* skipHorizontalSpace
+      <* string "bohr"
+      <* endOfLine
 
   -- Rank 0 - Monopoles
-  q0 <- if (not $ maxRank >= 0) then return Nothing else labelField "|Q1|" <* endOfLine
+  q0 <-
+    if (not $ maxRank >= 0)
+      then return Nothing
+      else Just <$> labelField "|Q1|" <* endOfLine
 
   -- Rank 1 - Dipoles
-  q1 <- if (not $ maxRank >= 1)
-    then return Nothing
-    else do
-      q1Mag <- labelField "|Q1|"
-      q11c  <- labelField "Q11c"
-      q11s <- labelField "Q11s" <* endOfLine
+  q1 <-
+    if (not $ maxRank >= 1)
+      then return Nothing
+      else do
+        q1Mag <- labelField "|Q1|"
+        q11c <- labelField "Q11c"
+        q11s <- labelField "Q11s" <* endOfLine
+        undefined
 
   return (undefined, undefined)
- where
-  labelField :: Text -> Parser Double
-  labelField label =
-    (string $ label <> " =") *> skipHorizontalSpace *> double <* skipHorizontalSpace
+  where
+    labelField :: Text -> Parser Double
+    labelField label =
+      (string $ label <> " =") *> skipHorizontalSpace *> double <* skipHorizontalSpace
