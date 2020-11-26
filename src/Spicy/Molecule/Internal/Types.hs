@@ -226,12 +226,12 @@ data Element
   | Ds
   | Rg
   | Cn
-  | Uut
+  | Nh
   | Fl
-  | Uup
+  | Mc
   | Lv
-  | Uus
-  | Uuo
+  | Ts
+  | Og
   deriving (Show, Eq, Read, Ord, Enum, Generic, NFData)
 
 instance ToJSON Element where
