@@ -1,23 +1,34 @@
 -- |
--- Module      : Spicy.Wrapper.Internal.Output.FChk
--- Description : Parsers for Gaussian FChk files.
+-- Module      : Spicy.Formats.FChk
+-- Description : Functions to work with FChk files
 -- Copyright   : Phillip Seeber, 2019
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
 -- Portability : POSIX, Windows
 --
--- This module provides parsers for FChk outputs.
-module Spicy.Wrapper.Internal.Output.FChk
-  ( FChk (..),
+-- This module provides functions to read, manipulate and write FChk files.
+module Spicy.Formats.FChk
+  ( -- * Types
+    -- $types
+    FChk (..),
+
+    -- * Parsers/Analysers
+    -- $analysers
     getResultsFromFChk,
     fChk,
+
+    -- * Manipulation
+    -- $manipulation
+    relabelLinkAtoms,
   )
 where
 
 import Control.Applicative
 import Data.Attoparsec.Text
 import Data.Default
+import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
 import Data.Massiv.Array ()
 import Data.Massiv.Array as Massiv hiding
   ( take,
@@ -29,14 +40,18 @@ import RIO hiding
     lens,
     take,
     takeWhile,
+    (.~),
     (^.),
     (^?),
   )
+import qualified RIO.List as List
 import qualified RIO.Map as Map
 import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Math
 import Spicy.Molecule
+
+-- $types
 
 -- | The contents of an FChk.
 data FChk = FChk
@@ -195,7 +210,11 @@ data CalcType
     MIXED
   deriving (Eq, Show)
 
-----------------------------------------------------------------------------------------------------
+{-
+####################################################################################################
+-}
+
+-- $analysers
 
 -- | A function that uses information from FChk files to obtain 'CalcOutput'. The function will not
 -- fill in a value ('Just') if it cannot be found in the FChk and fail if the FChk cannot be parsed
@@ -206,12 +225,12 @@ getResultsFromFChk content = do
   -- the lower triangular matrix and needs to be expanded to the full square matrix here.
   fchk <- parse' fChk content
   let fchkBlocks = fchk ^. #blocks
-      energy = fchkBlocks Map.!? "Total Energy"
-      gradient = fchkBlocks Map.!? "Cartesian Gradient"
+      energy' = fchkBlocks Map.!? "Total Energy"
+      gradient' = fchkBlocks Map.!? "Cartesian Gradient"
       hessianContent = fchkBlocks Map.!? "Cartesian Force Constants"
 
   let hessianLTVec = hessianContent ^? _Just % _Array % _ArrayDouble
-  hessian <- case hessianLTVec of
+  hessian' <- case hessianLTVec of
     Just vec -> Just . MatrixS <$> ltMat2Square vec
     Nothing -> return Nothing
 
@@ -220,18 +239,9 @@ getResultsFromFChk content = do
       { multipoles = def,
         energyDerivatives =
           EnergyDerivatives
-            { energy =
-                energy
-                  ^? _Just
-                    % _Scalar
-                    % _ScalarDouble,
-              gradient =
-                VectorS
-                  <$> gradient
-                  ^? _Just
-                    % _Array
-                    % _ArrayDouble,
-              hessian = hessian
+            { energy = energy' ^? _Just % _Scalar % _ScalarDouble,
+              gradient = VectorS <$> gradient' ^? _Just % _Array % _ArrayDouble,
+              hessian = hessian'
             }
       }
 
@@ -306,8 +316,7 @@ scalar = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Parser for 'Array' fields in FChk files.
+-- | Parser for 'Array' fields in FChk files.
 
 -- Text arrays appear in no way to be actual arrays of strings. Nevertheles for Fortran they are, as
 -- the format for those is 5A12 per line (C) or 9A8 (H). In the FChk they appear as a single normal
@@ -354,3 +363,67 @@ array = do
       return . ArrayLogical . Massiv.fromList Par $ bools
     _ -> fail $ "Character \"" <> [typeChar] <> " \" is not a valid type character. Cannot parse."
   return (label, Array values)
+
+{-
+####################################################################################################
+-}
+
+-- $manipulation
+
+-- | This function replaces the element of all link atoms by a different one (one that is not in the
+-- fchk). This is dirty but
+-- FChks cannot contain labels, that would allow to delete
+relabelLinkAtoms ::
+  MonadThrow m =>
+  -- | Element to use as the link atoms in the FChks.
+  Element ->
+  -- | All atoms that are in the FChk from the original structure.
+  -- Atoms that are labels there will be renamed in the FChk.
+  IntMap Atom ->
+  -- | Original FChk
+  FChk ->
+  m FChk
+relabelLinkAtoms newLinkElem atoms fchk = do
+  -- Common bindings.
+  let blocks = fchk ^. #blocks
+      atomicNumbersKey = "Atomic numbers"
+      sparse2Dense = getSparse2Dense atoms
+      linkAtomsSparse = IntMap.keysSet . IntMap.filter (isAtomLink . isLink) $ atoms
+      linkAtomsDense = intReplaceSet sparse2Dense linkAtomsSparse
+      newLinkElemNumber = fromEnum newLinkElem + 1
+
+  -- Obtain initial values.
+  let nAtomsMol = IntMap.size atoms
+
+  nAtomsFChk <-
+    maybe2MThrow (localExcp "Could not find number of Atoms in the FChk.") $
+      (blocks Map.!? "Number of atoms") >>= (^? _Scalar % _ScalarInt)
+
+  atomicNumbersFChk <-
+    maybe2MThrow (localExcp "Could not find atomic numbers in the FChk.") $
+      (blocks Map.!? atomicNumbersKey) >>= (^? _Array % _ArrayInt)
+
+  -- Sanity checks
+  unless (nAtomsMol == nAtomsFChk) . throwM . localExcp $
+    "Number of atoms in the molecule and FChk do not match."
+
+  -- Replace elements in the FChk with new elements.
+  let newAtomicNumbers =
+        Massiv.computeP
+          . Massiv.imap
+            ( \i e ->
+                if i `IntSet.member` linkAtomsDense
+                  then newLinkElemNumber
+                  else e
+            )
+          $ atomicNumbersFChk
+
+  return $ fchk & #blocks % ix atomicNumbersKey .~ (Array . ArrayInt $ newAtomicNumbers)
+  where
+    localExcp = MolLogicException "relabelLinkAtoms"
+
+    -- Conversion from sparse (IntMap) indices to 0 based dense indices.
+    getSparse2Dense :: IntMap a -> IntMap Int
+    getSparse2Dense origMap =
+      let keys = IntMap.keys origMap
+       in IntMap.fromAscList $ List.zip keys [0 ..]

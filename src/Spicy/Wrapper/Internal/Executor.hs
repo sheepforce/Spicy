@@ -30,7 +30,7 @@ import Spicy.Logger
 import Spicy.Molecule
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.Shallow
-import Spicy.Wrapper.Internal.Output.FChk
+import Spicy.Formats.FChk
 import Spicy.Wrapper.Internal.Output.Generic
 import System.Path
   ( (<.>),

@@ -61,6 +61,7 @@ library
       Spicy.CmdArgs
       Spicy.Common
       Spicy.Data
+      Spicy.Formats.FChk
       Spicy.Initiator
       Spicy.InputFile
       Spicy.JobDriver
@@ -81,7 +82,6 @@ library
       Spicy.Wrapper.Internal.Generic
       Spicy.Wrapper.Internal.Input.Shallow
       Spicy.Wrapper.Internal.Output
-      Spicy.Wrapper.Internal.Output.FChk
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
   other-modules:
