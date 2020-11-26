@@ -4,7 +4,7 @@ let
   haskellNix = import (builtins.fetchGit {
     url = "https://github.com/input-output-hk/haskell.nix.git";
     name = "haskell.nix";
-    rev = "2f48630357ea61c5a231273a9cdf9e71f9653c81";
+    rev = "e729389f3266e50602f36b7035c5e34177b705ac";
     ref = "master";
   }) {};
 

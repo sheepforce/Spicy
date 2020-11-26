@@ -3,8 +3,6 @@ cabal-version: 1.12
 -- This file has been generated from package.yaml by hpack version 0.34.2.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: fd85ab1861a7896569d704fbf01e75079920b65bf91c46ab1ab7a7e6ef6d8ba8
 
 name:           spicy
 version:        0.0.0.1
@@ -60,33 +58,37 @@ flag llvm
 library
   exposed-modules:
       Spicy.Aeson
-      Spicy.Class
+      Spicy.CmdArgs
+      Spicy.Common
       Spicy.Data
-      Spicy.Generic
       Spicy.Initiator
+      Spicy.InputFile
       Spicy.JobDriver
       Spicy.Logger
       Spicy.Math
       Spicy.Math.SparseArray
       Spicy.Molecule
       Spicy.Molecule.Internal.Parser
+      Spicy.Molecule.Internal.Types
       Spicy.Molecule.Internal.Util
       Spicy.Molecule.Internal.Writer
       Spicy.ONIOM.AtomicDriver
       Spicy.ONIOM.Collector
       Spicy.ONIOM.Layout
+      Spicy.RuntimeEnv
       Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
       Spicy.Wrapper.Internal.Generic
       Spicy.Wrapper.Internal.Input.Shallow
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.FChk
+      Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
   other-modules:
       Paths_spicy
   hs-source-dirs:
       src
-  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables OverloadedLabels DataKinds FlexibleInstances MultiParamTypeClasses UndecidableInstances TypeFamilies DuplicateRecordFields ScopedTypeVariables DataKinds DeriveAnyClass DeriveDataTypeable DeriveGeneric DeriveTraversable FlexibleInstances GeneralizedNewtypeDeriving TypeApplications RecordWildCards NamedFieldPuns
   ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints
   build-depends:
       aeson >=1.4.4.0 && <1.6
@@ -104,9 +106,9 @@ library
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
     , integer-roots >=1.0 && <2
-    , lens >=4.18 && <4.20
-    , massiv >=0.5.2.0 && <0.6
+    , massiv >=0.5.6.0 && <0.6
     , mtl >=2.2.2 && <2.3
+    , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
@@ -148,9 +150,9 @@ executable spicy
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
     , integer-roots >=1.0 && <2
-    , lens >=4.18 && <4.20
-    , massiv >=0.5.2.0 && <0.6
+    , massiv >=0.5.6.0 && <0.6
     , mtl >=2.2.2 && <2.3
+    , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
@@ -193,9 +195,9 @@ executable unittests-exe
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
     , integer-roots >=1.0 && <2
-    , lens >=4.18 && <4.20
-    , massiv >=0.5.2.0 && <0.6
+    , massiv >=0.5.6.0 && <0.6
     , mtl >=2.2.2 && <2.3
+    , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
@@ -239,9 +241,9 @@ test-suite unittests
     , formatting >=6.3.7 && <8
     , githash >=0.1.3.3 && <0.2
     , integer-roots >=1.0 && <2
-    , lens >=4.18 && <4.20
-    , massiv >=0.5.2.0 && <0.6
+    , massiv >=0.5.6.0 && <0.6
     , mtl >=2.2.2 && <2.3
+    , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2

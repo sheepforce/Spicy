@@ -14,7 +14,7 @@ module Spicy.JobDriver
   ( spicyExecMain
   )
 where
-import           Control.Lens
+import Optics hiding (view)
 import           Data.FileEmbed
 import           Data.List.Split
 import           RIO                     hiding ( view
@@ -24,14 +24,14 @@ import           RIO                     hiding ( view
 import qualified RIO.HashMap                   as HashMap
 import           RIO.Process
 import qualified RIO.Text                      as Text
-import           Spicy.Class
-import           Spicy.Data
-import           Spicy.Generic
-import           Spicy.Logger
 import           Spicy.Molecule
+import           Spicy.Data
+import           Spicy.Common
 import           Spicy.ONIOM.AtomicDriver
 import           Spicy.ONIOM.Layout
 import qualified System.Path                   as Path
+import Spicy.RuntimeEnv
+import Spicy.InputFile
 
 {-|
 The Spicy Logo as ASCII art.
@@ -45,33 +45,29 @@ spicyExecMain
   :: ( HasMolecule env
      , HasInputFile env
      , HasLogFunc env
-     , HasLogFile env
-     , HasPreStartUpEnv env
+     , HasWrapperConfigs env
      , HasProcessContext env
      )
   => RIO env ()
 spicyExecMain = do
   inputFile   <- view inputFileL
 
-  -- Get a string builder to print the model name for logging.
-  modelString <- getModelAsBuilder
-
   -- Open the log file by starting with the job driver headline.
-  mapM_ (logInfoF . text2Utf8Builder) $ Text.lines jobDriverText
+  mapM_ (logInfo . text2Utf8Builder) $ Text.lines jobDriverText
 
   -- Apply topology updates as given in the input file to the molecule.
-  logInfoF "Applying changes to the input topology:"
+  logInfo "Applying changes to the input topology:"
   molTopologyAdaptions <- changeTopologyOfMolecule
 
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
-  logInfoF $ "Preparing layout for a " <> modelString <> " calculation ..."
+  logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
   molLayouted <- local (& moleculeL .~ molTopologyAdaptions) layoutMoleculeForCalc
-  logInfoF
+  logInfo
     $  "Layouting done. Writing layout to "
-    <> (path2Utf8Builder . getDirPath $ inputFile ^. permanent)
+    <> (path2Utf8Builder . getDirPath $ inputFile ^. #permanent)
     <> "."
-  local (& moleculeL .~ molLayouted) $ writeLayout writeXYZ
+  -- local (& moleculeL .~ molLayouted) $ writeLayout writeXYZ
 
   -- Perform the specified tasks on the input file.
   -- TODO (phillip|p=100|#Unfinished) - This is here for testing purposes. The real implementation should use a more abstract driver, that composes atomic tasks.
@@ -89,7 +85,7 @@ is:
   3. Add bonds between pairs of atoms.
 -}
 changeTopologyOfMolecule
-  :: (HasInputFile env, HasMolecule env, HasLogFunc env, HasLogFile env) => RIO env Molecule
+  :: (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
 changeTopologyOfMolecule = do
   -- Get the molecule to manipulate
   mol       <- view moleculeL
@@ -97,35 +93,35 @@ changeTopologyOfMolecule = do
   -- Get the input file information.
   inputFile <- view inputFileL
 
-  case inputFile ^. topology of
+  case inputFile ^. #topology of
     Nothing          -> return mol
     Just topoChanges -> do
       -- Resolve the defaults to final values.
-      let covScalingFactor = fromMaybe defCovScaling $ topoChanges ^. radiusScaling
-          removalPairs     = fromMaybe [] $ topoChanges ^. bondsToRemove
-          additionPairs    = fromMaybe [] $ topoChanges ^. bondsToAdd
+      let covScalingFactor = fromMaybe defCovScaling $ topoChanges ^. #radiusScaling
+          removalPairs     = fromMaybe [] $ topoChanges ^. #bondsToRemove
+          additionPairs    = fromMaybe [] $ topoChanges ^. #bondsToAdd
 
       -- Show what will be done to the topology:
-      logInfoF $ "  Guessing new bonds (scaling factor): " <> if topoChanges ^. guessBonds
+      logInfo $ "  Guessing new bonds (scaling factor): " <> if topoChanges ^. #guessBonds
         then display covScalingFactor
         else "No"
-      logInfoF "  Removing bonds between atom pairs:"
+      logInfo "  Removing bonds between atom pairs:"
       mapM_ (logInfo . ("    " <>) . utf8Show) $ chunksOf 5 removalPairs
-      logInfoF "  Adding bonds between atom pairs:"
+      logInfo "  Adding bonds between atom pairs:"
       mapM_ (logInfo . ("    " <>) . utf8Show) $ chunksOf 5 additionPairs
 
       -- Apply changes to the topology
-      let bondMatrixFromInput = mol ^. molecule_Bonds
+      let bondMatrixFromInput = mol ^. #bonds
       unless (HashMap.null bondMatrixFromInput)
         $ logWarn
             "The input file format contains topology information such as bonds\
                 \ but manipulations were requested anyway."
 
       -- Completely guess new bonds if requested.
-      molNewBondsGuess <- if topoChanges ^. guessBonds
+      molNewBondsGuess <- if topoChanges ^. #guessBonds
         then do
           bondMatrix <- guessBondMatrix (Just covScalingFactor) mol
-          return $ mol & molecule_Bonds .~ bondMatrix
+          return $ mol & #bonds .~ bondMatrix
         else return mol
 
       -- Remove all bonds between atom pairs requested.
@@ -157,10 +153,10 @@ Perform transformation of the molecule data structure as obtained from the input
 requirements for the requested calculation type.
 -}
 layoutMoleculeForCalc
-  :: (HasInputFile env, HasMolecule env, HasLogFunc env, HasLogFile env) => RIO env Molecule
+  :: (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
 layoutMoleculeForCalc = do
   inputFile <- view inputFileL
-  case inputFile ^. model of
+  case inputFile ^. #model of
     ONIOMn{} -> oniomNLayout
 
 ----------------------------------------------------------------------------------------------------
