@@ -407,7 +407,7 @@ relabelLinkAtoms newLinkElem atoms fchk = do
   unless (nAtomsMol == nAtomsFChk) . throwM . localExcp $
     "Number of atoms in the molecule and FChk do not match."
 
-  -- Replace elements in the FChk with new elements.
+  -- Construct a new Atomic Numbers block for the FChk.
   let newAtomicNumbers =
         Massiv.computeP
           . Massiv.imap
@@ -418,6 +418,7 @@ relabelLinkAtoms newLinkElem atoms fchk = do
             )
           $ atomicNumbersFChk
 
+  -- Build a new FChk and return it.
   return $ fchk & #blocks % ix atomicNumbersKey .~ (Array . ArrayInt $ newAtomicNumbers)
   where
     localExcp = MolLogicException "relabelLinkAtoms"
