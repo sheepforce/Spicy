@@ -360,6 +360,8 @@ gdmaAnalysis fchkPath atoms expOrder = do
 -- information, which must be at @permanentDir </> Path.relFile prefixName <.> ".fchk"@. If a hessian
 -- calculation was requested, also a plain text hessian file (numpy style) is required, which must be
 -- at @permanentDir </> Path.relFile prefixName <.> ".hess"@.
+--
+-- GDMA multipoles are obtained from this FCHK by an additional call to GDMA.
 analysePsi4 ::
   (HasLogFunc env, HasMolecule env, HasProcessContext env, HasWrapperConfigs env) =>
   CalcID ->
