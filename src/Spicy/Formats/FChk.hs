@@ -21,6 +21,10 @@ module Spicy.Formats.FChk
     -- * Manipulation
     -- $manipulation
     relabelLinkAtoms,
+
+    -- * Writer
+    -- $writer
+    writeFChk,
   )
 where
 
@@ -34,9 +38,14 @@ import Data.Massiv.Array as Massiv hiding
   ( take,
     takeWhile,
   )
+import Data.Text.Lazy.Builder (Builder)
+import qualified Data.Text.Lazy.Builder as TB
+import qualified Data.Text.Lazy.Builder.RealFloat as TB
+import Formatting hiding (char, string, (%))
 import Optics
 import RIO hiding
-  ( Vector,
+  ( Builder,
+    Vector,
     lens,
     take,
     takeWhile,
@@ -47,6 +56,7 @@ import RIO hiding
 import qualified RIO.List as List
 import qualified RIO.Map as Map
 import qualified RIO.Text as Text
+import qualified RIO.Text.Lazy as TL
 import Spicy.Common
 import Spicy.Math
 import Spicy.Molecule
@@ -428,3 +438,117 @@ relabelLinkAtoms newLinkElem atoms fchk = do
     getSparse2Dense origMap =
       let keys = IntMap.keys origMap
        in IntMap.fromAscList $ List.zip keys [0 ..]
+
+{-
+####################################################################################################
+-}
+
+-- $writer
+
+-- | A function to construct the FChk as a textual object from its internal representation.
+writeFChk :: FChk -> Text
+writeFChk fchk =
+  let --Header line by line
+      titleB = (fA 72 $ fchk ^. #title) <> nL
+
+      infoLineB =
+        (fA 10 . tShow $ fchk ^. #calcType)
+          <> (fA 30 $ fchk ^. #method)
+          <> (fA 30 $ fchk ^. #basis)
+          <> nL
+
+      blocksText =
+        Map.foldl' (<>) mempty
+          . Map.mapWithKey (\l v -> blockWriter l v)
+          $ fchk ^. #blocks
+
+      fchkBuilder =
+        titleB
+          <> infoLineB
+          <> blocksText
+   in TL.toStrict . TB.toLazyText $ fchkBuilder
+  where
+    nL = TB.singleton '\n'
+
+----------------------------------------------------------------------------------------------------
+
+-- | Fortran A formatting.
+fA :: Int -> Text -> Builder
+fA width a = bformat (right width ' ' %. fitRight width %. stext) a
+
+-- | Fortran I formatting.
+fI :: Integral a => Int -> a -> Builder
+fI width a = bformat (left width ' ' %. fitLeft width %. int) a
+
+-- | Fortran E formatting.
+fE :: RealFloat a => Int -> Int -> a -> Builder
+fE width precision a =
+  let formFloat = TB.formatRealFloat TB.Exponent (Just precision) a
+   in bformat (left width ' ' %. fitLeft width %. builder) formFloat
+
+-- | Fortran X formatting.
+fX :: Int -> Builder
+fX width = TB.fromText . Text.replicate width $ " "
+
+-- | Fortran L formatting.
+fL :: Int -> Bool -> Builder
+fL width True = bformat (left width ' ' %. builder) "T"
+fL width False = bformat (left width ' ' %. builder) "F"
+
+----------------------------------------------------------------------------------------------------
+
+-- | A writer for FChk content blocks.
+blockWriter :: Text -> Content -> Builder
+blockWriter label value = case value of
+  Scalar a -> scalarWriter label a
+  Array a -> arrayWriter label a
+
+----------------------------------------------------------------------------------------------------
+
+-- | A writer for FChk Scalars.
+scalarWriter :: Text -> ScalarVal -> Builder
+scalarWriter label value = case value of
+  ScalarInt a -> (fA 40 label) <> (fX 3) <> (fA 1 "I") <> (fX 5) <> (fI 12 a) <> "\n"
+  ScalarDouble a -> (fA 40 label) <> (fX 3) <> (fA 1 "R") <> (fX 5) <> (fE 22 15 a) <> "\n"
+  ScalarText a -> (fA 40 label) <> (fX 3) <> (fA 1 "C") <> (fX 5) <> (fA 12 a) <> "\n"
+  ScalarLogical a -> (fA 40 label) <> (fX 3) <> (fA 1 "L") <> (fX 5) <> (fA 12 (if a then "T" else "F")) <> "\n"
+
+----------------------------------------------------------------------------------------------------
+
+-- | A writer for FChk Arrays. Text arrays are always written in @C@ type instead of @H@ type.
+arrayWriter :: Text -> ArrayVal -> Builder
+arrayWriter label value = case value of
+  ArrayInt a ->
+    let nElems = Massiv.elemsCount a
+        elemChunks =
+          Massiv.ifoldMono
+            (\i e -> (fI 12 e) <> if (i + 1) `mod` 6 == 0 || i == nElems - 1 then "\n" else mempty)
+            a
+     in (fA 40 label) <> (fX 3) <> (fA 1 "I") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemChunks
+  ArrayDouble a ->
+    let nElems = Massiv.elemsCount a
+        elemsChunks =
+          Massiv.ifoldMono
+            (\i e -> (fE 16 8 e) <> if (i + 1) `mod` 6 == 0 || i == nElems - 1 then "\n" else mempty)
+            a
+     in (fA 40 label) <> (fX 3) <> (fA 1 "R") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemsChunks
+  ArrayText a ->
+    let vectors :: Vector B Text
+        vectors = Massiv.fromList Par . Text.chunksOf 12 $ a
+        elemsChunks =
+          Massiv.ifoldMono
+            (\i e -> fA 12 e <> if (i + 1) `mod` 5 == 0 || i == nElems - 1 then "\n" else mempty)
+            vectors
+        nElems = Text.length a `div` 12 + 1
+     in (fA 40 label) <> (fX 3) <> (fA 1 "C") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemsChunks
+  ArrayLogical a ->
+    let nElems = Massiv.elemsCount a
+        elemsChunks =
+          Massiv.ifoldMono
+            (\i e -> (fL 1 e) <> if (i + 1) `mod` 72 == 0 || i == nElems - 1 then "\n" else mempty)
+            a
+     in (fA 40 label) <> (fX 3) <> (fA 1 "L") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemsChunks
