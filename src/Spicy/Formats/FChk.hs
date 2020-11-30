@@ -40,8 +40,6 @@ import Data.Massiv.Array as Massiv hiding
   )
 import Data.Text.Lazy.Builder (Builder)
 import qualified Data.Text.Lazy.Builder as TB
-import qualified Data.Text.Lazy.Builder.RealFloat as TB
-import Formatting hiding (char, string, (%))
 import Optics
 import RIO hiding
   ( Builder,
@@ -472,31 +470,6 @@ writeFChk fchk =
 
 ----------------------------------------------------------------------------------------------------
 
--- | Fortran A formatting.
-fA :: Int -> Text -> Builder
-fA width a = bformat (right width ' ' %. fitRight width %. stext) a
-
--- | Fortran I formatting.
-fI :: Integral a => Int -> a -> Builder
-fI width a = bformat (left width ' ' %. fitLeft width %. int) a
-
--- | Fortran E formatting.
-fE :: RealFloat a => Int -> Int -> a -> Builder
-fE width precision a =
-  let formFloat = TB.formatRealFloat TB.Exponent (Just precision) a
-   in bformat (left width ' ' %. fitLeft width %. builder) formFloat
-
--- | Fortran X formatting.
-fX :: Int -> Builder
-fX width = TB.fromText . Text.replicate width $ " "
-
--- | Fortran L formatting.
-fL :: Int -> Bool -> Builder
-fL width True = bformat (left width ' ' %. builder) "T"
-fL width False = bformat (left width ' ' %. builder) "F"
-
-----------------------------------------------------------------------------------------------------
-
 -- | A writer for FChk content blocks.
 blockWriter :: Text -> Content -> Builder
 blockWriter label value = case value of
@@ -530,7 +503,7 @@ arrayWriter label value = case value of
     let nElems = Massiv.elemsCount a
         elemsChunks =
           Massiv.ifoldMono
-            (\i e -> (fE 16 8 e) <> if (i + 1) `mod` 6 == 0 || i == nElems - 1 then "\n" else mempty)
+            (\i e -> (fE 16 8 e) <> if (i + 1) `mod` 5 == 0 || i == nElems - 1 then "\n" else mempty)
             a
      in (fA 40 label) <> (fX 3) <> (fA 1 "R") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
           <> elemsChunks
