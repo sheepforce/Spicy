@@ -53,6 +53,7 @@ import RIO hiding
   )
 import qualified RIO.List as List
 import qualified RIO.Map as Map
+import qualified RIO.Set as Set
 import qualified RIO.Text as Text
 import qualified RIO.Text.Lazy as TL
 import Spicy.Common
@@ -444,6 +445,8 @@ relabelLinkAtoms newLinkElem atoms fchk = do
 -- $writer
 
 -- | A function to construct the FChk as a textual object from its internal representation.
+-- Unfortunately, the order of the content blocks seems to be important and it is not entirely clear
+-- what the correct order is.
 writeFChk :: FChk -> Text
 writeFChk fchk =
   let --Header line by line
@@ -455,15 +458,42 @@ writeFChk fchk =
           <> (fA 30 $ fchk ^. #basis)
           <> nL
 
-      blocksText =
-        Map.foldl' (<>) mempty
-          . Map.mapWithKey (\l v -> blockWriter l v)
-          $ fchk ^. #blocks
+      -- CONTENT BLOCKS
+      cntntBlks = fchk ^. #blocks
+
+      -- Some blocks are expected in a given order apparently. The order of the hardcoded blocks is
+      -- given here.
+      blockOrder :: [Text]
+      blockOrder =
+        [ "Number of atoms",
+          "Charge",
+          "Multiplicity",
+          "Number of electrons",
+          "Number of alpha electrons",
+          "Number of beta electrons",
+          "Number of basis functions",
+          "Number of independent functions",
+          "Atomic numbers",
+          "Nuclear charges",
+          "Current cartesian coordinates"
+        ]
+
+      orderedBlocks =
+        let localMap = Map.restrictKeys cntntBlks $ Set.fromList blockOrder
+            keyVec = Massiv.fromList Par blockOrder :: Vector B Text
+         in Massiv.foldMono
+              (\k -> fromMaybe mempty . fmap (blockWriter k) $ localMap Map.!? k)
+              keyVec
+
+      unorderedOtherBlocks =
+        let localMap = Map.withoutKeys cntntBlks $ Set.fromList blockOrder
+         in Map.foldlWithKey' (\acc k v -> acc <> blockWriter k v) mempty localMap
 
       fchkBuilder =
         titleB
           <> infoLineB
-          <> blocksText
+          <> orderedBlocks
+          <> unorderedOtherBlocks
    in TL.toStrict . TB.toLazyText $ fchkBuilder
   where
     nL = TB.singleton '\n'
