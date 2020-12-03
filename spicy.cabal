@@ -69,6 +69,7 @@ library
       Spicy.Math
       Spicy.Math.SparseArray
       Spicy.Molecule
+      Spicy.Molecule.Internal.Multipoles
       Spicy.Molecule.Internal.Parser
       Spicy.Molecule.Internal.Types
       Spicy.Molecule.Internal.Util

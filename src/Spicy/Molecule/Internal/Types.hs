@@ -715,7 +715,8 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q00" k Monopole Monopole
 -- |
 -- A spherical dipole moment.
 data Dipole = Dipole
-  { q11c :: Double,
+  { q10 :: Double,
+    q11c :: Double,
     q11s :: Double
   }
   deriving (Eq, Show, Generic)
@@ -731,6 +732,9 @@ instance PrettyPrint Dipole where
 type MultipoleR1 = Dipole
 
 -- Lenses
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q10" k Dipole Dipole a b where
+  labelOptic = lens (\s -> q11c s) $ \s b -> s {q10 = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q11c" k Dipole Dipole a b where
   labelOptic = lens (\s -> q11c s) $ \s b -> s {q11c = b}
 
@@ -743,6 +747,8 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q11s" k Dipole Dipole a 
 -- A spherical quadrupole moment.
 data Quadrupole = Quadrupole
   { q20 :: Double,
+    q21c :: Double,
+    q21s :: Double,
     q22c :: Double,
     q22s :: Double
   }
@@ -762,6 +768,12 @@ type MultipoleR2 = Quadrupole
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q20" k Quadrupole Quadrupole a b where
   labelOptic = lens (\s -> q20 s) $ \s b -> s {q20 = b}
 
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q21c" k Quadrupole Quadrupole a b where
+  labelOptic = lens (\s -> q21c s) $ \s b -> s {q21c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q21s" k Quadrupole Quadrupole a b where
+  labelOptic = lens (\s -> q21s s) $ \s b -> s {q21s = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q22c" k Quadrupole Quadrupole a b where
   labelOptic = lens (\s -> q22c s) $ \s b -> s {q22c = b}
 
@@ -770,11 +782,13 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q22s" k Quadrupole Quadr
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical octopole moment.
+-- | A spherical octopole moment.
 data Octopole = Octopole
-  { q31c :: Double,
+  { q30 :: Double,
+    q31c :: Double,
     q31s :: Double,
+    q32c :: Double,
+    q32s :: Double,
     q33c :: Double,
     q33s :: Double
   }
@@ -791,11 +805,20 @@ instance PrettyPrint Octopole where
 type MultipoleR3 = Octopole
 
 -- Lenses
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q30" k Octopole Octopole a b where
+  labelOptic = lens (\s -> q30 s) $ \s b -> s {q30 = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q31c" k Octopole Octopole a b where
   labelOptic = lens (\s -> q31c s) $ \s b -> s {q31c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q31s" k Octopole Octopole a b where
   labelOptic = lens (\s -> q31s s) $ \s b -> s {q31s = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q32c" k Octopole Octopole a b where
+  labelOptic = lens (\s -> q32c s) $ \s b -> s {q32c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q32s" k Octopole Octopole a b where
+  labelOptic = lens (\s -> q32s s) $ \s b -> s {q32s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q33c" k Octopole Octopole a b where
   labelOptic = lens (\s -> q33c s) $ \s b -> s {q33c = b}
@@ -809,8 +832,12 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q33s" k Octopole Octopol
 -- A spherical octopole moment.
 data Hexadecapole = Hexadecapole
   { q40 :: Double,
+    q41c :: Double,
+    q41s :: Double,
     q42c :: Double,
     q42s :: Double,
+    q43c :: Double,
+    q43s :: Double,
     q44c :: Double,
     q44s :: Double
   }
@@ -830,11 +857,23 @@ type MultipoleR4 = Hexadecapole
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q40" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q40 s) $ \s b -> s {q40 = b}
 
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q41c" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q41c s) $ \s b -> s {q41c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q41s" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q41s s) $ \s b -> s {q41s = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q42c" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q42c s) $ \s b -> s {q42c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q42s" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q42s s) $ \s b -> s {q42s = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q43c" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q43c s) $ \s b -> s {q43c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q43s" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q43s s) $ \s b -> s {q43s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q44c" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q44c s) $ \s b -> s {q44c = b}
