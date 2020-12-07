@@ -2271,10 +2271,10 @@ redistributeLinkMoments mol =
   let zeroMoment =
         Multipoles
           { monopole = Just $ Monopole 0,
-            dipole = Just $ Dipole 0 0,
-            quadrupole = Just $ Quadrupole 0 0 0,
-            octopole = Just $ Octopole 0 0 0 0,
-            hexadecapole = Just $ Hexadecapole 0 0 0 0 0
+            dipole = Just $ Dipole 0 0 0,
+            quadrupole = Just $ Quadrupole 0 0 0 0 0,
+            octopole = Just $ Octopole 0 0 0 0 0 0 0,
+            hexadecapole = Just $ Hexadecapole 0 0 0 0 0 0 0 0 0
           }
       allAtoms = mol ^. #atoms
       -- Link atoms of this layer.

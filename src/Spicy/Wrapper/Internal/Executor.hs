@@ -303,6 +303,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
   let gdmaInput =
         ByteStringLazy8.unlines
           [ "file " <> (ByteStringLazy8.pack . Path.toString $ gdmaFChkPath),
+            "angstrom",
             "multipoles",
             "limit " <> (ByteStringLazy8.pack . show $ expOrder),
             "delete " <> (ByteStringLazy8.pack . show $ linkReplacement),
