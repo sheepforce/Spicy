@@ -202,27 +202,27 @@ sphericalToLocal matE sphModel = do
   let matP = sphModel ^. #axesSystem
       matPT = computeAs S . setComp Seq . transpose $ matP
       dq = sphModel ^. #dq
+
   -- The 3 x 6 matrix with the octahedral coordinates. The coordinates appear as defined above
   -- and are column vectors.
   {- ORMOLU_DISABLE -}
-  (matUVW :: Matrix S Double) <- Massiv.fromListsM Seq
+  (matC :: Matrix S Double) <- Massiv.fromListsM Seq
     --  Xu,  Xd,  Yu,  Yd, Zu, Zd
     [ [ dq, -dq,   0,   0,  0,   0]
     , [  0,   0,  dq, -dq,  0,   0]
     , [  0,   0,   0,   0, dq, -dq]
     ]
+  {- ORMOLU_ENABLE -}
 
   -- The matrix equation applied.
-  newCoords <- matPT .><. matE >>= \pe -> (computeAs S pe) .><. matUVW
+  matC' <- matPT .><. matE >>= \pe -> (computeAs S pe) .><. matC
 
   return $
     LocalRef
       { values = sphModel ^. #values,
         axesSystem = matE,
         dq = dq,
-        coordinates = Just . computeS $ newCoords
+        coordinates = Just . computeS $ matC'
       }
   where
-    vecsToMat :: Vector D Double -> Matrix D Double
-    vecsToMat v = expandOuter (Sz 1) const . (computeS :: Vector D Double -> Vector S Double) $ v
     localExc = MolLogicException "sphericalToLocal"
