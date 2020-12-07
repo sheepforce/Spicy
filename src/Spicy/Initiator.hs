@@ -125,8 +125,7 @@ inputToEnv = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Load the whole molecular system from an external file. If a filetype is not provided, try to guess
+-- | Load the whole molecular system from an external file. If a filetype is not provided, try to guess
 -- it by the file extension. If the extension cannot be understood, try the desperate choice of
 -- defaulting to XYZ. If nothing works, this will simply fail.
 loadInputMolecule :: InputMolecule -> RIO env Molecule

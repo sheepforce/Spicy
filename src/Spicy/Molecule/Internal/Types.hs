@@ -110,9 +110,8 @@ import Spicy.Common
 -- These types define the molecule and its topology. This includes atom positions, bonds, atom types
 -- and so on.
 
--- |
--- All chemical elements. Have them very clear because force fields and pdb names may interfer and are
--- just arbitrary strings.
+-- | All chemical elements. Have them very clear because force fields and pdb names may interfer and
+-- are just arbitrary strings.
 data Element
   = H
   | He
@@ -244,10 +243,9 @@ instance PrettyPrint Element where
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- An Atom in a 'Molecule'. Atoms are compared by their indices only and they must therefore be unique.
--- The coordinates of the 'Atom' are defined as 'Seq', as this is extremely easy to concatenate when
--- building a coordinate vector.
+-- | An Atom in a 'Molecule'. Atoms are compared by their indices only and they must therefore be
+-- unique. The coordinates of the 'Atom' are defined as 'Seq', as this is extremely easy to
+-- concatenate when building a coordinate vector.
 data Atom = Atom
   { -- | Chemical 'Element' of the atom.
     element :: !Element,
@@ -302,10 +300,9 @@ instance (k ~ A_Lens, a ~ Multipoles, b ~ a) => LabelOptic "multipoles" k Atom A
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A molecule, which might be the whole system, an ONIOM layer or a fragment of the system, each
--- containing possibly even higher layers for ONIOM or fragments. Stores all associated informations of
--- a layer.
+-- | A molecule, which might be the whole system, an ONIOM layer or a fragment of the system, each
+-- containing possibly even higher layers for ONIOM or fragments. Stores all associated informations
+-- of a layer.
 --
 -- For reference layers will be labeled \([0, \dots, n]\) by their recursion depth, with \(0\) being
 -- the "real" system in ONIOM style calculations. Multiple fragments would be on the same recursion
@@ -313,21 +310,21 @@ instance (k ~ A_Lens, a ~ Multipoles, b ~ a) => LabelOptic "multipoles" k Atom A
 -- the whole/real system, its fragments would be at recursion depth \(1\) and fragment \(f\) at
 -- recursion depth \(1\) would be labeled \(1.f\).
 --
--- Starting from a top level molecule, all atoms and bonds of the system are expected to be in the in
--- this top layer (except linkatoms of deeper layers). Therefore if atoms are in a deeper layers of
--- the recursion, their information is not used to describe a higher lying layer (which is lower with
--- respect to computational cost). Instead, all atoms of deeper layers (except linkatoms) must be
--- also replicated in a higher layer. While the atoms of deeper layers keep the same indices as in the
--- higher layers, it is acceptable, that an index, that was used for an atom in layer \(n\) is used for
--- a link atom in layer \(n + m, m > 0\).
+-- Starting from a top level molecule, all atoms and bonds of the system are expected to be in the
+-- in this top layer (except linkatoms of deeper layers). Therefore if atoms are in a deeper layers
+-- of the recursion, their information is not used to describe a higher lying layer (which is lower
+-- with respect to computational cost). Instead, all atoms of deeper layers (except linkatoms) must
+-- be also replicated in a higher layer. While the atoms of deeper layers keep the same indices as
+-- in the higher layers, it is acceptable, that an index, that was used for an atom in layer \(n\)
+-- is used for a link atom in layer \(n + m, m > 0\).
 --
 -- Link atoms are specific to layers and may be passed down the recursion to deeper layers but not
 -- passed up to higher layers. Therefore, while the counting of non-link-atoms must be consistent
 -- through all layers, the link atoms must be only consitent the recursion downwards but not
 -- necessarily between fragments of the same layer. If a layer \(n\) contains a link atom with index
--- \(p\), for example, and layer \(n + 1\) still contains this link atom, it must still be given index
--- \(p\). If layer \(n + 1\) on the other hand side would be stripped of this link atom, the index
--- \(p\) could be used for another link atom.
+-- \(p\), for example, and layer \(n + 1\) still contains this link atom, it must still be given
+-- index \(p\). If layer \(n + 1\) on the other hand side would be stripped of this link atom, the
+-- index \(p\) could be used for another link atom.
 --
 -- The data structure makes it necessary to construct the 'Molecule' top down, not bottom up.
 data Molecule = Molecule
@@ -417,8 +414,7 @@ instance HasMolecule Molecule where
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Flag if an atom is a link atom. If an atom is a link atom (set 2 atom), then it will contain
+-- | Flag if an atom is a link atom. If an atom is a link atom (set 2 atom), then it will contain
 -- information about the linking. See "[A new ONIOM implementation in Gaussian98. Part I. The
 -- calculation of energies, gradients, vibrational frequencies and electric field
 -- derivatives](https://doi.org/10.1016/S0166-1280(98)00475-8)"
@@ -466,9 +462,8 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "linkGFactor" k LinkInfo 
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- These are labels for molecular mechanics software. The strings are basically arbitrary and depending
--- on the MM software used.
+-- | These are labels for molecular mechanics software. The strings are basically arbitrary and
+-- depend on the MM software used.
 data FFType
   = FFMol2 !Text
   | FFTXYZ !Int
@@ -522,8 +517,7 @@ _FFBq = prism' (const FFBq) $ \s -> case s of
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Definition of a fragment. The fragments are strictly a subset of a given layer.
+-- | Definition of a fragment. The fragments are strictly a subset of a given layer.
 data Fragment = Fragment
   { -- | The name of a fragment. Doesn't need to be unique.
     label :: !Text,
@@ -553,14 +547,12 @@ instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atoms" k Fragment Fragme
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Trajectories are simply Sequences of 'Molecule's.
+-- | Trajectories are simply Sequences of 'Molecule's.
 type Trajectory = Seq Molecule
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A data structure to get a layer in the 'Molecule' contructor. Enables to find a specific layer.
+-- | A data structure to get a layer in the 'Molecule' contructor. Enables to find a specific layer.
 -- It works by giving number of lookups stepping down the recursion of the 'Molecule' structure along
 -- the 'subMol' structure. An empty sequency of indices is the top layer. Then each element
 -- will be used as a key for the 'IntMap' structure in 'subMol' structure, to step down to
@@ -581,8 +573,7 @@ type MolID = Seq Int
 --
 -- Furthermore the definition of outputs obtainable from the wrappers are defined here.
 
--- |
--- Find a specific calculation for a specific layer of the molecule. The calculation is defined by the
+-- | Find a specific calculation for a specific layer of the molecule. The calculation is defined by the
 -- 'MolID' and the 'Text' key of the '_molecule_CalcContext' 'Map'.
 data CalcID = CalcID
   { -- | Molecule layer of interest.
@@ -601,8 +592,7 @@ instance (k ~ A_Lens, a ~ CalcK, b ~ a) => LabelOptic "calcKey" k CalcID CalcID 
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Identifier for a calculation context supposed to be used as key in the '_molecule_CalcContext'
+-- | Identifier for a calculation context supposed to be used as key in the '_molecule_CalcContext'
 -- field.
 data CalcK
   = -- | An ONIOM calculation. The 'ONIOMHierarchy' defines if this
@@ -622,8 +612,7 @@ _ONIOMKey = prism' (\b -> ONIOMKey b) $ \s -> case s of
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- For all except the real system layer in an ONIOM calculation, two calculations on the molecular
+-- | For all except the real system layer in an ONIOM calculation, two calculations on the molecular
 -- structure can be defined. The actual one of interest for this system and the one inherited from the
 -- layer above, which is required for subtraction.
 data ONIOMHierarchy
@@ -642,8 +631,7 @@ instance FromJSON ONIOMHierarchy
 ====================================================================================================
 -}
 
--- |
--- Representation of multipoles for expansion of the electrostatic potential.
+-- | Representation of multipoles for expansion of the electrostatic potential.
 data Multipoles = Multipoles
   { monopole :: !(Maybe Monopole),
     dipole :: !(Maybe Dipole),
@@ -689,8 +677,7 @@ instance (k ~ A_Lens, a ~ Maybe Hexadecapole, b ~ a) => LabelOptic "hexadecapole
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A monopole moment.
+-- | A monopole moment.
 data Monopole = Monopole
   { q00 :: Double
   }
@@ -712,8 +699,7 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q00" k Monopole Monopole
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical dipole moment.
+-- | A spherical dipole moment.
 data Dipole = Dipole
   { q10 :: Double,
     q11c :: Double,
@@ -743,8 +729,7 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q11s" k Dipole Dipole a 
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical quadrupole moment.
+-- | A spherical quadrupole moment.
 data Quadrupole = Quadrupole
   { q20 :: Double,
     q21c :: Double,
@@ -828,8 +813,7 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q33s" k Octopole Octopol
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical octopole moment.
+-- | A spherical octopole moment.
 data Hexadecapole = Hexadecapole
   { q40 :: Double,
     q41c :: Double,
@@ -885,8 +869,7 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q44s" k Hexadecapole Hex
 ====================================================================================================
 -}
 
--- |
--- Available embedding methods for layer interaction in ONIOM.
+-- | Available embedding methods for layer interaction in ONIOM.
 data Embedding
   = -- | Mechanical embedding.
     Mechanical
@@ -953,8 +936,7 @@ instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "hessian"
 ====================================================================================================
 -}
 
--- |
--- How efficient a task can be performed. Used for gradient calculations mainly.
+-- | How efficient a task can be performed. Used for gradient calculations mainly.
 data NumericalEfficiency
   = -- | Analytical derivatives are available and will be used.
     Analytical
@@ -969,8 +951,7 @@ instance FromJSON NumericalEfficiency
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A task the wrapper needs to perform.
+-- | A task the wrapper needs to perform.
 data WrapperTask
   = -- | Single point energy calculation.
     WTEnergy
@@ -987,8 +968,7 @@ instance FromJSON WrapperTask
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Context specific to a QM calculation.
+-- | Context specific to a QM calculation.
 data QMContext = QMContext
   { -- | Charge of the (sub)system as transparent to the QM software.
     charge :: !Int,
@@ -1011,8 +991,7 @@ instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "mult" k QMContext QMContext
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Context specific to a MM calculation.
+-- | Context specific to a MM calculation.
 data MMContext = MMContext
   deriving (Show, Eq, Generic)
 
@@ -1023,8 +1002,7 @@ instance FromJSON MMContext
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Information needed either by a QM or MM calculation.
+-- | Information needed either by a QM or MM calculation.
 data QMMMSpec
   = -- | Information only needed for QM calculations.
     QM !QMContext
@@ -1050,8 +1028,7 @@ _MM = prism' (\b -> MM b) $ \s -> case s of
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- The context of a calculation is the combination of its input and output values.
+-- | The context of a calculation is the combination of its input and output values.
 data CalcContext = CalcContext
   { -- | Necessary information to define a calculation.
     input :: !CalcInput,
@@ -1074,8 +1051,7 @@ instance (k ~ A_Lens, a ~ Maybe CalcOutput, b ~ a) => LabelOptic "output" k Calc
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- The context for a wrapper calculation. These are information used by the system call to the wrapper
+-- | The context for a wrapper calculation. These are information used by the system call to the wrapper
 -- and the Mustache template engine for the wrapper input file as well as some Spicy internals on
 data CalcInput = CalcInput
   { -- | A 'Task' the wrapper needs to perform.
@@ -1162,8 +1138,7 @@ instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInpu
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Results from a wrapper calculation on the given niveau. If for example multiple computations are
+-- | Results from a wrapper calculation on the given niveau. If for example multiple computations are
 -- performed on the same 'Molecule' layer as in ONIOM (high and low level calculation on the model
 -- system), this type allows to store the intermediate information before combining them and putting
 -- them back to the '_molecule_EnergyDerivatives' field.
@@ -1195,8 +1170,7 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 ====================================================================================================
 -}
 
--- |
--- A known computational chemistry program to use.
+-- | A known computational chemistry program to use.
 data Program
   = Psi4
   | Nwchem
@@ -1332,8 +1306,7 @@ ppMultipoles mp =
 -- only locally to pass information around, which would otherwise need to be stored in unannotated
 -- tuples or something.
 
--- |
--- Type to pass atomwise information from parsers with atom-fragment associations around.
+-- | Type to pass atomwise information from parsers with atom-fragment associations around.
 data FragmentAtomInfo = FragmentAtomInfo
   { -- | The index of the atom in the whole structure.
     faiAtomIndex :: Int,
@@ -1349,8 +1322,7 @@ data FragmentAtomInfo = FragmentAtomInfo
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Type just to handle the information obtained from parsing a single atom line of a TXYZ file.
+-- | Type just to handle the information obtained from parsing a single atom line of a TXYZ file.
 data TXYZAtomInfo = TXYZAtomInfo
   { -- | Index of this atom in the TXYZ file. First number in a row.
     txyzIndex :: Int,
