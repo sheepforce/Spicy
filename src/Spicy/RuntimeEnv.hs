@@ -33,9 +33,7 @@ import Spicy.Molecule
 
 -- | Definition of the current 'State' in the execution of Spicy.
 data SpicyEnv = SpicyEnv
-  { -- | The input file, which constructs the calculation.
-    inputFile :: InputFile,
-    -- | The current state of the molecule with all information
+  { -- | The current state of the molecule with all information
     --   up to date. This also includes the 'Seq' of
     --   calculations to perform on each layer.import Spicy.Aeson
     molecule :: !Molecule,
@@ -56,9 +54,6 @@ data SpicyEnv = SpicyEnv
   deriving (Generic)
 
 -- Lenses
-instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "inputFile" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> inputFile s) $ \s b -> s {inputFile = b}
-
 instance (k ~ A_Lens, a ~ Molecule, b ~ a) => LabelOptic "molecule" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> molecule s) $ \s b -> s {molecule = b}
 
@@ -79,7 +74,7 @@ instance (k ~ A_Lens, a ~ ProcessContext, b ~ a) => LabelOptic "procCntxt" k Spi
 
 -- Reader Classes
 instance HasInputFile SpicyEnv where
-  inputFileL = #inputFile
+  inputFileL = #calculation
 
 instance HasMolecule SpicyEnv where
   moleculeL = #molecule
