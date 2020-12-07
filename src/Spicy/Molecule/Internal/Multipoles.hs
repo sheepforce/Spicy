@@ -14,7 +14,11 @@
 -- \[
 --
 -- \]
-module Spicy.Molecule.Internal.Multipoles () where
+module Spicy.Molecule.Internal.Multipoles
+  ( OctahedralModel (..),
+    toOctrahedralModel,
+  )
+where
 
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
@@ -86,18 +90,25 @@ toOctrahedralModel ::
   Maybe Double ->
   -- | The multipoles to convert.
   Multipoles ->
-  -- | The octahedral point charge representation of the multipoles in the principla axis of the spherical quadrupole tensor.
+  -- | The octahedral point charge representation of the multipoles in the principla axis of the
+  -- spherical quadrupole tensor.
   OctahedralModel
 toOctrahedralModel dist mp =
   let d = fromMaybe (bohr2Angstrom 0.25) (bohr2Angstrom <$> dist)
       q00 = fromMaybe 0 $ mp ^? #monopole % _Just % #q00
+      q10 = fromMaybe 0 $ mp ^? #dipole % _Just % #q10
       q11c = fromMaybe 0 $ mp ^? #dipole % _Just % #q11c
       q11s = fromMaybe 0 $ mp ^? #dipole % _Just % #q11s
       q20 = fromMaybe 0 $ mp ^? #quadrupole % _Just % #q20
       q22c = fromMaybe 0 $ mp ^? #quadrupole % _Just % #q22c
-      q22s = fromMaybe 0 $ mp ^? #quadrupole % _Just % #q22s
+      e2 = 2 :: Int
    in SphericalRef
-        { qXu = (q00 / 6) + (q11c / (2 * d)) - (q20 / (6 * d ^ 2)) + (q22c / (2 * sqrt (3) * d ^ 2)),
-          qYd = (q00 / 6) - (q11s / (2 * d)) - (q20 / (6 * d ^ 2)) - (q22c / (2 * sqrt (3) * d ^ 2)),
-          qXd = (q00 / 6) - (q11c / (2 * d)) - (q20 / (6 * d ^ 2)) + (q22c / (2 * sqrt (3) * d ^ 2))
+        { qXu = (q00 / 6) + (q11c / (2 * d)) - (q20 / (6 * d ^ e2)) + (q22c / (2 * sqrt (3) * d ^ e2)),
+          qYd = (q00 / 6) - (q11s / (2 * d)) - (q20 / (6 * d ^ e2)) - (q22c / (2 * sqrt (3) * d ^ e2)),
+          qXd = (q00 / 6) - (q11c / (2 * d)) - (q20 / (6 * d ^ e2)) + (q22c / (2 * sqrt (3) * d ^ e2)),
+          qZu = (q00 / 6) + (q10 / (2 * d)) + (q20 / (3 * d ^ e2)),
+          qYu = (q00 / 6) + (q11s / (2 * d)) - (q20 / (6 * d ^ e2)) - (q22c / (2 * sqrt (3) * d ^ e2)),
+          qZd = (q00 / 6) - (q10 / (2 * d)) + (q20 / (3 * d ^ e2))
         }
+        
+----------------------------------------------------------------------------------------------------
