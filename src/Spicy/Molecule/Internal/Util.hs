@@ -2167,7 +2167,8 @@ combineMultipoles f a b =
         dB <- b ^. #dipole
         return $
           Dipole
-            { q11c = f (dA ^. #q11c) (dB ^. #q11c),
+            { q10 = f (dA ^. #q10) (dB ^. #q10),
+              q11c = f (dA ^. #q11c) (dB ^. #q11c),
               q11s = f (dA ^. #q11s) (dB ^. #q11s)
             }
       newQuadrupole = do
@@ -2176,6 +2177,8 @@ combineMultipoles f a b =
         return $
           Quadrupole
             { q20 = f (qA ^. #q20) (qB ^. #q20),
+              q21c = f (qA ^. #q21c) (qB ^. #q21c),
+              q21s = f (qA ^. #q21s) (qB ^. #q21s),
               q22c = f (qA ^. #q22c) (qB ^. #q22c),
               q22s = f (qA ^. #q22s) (qB ^. #q22s)
             }
@@ -2184,8 +2187,11 @@ combineMultipoles f a b =
         oB <- b ^. #octopole
         return $
           Octopole
-            { q31c = f (oA ^. #q31c) (oB ^. #q31c),
+            { q30 = f (oA ^. #q30) (oB ^. #q30),
+              q31c = f (oA ^. #q31c) (oB ^. #q31c),
               q31s = f (oA ^. #q31s) (oB ^. #q31s),
+              q32c = f (oA ^. #q32c) (oB ^. #q32c),
+              q32s = f (oA ^. #q32s) (oB ^. #q32s),
               q33c = f (oA ^. #q33c) (oB ^. #q33c),
               q33s = f (oA ^. #q33s) (oB ^. #q33s)
             }
@@ -2195,8 +2201,12 @@ combineMultipoles f a b =
         return $
           Hexadecapole
             { q40 = f (hA ^. #q40) (hB ^. #q40),
+              q41c = f (hA ^. #q41c) (hB ^. #q41c),
+              q41s = f (hA ^. #q41s) (hB ^. #q41s),
               q42c = f (hA ^. #q42c) (hB ^. #q42c),
               q42s = f (hA ^. #q42s) (hB ^. #q42s),
+              q43c = f (hA ^. #q43c) (hB ^. #q43c),
+              q43s = f (hA ^. #q43s) (hB ^. #q43s),
               q44c = f (hA ^. #q44c) (hB ^. #q44c),
               q44s = f (hA ^. #q44s) (hB ^. #q44s)
             }
@@ -2223,7 +2233,8 @@ modifyMultipole f a =
         dA <- a ^. #dipole
         return $
           Dipole
-            { q11c = f (dA ^. #q11c),
+            { q10 = f (dA ^. #q10),
+              q11c = f (dA ^. #q11c),
               q11s = f (dA ^. #q11s)
             }
       newQuadrupole = do
@@ -2231,6 +2242,8 @@ modifyMultipole f a =
         return $
           Quadrupole
             { q20 = f (qA ^. #q20),
+              q21c = f (qA ^. #q21c),
+              q21s = f (qA ^. #q21s),
               q22c = f (qA ^. #q22c),
               q22s = f (qA ^. #q22s)
             }
@@ -2238,8 +2251,11 @@ modifyMultipole f a =
         oA <- a ^. #octopole
         return $
           Octopole
-            { q31c = f (oA ^. #q31c),
+            { q30 = f (oA ^. #q30),
+              q31c = f (oA ^. #q31c),
               q31s = f (oA ^. #q31s),
+              q32c = f (oA ^. #q32c),
+              q32s = f (oA ^. #q32s),
               q33c = f (oA ^. #q33c),
               q33s = f (oA ^. #q33s)
             }
@@ -2248,8 +2264,12 @@ modifyMultipole f a =
         return $
           Hexadecapole
             { q40 = f (hA ^. #q40),
+              q41c = f (hA ^. #q41c),
+              q41s = f (hA ^. #q41s),
               q42c = f (hA ^. #q42c),
               q42s = f (hA ^. #q42s),
+              q43c = f (hA ^. #q43c),
+              q43s = f (hA ^. #q43s),
               q44c = f (hA ^. #q44c),
               q44s = f (hA ^. #q44s)
             }
