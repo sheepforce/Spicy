@@ -177,16 +177,23 @@ octahedronToLocalFrame atoms bondMat =
 -- With the local axes systems in \(3 \times 3 \) matrix form
 -- \[ \mathbf{P} = \begin{bmatrix} \hat{\mathbf{p}}_x & \hat{\mathbf{p}}_y & \hat{\mathbf{p}}_z \end{bmatrix} \]
 -- \[ \mathbf{E} = \begin{bmatrix} \hat{\mathbf{e}}_x & \hat{\mathbf{e}}_y & \hat{\mathbf{e}}_z \end{bmatrix} \]
+-- and the coordinates of the point charges with column vectors of a matrix:
+-- \[ \mathbf{C} = \begin{bmatrix}
+--      d_q & -d_q & 0   &    0 &   0 &    0 \\
+--        0 &    0 & d_q & -d_q &   0 &    0 \\
+--        0 &    0 &   0 &    0 & d_q & -d_q
+--    \end{bmatrix}
+-- \]
 -- the expression can be implemented with linear algebra:
--- \[ \begin{bmatrix} u' \\ v' \\ w' \end{bmatrix} = \mathbf{P}^T \mathbf{E} \begin{bmatrix} u \\ v \\ w \end{bmatrix} \]
+-- \[ \mathbf{C}' = \mathbf{P}^T \mathbf{E} \mathbf{C} \]
 sphericalToLocal ::
-  (InnerSlice r Ix2 Double, Source r Ix2 Double, MonadThrow m) =>
-  -- | The \(3 \times 3\) matrix defining the local coordinate system. First column is
-  -- \( \hat{\mathbf{e}}_x \), second \( \hat{\mathbf{e}}_y \) and third \( \hat{\mathbf{e}}_z \)
-  Matrix r Double ->
-  -- | Spherical representation of the octahedral charge model.
+  (MonadThrow m) =>
+  -- | The matrix \(\mathbf{E}\)
+  Matrix S Double ->
+  -- | Spherical representation of the octahedral charge model with the matrix \(\mathbf{P}\).
   OctahedralModel ->
-  -- | The octahedral model rotated into the local reference frame.
+  -- | The octahedral model rotated into the local reference frame with the matrix \(\mathbf{C}'\)
+  -- as part of the result.
   m OctahedralModel
 sphericalToLocal matE sphModel = do
   unless (isSphericalRef sphModel) . throwM . localExc $
@@ -204,23 +211,18 @@ sphericalToLocal matE sphModel = do
     , [  0,   0,  dq, -dq,  0,   0]
     , [  0,   0,   0,   0, dq, -dq]
     ]
-  {- ORMOLU_ENABLE -}
 
-  let -- Coordinate vectors of the point charges.
-      vecsUVW :: Vector D (Vector S Double)
-      vecsUVW = fmap computeS . innerSlices $ matUVW
+  -- The matrix equation applied.
+  newCoords <- matPT .><. matE >>= \pe -> (computeAs S pe) .><. matUVW
 
-  -- The matrix equation mapped to all coordinates (inner slices of uvwMat)
-  newCoords :: Matrix S Double <- do
-    matPtE <- computeS <$> matPT .><. matE
-    vecsUVWtransformed :: Vector B (Vector S Double) <-
-      Massiv.mapM (\v -> computeS <$> matPtE .>< v) vecsUVW
-    matUVWtransformed <- do
-      let uvwVecsAsMat :: Vector B (Matrix D Double)
-          uvwVecsAsMat = fmap (expandOuter (Sz 1) const) vecsUVWtransformed
-      concatM (Dim 1) uvwVecsAsMat
-    return $ computeS matUVWtransformed
-
-  return undefined
+  return $
+    LocalRef
+      { values = sphModel ^. #values,
+        axesSystem = matE,
+        dq = dq,
+        coordinates = Just . computeS $ newCoords
+      }
   where
+    vecsToMat :: Vector D Double -> Matrix D Double
+    vecsToMat v = expandOuter (Sz 1) const . (computeS :: Vector D Double -> Vector S Double) $ v
     localExc = MolLogicException "sphericalToLocal"
