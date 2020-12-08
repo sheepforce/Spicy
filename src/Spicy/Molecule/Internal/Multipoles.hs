@@ -24,13 +24,18 @@ where
 
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
-import Data.Massiv.Array as Massiv
-import Optics
+import Data.Massiv.Array as Massiv hiding (swap)
+import Data.Tuple (swap)
+import Optics hiding (Empty)
 import RIO hiding (Vector, lens, view, (%~), (.~), (^.), (^?))
 import qualified RIO.HashMap as HashMap
+import RIO.Seq (Seq (..))
+import qualified RIO.Seq as Seq
 import Spicy.Common
 import Spicy.Data
+import Spicy.Math
 import Spicy.Molecule.Internal.Types hiding (S, coordinates)
+import Spicy.Molecule.Internal.Util
 
 data OctahedralValues = OctahedralValues
   { -- | Positive X
@@ -226,3 +231,192 @@ sphericalToLocal matE sphModel = do
       }
   where
     localExc = MolLogicException "sphericalToLocal"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Data type for holding the best bond partners of a given atom. The given atom is always the
+-- first one in the constructor, the others are the best bond partners found.
+data BestBondPartners
+  = Three (Int, Atom) (Int, Atom) (Int, Atom)
+  | Two (Int, Atom) (Int, Atom)
+  | One (Int, Atom)
+  deriving (Show)
+
+-- | Groups the atoms into groups of three non-colinear atoms within fragments. These groups are
+-- allowed to overlap.
+makeGroups ::
+  (MonadThrow m, MonadIO m) =>
+  -- | The whole layer for which to form groups.
+  Molecule ->
+  -- | The neighbourlist of this group if already calculated.
+  Maybe (IntMap IntSet) ->
+  m (IntMap BestBondPartners)
+makeGroups mol nL = do
+  newNL <- neighbourList 10.0 mol
+  let atoms = mol ^. #atoms
+      frags = mol ^. #fragment
+      bondMat = mol ^. #bonds
+      actualNL = fromMaybe newNL nL
+
+  return undefined
+  where
+    localExc = MolLogicException "makeGroups"
+
+-- | Grouping within a fragment.
+groupInFrag :: MonadThrow m => IntMap Atom -> IntSet -> BondMatrix -> IntMap IntSet -> m (Seq BestBondPartners)
+groupInFrag atoms frags bonds nL = do
+  let atomsInFrag = IntMap.restrictKeys atoms frags
+      bondsInFrag = cleanBondMatByAtomInds bonds frags
+  groups <- case IntMap.size atomsInFrag of
+    0 -> throwM . localExc $ "No atoms in fragment."
+    1 -> return . Seq.singleton . One . IntMap.findMin $ atomsInFrag
+    2 -> return . Seq.singleton $ Two (IntMap.findMin atomsInFrag) (IntMap.findMax atomsInFrag)
+    _ -> undefined
+  return groups
+  where
+    localExc = MolLogicException "makeGroups"
+
+data BondCase = NonTerminal | Terminal | TerminalColinear
+
+-- | Folding into overlapping groups of atoms within a fragment.
+groupsOfThree :: MonadThrow m => IntMap Atom -> BondMatrix -> IntMap IntSet -> m (Seq BestBondPartners)
+groupsOfThree atoms bonds nL = do
+  let dummyMol =
+        Molecule
+          { comment = mempty,
+            atoms = atoms,
+            bonds = bonds,
+            subMol = mempty,
+            fragment = mempty,
+            energyDerivatives = def,
+            calcContext = mempty,
+            jacobian = Nothing
+          }
+  groups <- do
+    IntMap.foldlWithKey'
+      ( \acc k a -> do
+          -- Get the bond partners of the current atom.
+          bondPartners <- bondDistanceGroups dummyMol k 2
+          directPartners <- maybe2MThrow (localExc "Too few bonds specified") $ bondPartners Seq.!? 1
+          secondSphPartners <- maybe2MThrow (localExc "Too few bonds specified") $ bondPartners Seq.!? 2
+          return undefined
+      )
+      (pure Seq.empty)
+      atoms
+  return undefined
+  where
+    localExc = MolLogicException "makeGroups"
+
+-- | This function obtains groups of 3 atoms to define a local coordinate system.
+-- We follow a decission table to select what the best way for this atom is to define its
+-- local group.
+--   1. If there are at least 2 direct bond partners, that are not colinear with this
+--      atom, use them.
+--   2. If there is just 1 direct bond partner, but a second sphere bond partner exists,
+--      we try to find a second sphere bond partner which gives a non-colinear triple.
+--   3. If there is just 1 direct bond partner and no secon sphere bond partner, we use
+--      the nearest neighbour of the first atom. This requires the neighbourlist.
+--   4. If there is no bond partner at all we use the 2 nearest neighbours of this atom.
+--      This requires a neighbourlist.
+--      4.1. If there is just one or none neighbour in the neighbourlist 'Two' or 'One' will be
+--           returned.
+selectCases ::
+  MonadThrow m =>
+  -- | All atoms in the current fragment.
+  IntMap Atom ->
+  -- | The neighbours of the current atom as obtained from a neighbourList.
+  IntSet ->
+  -- | The index of the current atom, which must be part of all atoms in the fragment.
+  (Int, Atom) ->
+  -- | Atoms directly bonded to the current one.
+  Seq (Int, Atom) ->
+  -- | Atoms in the second sphere of bonds.
+  Seq (Int, Atom) ->
+  m BestBondPartners
+selectCases aif neigbourInds atomTuple@(_, atom) sph1Neighbours sph2Neighbours = do
+  let -- Coordinates of the atom in question.
+      coordsC = atom ^. #coordinates
+
+      -- Vector of coordinates of all neighbours associated with the atom key.
+      neigboursCoords :: Vector B (Vector S Double, Int)
+      neigboursCoords =
+        Massiv.fromList Seq
+          . fmap swap
+          . IntMap.toAscList
+          . IntMap.map (getVectorS . (^. #coordinates))
+          . IntMap.restrictKeys aif
+          $ neigbourInds
+
+  -- Distances to all neighbours associated with the atom keys.
+  neighboursDistsOrdered :: Vector U (Double, Int) <-
+    Massiv.quicksort
+      <$> Massiv.traverseA
+        ( \(c, k) -> do
+            d <- distance (getVectorS coordsC) c
+            return (d, k)
+        )
+        neigboursCoords
+
+  -- Selecting the cases and entering recursion in a few colinear corner cases.
+  case (sph1Neighbours, sph2Neighbours) of
+    -- Case 1
+    (x1 :<| x2 :<| xs, _) -> do
+      let coordsX1 = x1 ^. _2 % #coordinates
+          coordsX2 = x2 ^. _2 % #coordinates
+      isLin <- isColinear coordsX1 coordsC coordsX2
+      if isLin
+        then selectCases aif neigbourInds atomTuple (x2 :<| xs) sph2Neighbours
+        else return $ Three atomTuple x1 x2
+
+    -- Case 2
+    (x1 :<| Empty, y1 :<| ys) -> do
+      let coordsX1 = x1 ^. _2 % #coordinates
+          coordsY1 = y1 ^. _2 % #coordinates
+      isLin <- isColinear coordsC coordsX1 coordsY1
+      if isLin
+        then selectCases aif neigbourInds atomTuple (Seq.singleton x1) ys
+        else return $ Three atomTuple x1 y1
+
+    -- Case 3
+    (x1 :<| Empty, Empty) -> do
+      let coordsX1 = x1 ^. _2 % #coordinates
+          nearestNeighbour = neighboursDistsOrdered !? 0
+      case nearestNeighbour of
+        Nothing -> return $ Two atomTuple x1
+        Just z1@(_, key) -> do
+          atomZ1 <- maybe2MThrow atomIdxExc $ aif ^? ix key
+          let coordsZ1 = atomZ1 ^. #coordinates
+          isLin <- isColinear coordsX1 coordsC coordsZ1
+          if isLin
+            then selectCases (IntMap.delete key aif) neigbourInds atomTuple (Seq.singleton x1) Empty
+            else return $ Three atomTuple x1 (key, atomZ1)
+
+    -- Case 4
+    (Empty, _) -> do
+      let nearestNeighbour1 = neighboursDistsOrdered !? 0
+          nearestNeighbour2 = neighboursDistsOrdered !? 1
+      case (nearestNeighbour1, nearestNeighbour2) of
+        (Just z1@(_, keyZ1), Just z2@(_, keyZ2)) -> do
+          atomZ1 <- maybe2MThrow atomIdxExc $ aif ^? ix keyZ1
+          atomZ2 <- maybe2MThrow atomIdxExc $ aif ^? ix keyZ2
+          let coordsZ1 = atomZ1 ^. #coordinates
+              coordsZ2 = atomZ2 ^. #coordinates
+          isLin <- isColinear coordsZ1 coordsC coordsZ2
+          if isLin
+            then selectCases (IntMap.delete keyZ2 aif) neigbourInds atomTuple Empty Empty
+            else return $ Three atomTuple (keyZ1, atomZ1) (keyZ2, atomZ2)
+        (Just z1@(_, keyZ1), Nothing) -> do
+          atomZ1 <- maybe2MThrow atomIdxExc $ aif ^? ix keyZ1
+          return $ Two atomTuple (keyZ1, atomZ1)
+        _ -> return $ One atomTuple
+  where
+    localExc = MolLogicException "selectCases"
+    atomIdxExc = localExc "Could not find atom in fragment."
+
+    -- Checks if three atoms are colinear.
+    isColinear :: MonadThrow m => VectorS Double -> VectorS Double -> VectorS Double -> m Bool
+    isColinear a b c = do
+      ab <- getVectorS a .-. getVectorS b
+      bc <- getVectorS b .-. getVectorS c
+      alpha <- angle ab bc
+      return . not $ alpha <= (179 / 360) * 2 * pi && alpha >= (1 / 360) * 2 * pi

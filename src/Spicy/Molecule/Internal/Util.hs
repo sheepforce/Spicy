@@ -23,6 +23,7 @@ module Spicy.Molecule.Internal.Util
     groupTupleSeq,
     groupBy,
     findAtomInSubMols,
+    findAtomInFragment,
     getNElectrons,
     getCappedAtoms,
     getMolByID,
@@ -372,6 +373,9 @@ isAtomLink NotLink = False
 isAtomLink IsLink {} = True
 
 ----------------------------------------------------------------------------------------------------
+-- |
+
+----------------------------------------------------------------------------------------------------
 
 -- | This reindexes all structures in a 'Molecule' with predefined counting scheme. This means
 -- counting of 'Atom's will start at 0 and be consecutive. This also influences bonds in '_#bonds'
@@ -462,7 +466,7 @@ reIndexMoleculeLayer repMap mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- | Given a 'IntMap.Key' (representing an 'Atom'), determine in which fragment ('_#subMol') the
+-- | Given a 'IntMap.Key' (representing an 'Atom'), determine in which depper layer ('_#subMol') the
 -- 'Atom' is.
 findAtomInSubMols ::
   -- | 'Atom' to find in the fragments.
@@ -478,6 +482,22 @@ findAtomInSubMols atomKey annoFrags =
             . IntMap.map (\mol -> atomKey `IntMap.member` (mol ^. #atoms))
             $ annoFrags
         )
+
+----------------------------------------------------------------------------------------------------
+
+-- | Looks to which fragment an atom is assigned. Fails if the atom is not assigned to any fragment,
+-- which violates the assumptions of 'Molecule'.
+findAtomInFragment :: MonadThrow m => Int -> IntMap Fragment -> m Int
+findAtomInFragment ind frags = do
+  let matchingFrags = IntMap.filter (\f -> ind `IntSet.member` (f ^. #atoms)) frags
+  thisFrag <-
+    maybe2MThrow (localExc "Atom not found in any fragment.")
+      . IntMap.minViewWithKey
+      $ matchingFrags
+  let fragNum = thisFrag ^. _1 % _1
+  return fragNum
+  where
+    localExc = MolLogicException "findAtomInFragment"
 
 ----------------------------------------------------------------------------------------------------
 

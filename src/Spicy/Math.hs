@@ -21,6 +21,8 @@ module Spicy.Math
     -- $linear
     -- $linearVector
     distance,
+    magnitude,
+    angle,
 
     -- * Conversion
 
@@ -30,7 +32,7 @@ module Spicy.Math
 where
 
 import Data.Massiv.Array as Massiv
-import Data.Massiv.Core.Operations()
+import Data.Massiv.Core.Operations ()
 import Math.NumberTheory.Roots
 import RIO hiding (Vector)
 import Spicy.Common
@@ -41,10 +43,6 @@ import Spicy.Common
 
 -- $linear
 
--- |
--- This aims at implementing an interface as close as possible to the one of the [Linear
--- package](https://hackage.haskell.org/package/linear) for the 'Massiv' types.
-
 {-
 ====================================================================================================
 -}
@@ -52,21 +50,33 @@ import Spicy.Common
 -- $linearVector
 
 ----------------------------------------------------------------------------------------------------
-{-
-Calculate the distance between two vectors of same size
--}
+
+-- | Calculate the distance between two vectors of same size.
 distance :: (Source r Ix1 a, NumericFloat r a, MonadThrow m) => Vector r a -> Vector r a -> m a
 distance a b = do
   diffVec <- a .-. b
   let dist = sqrt . Massiv.sum . Massiv.map (** 2) $ diffVec
   return dist
 
+----------------------------------------------------------------------------------------------------
+
+-- | The magnitude/length of a vector.
+magnitude :: (Floating e, Source r Ix1 e) => Vector r e -> e
+magnitude a = sqrt . Massiv.sum . Massiv.map (^ (2 :: Int)) $ a
+
+----------------------------------------------------------------------------------------------------
+
+-- | Calculates the angle between two vectors of the same size in radian.
+angle :: (Floating e, Numeric r e, Source r Ix1 e, MonadThrow m) => Vector r e -> Vector r e -> m e
+angle a b = do
+  numerator <- a `dotM` b
+  return . acos $ numerator / (magnitude a * magnitude b)
+
 {-
 ####################################################################################################
 -}
 
--- |
--- Convert a lower triangular matrix represented as a 'VS.Vector' in row major order (columns index
+-- | Convert a lower triangular matrix represented as a 'VS.Vector' in row major order (columns index
 -- changes first) back to the square matrix. The main diagonal is supposed to be included. The function
 -- fails if the number of elements in the vector is not suitable to represent the lower triangular part
 -- of a square matrix.
@@ -94,7 +104,7 @@ distance a b = do
 -- This index transformation can be used to reexpand the lower triangular matrix in vector form in row
 -- major order back to the full symmetric square matrix.
 ltMat2Square ::
-  (MonadThrow m, Manifest r Ix1 a, Mutable r Ix1 a {- ,Resize r Ix1-}) => Vector r a -> m (Matrix r a)
+  (MonadThrow m, Manifest r Ix1 a, Mutable r Ix1 a) => Vector r a -> m (Matrix r a)
 ltMat2Square ltVec = do
   let -- Elements in the lower triangular part of the matrix (including main diagonal).
       nElemLT = Massiv.elemsCount ltVec
@@ -102,12 +112,7 @@ ltMat2Square ltVec = do
   -- sqrt(8 * n_t + 1)
   rootExpr <- case exactSquareRoot (8 * nElemLT + 1) of
     Just x -> return x
-    Nothing ->
-      throwM $
-        DataStructureException "ltMat2Square" $
-          "Cannot take the square root of "
-            <> show
-              (8 * nElemLT + 1)
+    Nothing -> throwM . localExc $ ("Cannot take the square root of " <> show (8 * nElemLT + 1))
 
   -- (sqrt(8 * n_t + 1) + 1) / 2
   let nElemSquare = (rootExpr - 1) `div` 2
@@ -119,7 +124,7 @@ ltMat2Square ltVec = do
       <$> traverse
         ( \((r, c), v) -> case v of
             Just val -> return ((r, c), val)
-            Nothing -> throwM $ DataStructureException "ltMat2Square" ""
+            Nothing -> throwM . localExc $ ""
         )
         [ ((r, c), ltVec Massiv.!? lineariseIndex (r, c))
           | r <- [0 .. nElemSquare - 1],
@@ -129,6 +134,8 @@ ltMat2Square ltVec = do
   -- Square matrix in Massiv's representation.
   Massiv.resizeM (Sz (nElemSquare :. nElemSquare)) . Massiv.fromList Par $ annoLT
   where
+    localExc = DataStructureException "ltMat2Square"
+
     -- Given the indices of the square matrix (0 based), convert to index position in the linearised
     -- lower triangular matrix.
     lineariseIndex :: (Int, Int) -> Int
