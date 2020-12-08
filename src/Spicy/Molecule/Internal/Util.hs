@@ -78,6 +78,7 @@ import RIO hiding
     (%~),
     (.~),
     (^.),
+    (^..),
     (^?),
   )
 import qualified RIO.HashMap as HashMap
@@ -145,8 +146,7 @@ checkMolecule mol = do
   unless fragmentCompletenessCheck . throwM $
     MolLogicException
       "chechMolecule"
-      "The fragments must either contain all atoms of a layer or no atoms. \
-      \Sorting only a part of the atoms into fragments is not allowed."
+      "The fragments must contain all atoms of a layer."
   unless calcCheck . throwM $
     MolLogicException
       "checkMolecule"
@@ -159,16 +159,20 @@ checkMolecule mol = do
   where
     -- Indices of the atoms
     atomInds = IntMap.keysSet $ mol ^. #atoms
+
     -- Indices of the bonds.
     bondsInds =
       let tupleInds = HashMap.keys $ mol ^. #bonds
           origins = IntSet.fromList . fmap fst $ tupleInds
           targets = IntSet.fromList . fmap snd $ tupleInds
        in origins <> targets
+
     -- Check if bond indices do not exceed atom indices.
     layerIndCheck = IntSet.null $ bondsInds IntSet.\\ atomInds
+
     -- Next layer molecules. Discard the Map structure
     sM = mol ^. #subMol
+
     -- Disjointment test (no atoms and bonds shared through submolecules). This will not check
     -- link atoms (they will be removed before the disjoint check), as the may have common numbers
     -- shared through the fragemnts.
@@ -183,35 +187,39 @@ checkMolecule mol = do
         . IntMap.map (\atoms' -> (True, IntMap.filter (not . isAtomLink . isLink) atoms'))
         . fmap (^. #atoms)
         $ sM
+
     -- Check if the dimension of the atom coordinate vector is exactly 3 for all atoms.
     atomCoordCheck =
       all (== 3)
         . IntMap.map (Massiv.elemsCount . getVectorS . coordinates)
         $ mol
           ^. #atoms
+
     -- Next Layer atoms all joined
     nLAtoms = IntMap.unions . fmap (^. #atoms) $ sM
     nLAtomsInds = IntMap.keysSet nLAtoms
+
     -- All link atoms of the next layer set
     nLLinkAtomsInds = IntMap.keysSet . IntMap.filter (\a -> isAtomLink $ a ^. #isLink) $ nLAtoms
+
     -- Test if the next deeper layer is a proper subset of the current layer.
     subsetCheckAtoms = IntSet.null $ (nLAtomsInds IntSet.\\ nLLinkAtomsInds) IntSet.\\ atomInds
+
     -- Check if the bonds are bidirectorial
     bondBidectorialCheck = isBondMatrixBidirectorial $ mol ^. #bonds
+
     -- Indices of all atoms assigned to fragments.
-    allFragmentSelections =
-      IntMap.foldl'
-        (\selectionAcc fragment' -> selectionAcc `IntSet.union` (fragment' ^. #atoms))
-        IntSet.empty
-        $ mol
-          ^. #fragment
+    allFragmentSelections = IntSet.unions $ mol ^.. #fragment % each % #atoms
+
     -- Check if only existing atoms are assigned to fragments.
     fragmentsSelectionRangeCheck = allFragmentSelections `IntSet.isSubsetOf` atomInds
-    -- Check if either all or none of the atoms have been assigned to fragments. Sorting only a part
+
+    -- Check if all atoms have been assigned to fragments. Sorting only a part
     -- of the atoms into fragments is not allowed.
     fragmentCompletenessCheck =
       let diffSet = atomInds IntSet.\\ allFragmentSelections
-       in diffSet == IntSet.empty || diffSet == atomInds
+       in diffSet == IntSet.empty
+
     -- Check if charge and multiplicity combinations of this layer are fine.
     calcCheck =
       all (== True)
@@ -365,10 +373,9 @@ isAtomLink IsLink {} = True
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This reindexes all structures in a 'Molecule' with predefined counting scheme. This means counting
--- of 'Atom's will start at 0 and be consecutive. This also influences bonds in '_#bonds' and
--- layers in '_#subMol'. Link atoms will be taken care of.
+-- | This reindexes all structures in a 'Molecule' with predefined counting scheme. This means
+-- counting of 'Atom's will start at 0 and be consecutive. This also influences bonds in '_#bonds'
+-- and layers in '_#subMol'. Link atoms will be taken care of.
 reIndex2BaseMolecule :: MonadThrow m => Molecule -> m Molecule
 reIndex2BaseMolecule mol =
   let allAtomIndices = getAtomIndices mol
@@ -377,8 +384,7 @@ reIndex2BaseMolecule mol =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Get the indices of all 'Atom's in a 'Molecule', including those of sublayers in '_#subMol'
+-- | Get the indices of all 'Atom's in a 'Molecule', including those of sublayers in 'subMol'
 -- and link atoms therein. This assumes a sane 'Molecule' according to 'checkMolecule'.
 getAtomIndices :: Molecule -> IntSet
 getAtomIndices mol =
@@ -390,9 +396,8 @@ getAtomIndices mol =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Given the full molecular system, this function will find the maximum index respective key of an atom
--- in all layers.
+-- | Given the full molecular system, this function will find the maximum index respective key of an
+-- atom in all layers.
 getMaxAtomIndex :: MonadThrow m => Molecule -> m Int
 getMaxAtomIndex mol = do
   let maybeMax = fmap fst . IntSet.maxView . getAtomIndices $ mol
@@ -406,21 +411,19 @@ getMaxAtomIndex mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Reindex a complete 'Molecule', including all its deeper layers in '_#subMol') by mappings
--- from a global replacement Map, mapping old to new indices. This function assumes, that your molecule
--- is sane in the overall assumptions of this program. This means that the lower layers obey the
--- counting scheme of the atoms of the higher layers and link come last.
+-- | Reindex a complete 'Molecule', including all its deeper layers in '_#subMol') by mappings
+-- from a global replacement Map, mapping old to new indices. This function assumes, that your
+-- molecule is sane in the overall assumptions of this program. This means that the lower layers
+-- obey the counting scheme of the atoms of the higher layers and link come last.
 reIndexMolecule :: MonadThrow m => IntMap Int -> Molecule -> m Molecule
 reIndexMolecule repMap mol = molTraverse (reIndexMoleculeLayer repMap) mol
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Reindex the '_#atoms' and '_#bonds' of a single layer of a molecule (ignoring
+-- | Reindex the '_#atoms' and '_#bonds' of a single layer of a molecule (ignoring
 -- anything in the '_#subMol' field). While the completeness of the reindexing is checked and
--- incompleteness of the replacement 'IntMap' 'Int' will result in 'Left' 'String', it is not checked
--- if the 'Atom's indexing is sane and indices are unique.
+-- incompleteness of the replacement 'IntMap' 'Int' will result in 'Left' 'String', it is not
+-- checked if the 'Atom's indexing is sane and indices are unique.
 reIndexMoleculeLayer ::
   MonadThrow m =>
   -- | 'IntMap' with mappings from old indices to new indices (bonds and atoms).
@@ -459,8 +462,7 @@ reIndexMoleculeLayer repMap mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Given a 'IntMap.Key' (representing an 'Atom'), determine in which fragment ('_#subMol') the
+-- | Given a 'IntMap.Key' (representing an 'Atom'), determine in which fragment ('_#subMol') the
 -- 'Atom' is.
 findAtomInSubMols ::
   -- | 'Atom' to find in the fragments.
@@ -479,8 +481,7 @@ findAtomInSubMols atomKey annoFrags =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Get the number of electrons for a 'Molecule' with a given charge.
+-- | Get the number of electrons for a 'Molecule' with a given charge.
 getNElectrons ::
   -- | The 'Molecule' to check.
   Molecule ->
@@ -496,9 +497,8 @@ getNElectrons mol charge' =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Given the atoms of a model system molecule, find all atoms @LAC@, that have been capped with a link
--- atom.
+-- | Given the atoms of a model system molecule, find all atoms @LAC@, that have been capped with a
+-- link atom.
 getCappedAtoms :: IntMap Atom -> IntMap Atom
 getCappedAtoms atoms' =
   let linkAtoms = IntMap.filter (isAtomLink . isLink) atoms'
@@ -511,9 +511,8 @@ getCappedAtoms atoms' =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- From the complete data structure pf the 'Molecule', get the specific layer, you want.  This is now
--- the new top layer.
+-- | From the complete data structure pf the 'Molecule', get the specific layer, you want.  This is
+-- now the new top layer.
 getMolByID :: MonadThrow m => Molecule -> MolID -> m Molecule
 getMolByID mol Seq.Empty = return mol
 getMolByID mol (i :<| is) =
@@ -558,8 +557,8 @@ let stepThroughLayers = fmap (\subMolIx -> #subMol % ix subMolIx) molID'
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- From the complete data structure pf the 'Molecule', get the specific layer and a calculation on it.
+-- | From the complete data structure pf the 'Molecule', get the specific layer and a calculation on
+-- it.
 getCalcByID :: MonadThrow m => Molecule -> CalcID -> m (CalcContext, Molecule)
 getCalcByID mol calcID = do
   molLayerOfInterest <- getMolByID mol (calcID ^. #molID)
@@ -571,8 +570,8 @@ getCalcByID mol calcID = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Generates a lens for calculation ID in a molecule. The type signature is confusing, read it more as
+-- | Generates a lens for calculation ID in a molecule. The type signature is confusing, read it
+-- more as
 --
 -- @
 --     calcIDLensGen :: CalcID -> Lens' Molecule CalcContext
@@ -584,8 +583,7 @@ calcIDLensGen (CalcID molID' calcKey') = castOptic @An_AffineTraversal (molIDLen
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Separates a new subsystem from the current molecule layer. Covalent bonds that were cut, can be
+-- | Separates a new subsystem from the current molecule layer. Covalent bonds that were cut, can be
 -- capped with link atoms. The following behaviour is employed for the constructor fields of the
 -- sublayer 'Molecule':
 --
@@ -633,10 +631,12 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
       (capAtomElement, capAtomLabel, capAtomFFType) = case capAtomInfo of
         Nothing -> (Nothing, Nothing, Nothing)
         Just (caElement, caLabel, caFFType) -> (Just caElement, Just caLabel, Just caFFType)
+
       -- Determine which submolecules already exist and find the largest index of the existing
       -- submolecules.
       maxSubMolIndex = fst <$> IntMap.lookupMax (mol ^. #subMol)
       newSubLayerIndex = fromMaybe 0 $ (+ 1) <$> maxSubMolIndex
+
       -- Define some default data for the new sublayer molecule.
       slComment =
         "Sublayer of "
@@ -644,8 +644,10 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
           <> " keeping the indices "
           <> tShow (IntSet.toList newLayerInds)
           <> "."
+
       -- Just the atoms from the old layer that are kept but no link atoms added yet.
       slAtomsToKeep = (mol ^. #atoms) `IntMap.restrictKeys` newLayerInds
+
       -- Bonds from the old layer to keep but no bonds for link atoms added yet.
       slBondsToKeep = cleanBondMatByAtomInds (mol ^. #bonds) newLayerInds
       slSubMol = IntMap.empty
@@ -742,6 +744,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
 
   let -- Add the Jacobian to the otherwise final sublayer and add the sublayer to the input system.
       subLayerWithJacobian = subLayerWithLinkAdded & #jacobian ?~ MatrixS slJacobian
+
       -- Add the sublayer with its new key as submolecule to the original input system.
       markedMolWithNewSublayer =
         mol & #subMol %~ IntMap.insert newSubLayerIndex subLayerWithJacobian
@@ -766,8 +769,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Function to create a capping link atom from an atom to keep and an atom, that has been cut away.
+-- | Function to create a capping link atom from an atom to keep and an atom, that has been cut away.
 --
 -- Following special behaviours are used here:
 --
@@ -866,16 +868,12 @@ createLinkAtom gScaleOption linkElementOption label' fftype (cappedKey, cappedAt
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Calculate the new coordinates of a link atom as:
---
+-- | Calculate the new coordinates of a link atom as:
 -- \[
 --     \mathbf{r}^\mathrm{LA} =
 --     \mathbf{r}^\mathrm{LAC} + g ( \mathbf{r}^\mathrm{LAH} - \mathbf{r}^\mathrm{LAC})
 -- \]
---
 -- With:
---
 -- - \( \mathbf{r}^\mathrm{LA} \): the coordinates of the created link atom
 -- - \( \mathbf{r}^\mathrm{LAH} \): the coordinates of the atom that has been removed by creating the
 --   new layer
@@ -898,11 +896,10 @@ calcLinkCoords cappedAtomCoords removedAtomCoords gScale = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Adds an 'Atom' to a specified 'Molecule' layer within the full molecular system. The  'IntMap.Key'
--- of the new atom will be larger by 1 than the largest atom index in the full system. The atom will
--- also be added to all deeper layers than the specified one with the same 'IntMap.Key'. No bonds will
--- be updated.
+-- | Adds an 'Atom' to a specified 'Molecule' layer within the full molecular system. The
+-- 'IntMap.Key' of the new atom will be larger by 1 than the largest atom index in the full system.
+-- The atom will also be added to all deeper layers than the specified one with the same
+-- 'IntMap.Key'. No bonds will be updated.
 --
 -- The 'Int' returned is the 'IntMap' key of the newly added atom.
 addAtom :: MonadThrow m => Molecule -> MolID -> Atom -> m (Int, Molecule)
@@ -962,13 +959,12 @@ addAtom fullMol molID' atom = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This function adds an atom with a given key to all layers below the molecule which was given as
+-- | This function adds an atom with a given key to all layers below the molecule which was given as
 -- input. This can cause problems if the key, that is given is already present. If it is already
--- present in the  layers visible to this function (current one and below) an exception will be thrown.
--- But if a sublayer is given to this function and you specify a key to this function, which is present
--- in layers above (not visible to this function) but not in the layers visible, you will end up with
--- an inconsistent molecule.
+-- present in the  layers visible to this function (current one and below) an exception will be
+-- thrown. But if a sublayer is given to this function and you specify a key to this function, which
+-- is present in layers above (not visible to this function) but not in the layers visible, you will
+-- end up with an inconsistent molecule.
 addAtomWithKeyLocal :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
 addAtomWithKeyLocal mol key atom = do
   -- Before doing anything, make sure that the input is sane.
@@ -1001,12 +997,11 @@ addAtomWithKeyLocal mol key atom = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Removes an 'Atom' specified by its index key from the 'Molecule' and all deeper layers. If the atom
--- specified was a link atom in the highest layer, it will remove link atoms in the deeper layers,
--- that have the same key. If the atom to remove was not a link atom in the highest layer, but a
--- link atom with the same index is found in deeper layers, the link atom will not be touched. Bonds
--- will be cleaned from references to this atom, if the atom is removed.
+-- | Removes an 'Atom' specified by its index key from the 'Molecule' and all deeper layers. If the
+-- atom specified was a link atom in the highest layer, it will remove link atoms in the deeper
+-- layers, that have the same key. If the atom to remove was not a link atom in the highest layer,
+-- but a link atom with the same index is found in deeper layers, the link atom will not be touched.
+-- Bonds will be cleaned from references to this atom, if the atom is removed.
 
 -- TODO (phillip|p=100|#Wrong) - Change the behaviour regarding link atoms. The new creation of atoms is more safe.
 removeAtom :: MonadThrow m => Molecule -> Int -> m Molecule
@@ -1059,8 +1054,7 @@ removeAtom mol atomInd = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Descriptor of what to do with bonds.
+-- | Descriptor of what to do with bonds.
 data BondOperation
   = Add
   | Remove
@@ -1068,8 +1062,7 @@ data BondOperation
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Adds\/removes a bond recursively to\/from a 'Molecule' and its deeper layers. Two atom 'IntMap.Key's
+-- | Adds\/removes a bond recursively to\/from a 'Molecule' and its deeper layers. Two atom 'IntMap.Key's
 -- are specified, to indicate between which 'Atom's a new bond shall be inserted/removed. If these
 -- 'Atom's/'IntMap.Key's do not exist in the top layer, this function will fail. If the atoms do not
 -- exist in deeper layers or one of them became a link atom, no bond will be inserted/removed in the
@@ -1143,10 +1136,6 @@ changeBond operation mol (at1, at2) = do
 ----------------------------------------------------------------------------------------------------
 
 -- |
--- Obtain the coordinates of the current molecule layer as nAtoms x 3 matrix. This fails if one of the
--- coordinate vectors is not 3 elements long.
-
--- |
 -- Get the coordinates of the current molecule layer as matrix with (nAtoms x 3), where the cartesian
 -- coordinates for each atom are along the rows of the matrix. Fails if some of the coordinate vectors
 -- have the wrong size.
@@ -1159,17 +1148,9 @@ getCoordinatesAs3NMatrix mol = do
   allCoordsConcat <- Massiv.concatM 1 . fmap snd . IntMap.toAscList $ atomCoords
   Massiv.resizeM (Sz (nAtoms :. 3)) allCoordsConcat
 
--- return undefined
--- . Massiv.computeAs Massiv.S
--- . Massiv.setComp Par
-
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Calculates the distance matrix of the current molecule layer in parallel.
-
--- |
--- Calculates a distance matrix from a linearised vector of cartesian coordinates.
+-- | Calculates a distance matrix from a linearised vector of cartesian coordinates.
 {-# INLINE distMat #-}
 distMat :: (MonadThrow m) => Molecule -> m (Matrix D Double)
 distMat mol = do
@@ -1179,13 +1160,16 @@ distMat mol = do
   let -- Get the number of atoms.
       nAtoms :: Int
       Sz (nAtoms :. _) = Massiv.size n3Vec
+
       -- The x-Axis is now a repetition of the atoms on the y-Axis (which were previously
       -- the x-axis) and z now stores the 3 compotents of the coordinates.
       xVec :: Array D Ix3 Double
       xVec = Massiv.expandOuter (Sz1 nAtoms) const n3Vec
+
       -- Swap x and y axsis and also have numbers of atoms ox x again.
       yVec :: Array D Ix3 Double
       yVec = Massiv.transposeInner xVec
+
       -- The xVec is now a structure with repetition of all atom coordinates along the x-Axis, the
       -- index of the atom on the y axis and the cartesian components on the z axis. The yVec has x-
       -- and y-axes transposed. Now overlap these two matrices and for each x and y components, a
@@ -1198,8 +1182,7 @@ distMat mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Get mapping from dense arrays as in Massiv (starting at 0) to the sparse indexing used in the
+-- | Get mapping from dense arrays as in Massiv (starting at 0) to the sparse indexing used in the
 -- 'Molecule' type with 'IntMap' and 'HashMap'.
 {-# INLINE getDenseSparseMapping #-}
 getDenseSparseMapping :: Molecule -> Vector P Int
@@ -1208,8 +1191,7 @@ getDenseSparseMapping mol =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- The opposite of 'getDenseSparseMapping'. Contains mapping from the original atom indices to the
+-- | The opposite of 'getDenseSparseMapping'. Contains mapping from the original atom indices to the
 -- dense indices.
 {-# INLINE getSparseDenseMapping #-}
 getSparseDenseMapping :: Molecule -> IntMap Int
@@ -1220,22 +1202,21 @@ getSparseDenseMapping mol =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Get the atoms of the current layer in a dense Massiv vector.
+-- | Get the atoms of the current layer in a dense Massiv vector.
 {-# INLINE getAtomsAsVector #-}
 getAtomsAsVector :: Molecule -> Vector B Atom
 getAtomsAsVector mol = Massiv.fromList Par . fmap snd . IntMap.toAscList . (^. #atoms) $ mol
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Generate a neighbouhr list. This is an set of association of one atom, with all the ones, which are
--- within a certain distance. The neighbours are free of self-interaction.
+-- | Generate a neighbouhr list. This is an set of association of one atom, with all the ones, which
+-- are within a certain distance. The neighbours are free of self-interaction.
 {-# INLINE neighbourList #-}
 neighbourList :: (MonadThrow m, MonadIO m) => Double -> Molecule -> m (IntMap IntSet)
 neighbourList maxNeighbourDist mol = do
   -- Gets the atom coordinates in Nx3 matrix representation.
   atomCoords <- Massiv.computeAs Massiv.S . Massiv.setComp Par <$> getCoordinatesAs3NMatrix mol
+
   -- Find maximum and minumum value in each dimension.
   xCoords <- atomCoords <!? 0
   yCoords <- atomCoords <!? 1
@@ -1246,33 +1227,35 @@ neighbourList maxNeighbourDist mol = do
   yMax <- Massiv.maximumM yCoords
   zMin <- Massiv.minimumM zCoords
   zMax <- Massiv.maximumM zCoords
+
   let -- Mapping from dense 0-based coordinates to the sparse indexing in the Molecule.
       atomIndexDenseToSparseMapping :: Vector P Int
       atomIndexDenseToSparseMapping = getDenseSparseMapping mol
+
       -- Mapping from the sparse indices as used in the mol to the dense ones as used in arrays.
       atomIndexSparseToDenseMapping :: IntMap Int
       atomIndexSparseToDenseMapping = getSparseDenseMapping mol
+
       -- Convert the original sparse atom IntMap to the dense representation as used in arrays.
       atomDenseMap :: IntMap Atom
       atomDenseMap = intReplaceMapKeys atomIndexSparseToDenseMapping $ mol ^. #atoms
-      {-
-      -- The number of atoms in the current molecule layer.
-      nAtoms :: Int
-      nAtoms = IntMap.size atomIndexDenseToSparseMapping
-      -}
+
       -- Definition of the cell dimensions of an orthorhombic cell around the atoms
       _orthorhombicCellSize :: (Double, Double, Double)
       _orthorhombicCellSize@(cellSizeX, cellSizeY, cellSizeZ) =
         (xMax - xMin, yMax - yMin, zMax - zMin)
+
       -- Define a bin size for linear scaling neighbour search, which defines the side length of the
       -- cubic bin cells. It must be at least as big as the maximum neighbour distance but a minimum
       -- of 3 angstrom cubes will be used.
       binSize :: Double
       binSize = max maxNeighbourDist 3
+
       -- Calculate the maximum bin index in each direction. (0-based)
       nBinsMaxIx :: (Int, Int, Int)
       nBinsMaxIx@(nBinsMaxIxX, nBinsMaxIxY, nBinsMaxIxZ) =
         let f cellSz = floor $ cellSz / binSize in (f cellSizeX, f cellSizeY, f cellSizeZ)
+
       -- The number of bins per direction.
       nBinsDim :: (Int, Int, Int)
       nBinsDim@(nBinsX, nBinsY, nBinsZ) = (nBinsMaxIxX + 1, nBinsMaxIxY + 1, nBinsMaxIxZ + 1)
@@ -1280,11 +1263,7 @@ neighbourList maxNeighbourDist mol = do
       -- Linearised index for the bin cells.
       ixOrigin = (0, 0, 0)
       binLinearIxRange = (ixOrigin, nBinsMaxIx)
-      {-
-      -- The overall number of bins.
-      nBins :: Int
-      nBins = Data.Ix.rangeSize binLinearIxRange
-      -}
+
       -- Sort the atoms into bins now. This is basically the conversion from the cartesian
       -- coordinates to bin indices in R3.
       atomBinAssignment :: Matrix D Int
@@ -1297,6 +1276,7 @@ neighbourList maxNeighbourDist mol = do
               _ -> -1
           )
           atomCoords
+
       -- Linearise the bin assignment of the atoms with respect to the bin index.
       atomBinAssignmentLinear :: Massiv.Vector D Int
       atomBinAssignmentLinear =
@@ -1309,6 +1289,7 @@ neighbourList maxNeighbourDist mol = do
           )
           0
           atomBinAssignment
+
       -- Sort the atoms into bins (bin characterised by first index) and keep their index around in a
       -- tuple as (assignedBin, atomIndex).
       atomBinAssignmentLinearSort :: Massiv.Vector U (Int, Int)
@@ -1318,29 +1299,12 @@ neighbourList maxNeighbourDist mol = do
           . Massiv.setComp Par
           . Massiv.imap (\atomIx binLIx -> (binLIx, atomIx))
           $ atomBinAssignmentLinear
-  {-
-  -- A vector of (linearised bin index, number of atoms in this bin)
-  atomsPerBin :: Massiv.Vector DS (Int, Int)
-  atomsPerBin =
-    Massiv.tally
-      . Massiv.computeAs Massiv.S
-      . Massiv.setComp Par
-      . Massiv.map fst
-      $ atomBinAssignmentLinearSort
-  -- The maximum amount of atoms in a bin.
-  maxAtomsPerBin :: Int
-  maxAtomsPerBin =
-    Massiv.maximum'
-      . Massiv.map snd
-      . Massiv.computeAs Massiv.U
-      . Massiv.setComp Par
-      $ atomsPerBin
-  -}
 
   -- A HashMap from scalar bin index to the atoms a bin contains.
   binAtomMap <- do
     -- Create the equally sized rows of the bin (rows) to atom indices (column).
     let binGroups = vectorToGroups fst atomBinAssignmentLinearSort
+
     -- The bin indices (only bins that actually contain atoms)
     binIndices <-
       traverse
@@ -1358,6 +1322,7 @@ neighbourList maxNeighbourDist mol = do
         )
         binGroups
         `using` rpar
+
     -- The atom vectors already expanded to matrices for easier concatenation.
     let binAtomSets :: [IntSet]
         binAtomSets = List.map (IntSet.fromList . List.map snd) binGroups
@@ -1372,6 +1337,7 @@ neighbourList maxNeighbourDist mol = do
           Par
           (Sz (nBinsX :> nBinsY :. nBinsZ))
           (\lBinIx -> HashMap.lookupDefault IntSet.empty lBinIx binAtomMap)
+
       -- Create a stencil over the 3 bin dimensions, which combines all sets of the neighbouring bins
       -- with the set of this bin.
       {-# INLINE neighbourCollectionStencil #-}
@@ -1385,11 +1351,13 @@ neighbourList maxNeighbourDist mol = do
                   [(x, y, z) | x <- validIndRange, y <- validIndRange, z <- validIndRange]
               allStencilGetters = fmap get allStencilIndices
            in foldl' (<>) (pure IntSet.empty) allStencilGetters
+
       -- Apply the stencil to the bins and collect in each bin all the atoms, that need to be checked
       -- against each other.
       collectedAtomSetInBins :: Array DW Ix3 IntSet
       collectedAtomSetInBins =
         Massiv.mapStencil (Fill IntSet.empty) neighbourCollectionStencil binAtomMatrix
+
       -- Within each collected bin, calculate all distances now of all possible combinations and
       -- keep those, which fullfill the distance criterion.
       neighboursInBins :: Array D Ix3 (IntMap IntSet)
@@ -1436,6 +1404,7 @@ neighbourList maxNeighbourDist mol = do
                 )
                 unfilteredPotentialNeigbhours
        in neighbours
+
     -- Checks for a set of target atoms, if they are within a given distance of the origin atom.
     -- This never fails. If an atom that was looked up by its index is not in the IntMap of atoms,
     -- it will not be a neighbour of the origin. If the origin cannot be found, there will be no
@@ -1457,9 +1426,8 @@ neighbourList maxNeighbourDist mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Quadratic scaling version of bond matrix guessing. Uses full distance matrix to filter for distances
--- small enough. Applies only to the current layer of the molecule.
+-- | Quadratic scaling version of bond matrix guessing. Uses full distance matrix to filter for
+-- distances small enough. Applies only to the current layer of the molecule.
 --
 -- If the covalent radius of an element is unknown, no bonds for this atom will be defined.
 {-# INLINE guessBondMatrixSimple #-}
@@ -1468,18 +1436,23 @@ guessBondMatrixSimple covScaling mol = do
   let -- Mapping from the dense 0-based coordinates to the sparse indexing in the Molecule.
       atomIndexDenseToSparseMapping :: Vector P Int
       atomIndexDenseToSparseMapping = getDenseSparseMapping mol
+
       -- If no scaling factor for covalent radii checks has been defined, default to 1.4.
       radScaling :: Double
       radScaling = fromMaybe defCovScaling covScaling
+
       -- Vector of all atoms in dense indexing.
       atomsVector :: Massiv.Vector B Atom
       atomsVector = getAtomsAsVector mol
+
       -- Number of atoms in the molecule.
       nAtoms :: Int
       nAtoms = Massiv.elemsCount atomsVector
+
       -- Vector of all elements.
       elementsVector :: Massiv.Vector B Element
       elementsVector = Massiv.compute . Massiv.setComp Par . Massiv.map element $ atomsVector
+
       -- Build the same strucute for element pairs as it has been done for the distance matrix.
       elementPairs :: Matrix D (Element, Element)
       elementPairs =
@@ -1488,6 +1461,7 @@ guessBondMatrixSimple covScaling mol = do
             yElements :: Matrix D Element
             yElements = Massiv.expandOuter (Sz nAtoms) const elementsVector
          in Massiv.zip xElements yElements
+
       -- Calculate the sum of the covalent radii for the element pairs and then scale them.
       covRadiiSums :: Matrix D (Maybe Double)
       covRadiiSums =
@@ -1498,8 +1472,10 @@ guessBondMatrixSimple covScaling mol = do
               return $ radScaling * (radiusA + radiusB)
           )
           elementPairs
+
   -- Calculate the distance matrix.
   distanceMatrix <- distMat mol
+
   let -- Create a dense bond matrix but keep it delayed.
       bondMatrixDenseSelfeInteraction :: Matrix D Bool
       bondMatrixDenseSelfeInteraction =
@@ -1512,12 +1488,14 @@ guessBondMatrixSimple covScaling mol = do
           )
           distanceMatrix
           covRadiiSums
+
       -- Remove the self-interaction from the bond matrix.
       bondMatrixDense :: Matrix D Bool
       bondMatrixDense =
         Massiv.imap
           (\(ixC :. ixR) val -> if ixC == ixR then False else val)
           bondMatrixDenseSelfeInteraction
+
   -- Fold the dense bond matrix to the sparse HashMap representation.
   bondMatrix <-
     Massiv.ifoldlP
@@ -1537,18 +1515,19 @@ guessBondMatrixSimple covScaling mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Linear scaling version of bond matrix guessing based on covalent radii. Constructs a neighbourlist
--- first and only checks within the neighbour list for potential bond partners.
+-- | Linear scaling version of bond matrix guessing based on covalent radii. Constructs a
+-- neighbourlist first and only checks within the neighbour list for potential bond partners.
 {-# INLINE guessBondMatrix #-}
 guessBondMatrix :: (MonadThrow m, MonadIO m) => Maybe Double -> Molecule -> m BondMatrix
 guessBondMatrix covScaling mol = do
   let -- Original IntMap of the atoms.
       atoms' :: IntMap Atom
       atoms' = mol ^. #atoms
+
       -- Get all chemical elements of the current molecule layer.
       atomElements :: IntMap Element
       atomElements = IntMap.map element atoms'
+
       -- Get the largest covalent radius.
       atomMaxCovRadius :: Maybe Double
       atomMaxCovRadius =
@@ -1557,6 +1536,7 @@ guessBondMatrix covScaling mol = do
           . IntMap.filter isJust
           . IntMap.map (covalentRadii Map.!?)
           $ atomElements
+
       -- If no scaling factor for covalent radii checks has been defined, default to 1.4.
       radiusScale :: Double
       radiusScale = fromMaybe defCovScaling covScaling
@@ -1620,10 +1600,9 @@ guessBondMatrix covScaling mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Fragment detection in a molecule. The fragment detection works by following the bond matrix. Sets of
--- atoms, which do not have any covalent connections to atoms outside of their own set are considered a
--- fragment.
+-- | Fragment detection in a molecule. The fragment detection works by following the bond matrix.
+-- Sets of atoms, which do not have any covalent connections to atoms outside of their own set are
+-- considered a fragment.
 {-# INLINE fragmentDetectionDetached #-}
 fragmentDetectionDetached :: MonadThrow m => Molecule -> m (IntMap IntSet)
 fragmentDetectionDetached mol = do
@@ -1656,6 +1635,7 @@ fragmentDetectionDetached mol = do
               HashMap.filterWithKey
                 (\(oIx, _) val -> oIx == atomIndex && val)
                 bondMatrix
+
           -- Only the bond targets, that are not yet part of the fragment.
           newTargets = bondsTargetsOfThisAtoms IntSet.\\ fragmentAcc
        in if IntSet.null newTargets
@@ -1668,6 +1648,7 @@ fragmentDetectionDetached mol = do
                     (\fragAcc newTarget -> findFromStartingAtom newTarget bondMatrix fragAcc)
                     fragmentAccNew
                     newTargets
+
     -- Move through a complete molecule until all fragments have been found.
     findAllFragments ::
       -- | Bond matrix of the complete molecule.
@@ -1682,12 +1663,15 @@ fragmentDetectionDetached mol = do
           -- fragments as a starting atom for the next fragment search.
           atomHead = fst <$> IntMap.lookupMin atomMapAcc
           newFragment = findFromStartingAtom <$> atomHead <*> pure bondMat <*> pure IntSet.empty
+
           -- Remove the atoms of the new fragment from the whole system for the next iteration.
           atomMapAccNew = IntMap.withoutKeys atomMapAcc <$> newFragment
+
           -- Get the highest key of the fragment IntMap before insertion of the new fragment.
           highestKey = case IntMap.lookupMax fragAcc of
             Just (k, _) -> k
             Nothing -> 0
+
           -- Add the new fragment with an incremented key to the IntMap of fragments.
           newFragAcc = IntMap.insert (highestKey + 1) <$> newFragment <*> pure fragAcc
        in case (atomMapAccNew, newFragAcc) of
@@ -1700,9 +1684,8 @@ fragmentDetectionDetached mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This function adds multipole centres to a given molecule layer. In the context of ONIOM, this means,
--- that the multipoles of a real system are used as a polarisation cloud of the deeper layer.
+-- | This function adds multipole centres to a given molecule layer. In the context of ONIOM, this
+-- means, that the multipoles of a real system are used as a polarisation cloud of the deeper layer.
 -- Polarisation centres, that are real atoms in the model system, will be removed. A sequence of values
 -- gives scaling factors for the multipoles in bond distances.
 --
@@ -1849,8 +1832,7 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This function takes a starting atom in given layer and starts moving away from it along the bonds.
+-- | This function takes a starting atom in given layer and starts moving away from it along the bonds.
 -- Atoms of the same bond distance will be grouped. Therefore all atoms 1 bond away from the start will
 -- form a group, all bonds 2 bonds away from the starting atom will form a group and so on. Atoms will
 -- only belong to one group always, which is relevant for cyclic structures. They will always be
@@ -1941,8 +1923,7 @@ bondDistanceGroups mol startAtomInd maxBondSteps = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Given a molecule, build the associations of this layers atoms, with the fragments of this layers.
+-- | Given a molecule, build the associations of this layers atoms, with the fragments of this layers.
 -- Therefore, if fragments represent the whole molecule, this will assign Just Fragment to each atom.
 -- This is the fragment to which the atom belongs.
 getAtomAssociationMap ::
@@ -1980,8 +1961,7 @@ getAtomAssociationMap mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Parser easily obtain lists of 'FragmentAtomInfo', which need to be converted to proper fragments and
+-- | Parser easily obtain lists of 'FragmentAtomInfo', which need to be converted to proper fragments and
 -- atoms for the molecule. This function builds the data types for '_#atoms' and
 -- '_#fragment'.
 fragmentAtomInfo2AtomsAndFragments :: [FragmentAtomInfo] -> (IntMap Atom, IntMap Fragment)
@@ -2001,8 +1981,7 @@ fragmentAtomInfo2AtomsAndFragments info =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Obtains the Jacobian matrix for the transformation from the basis of the model system to
+-- | Obtains the Jacobian matrix for the transformation from the basis of the model system to
 -- the basis of a real system as used in the equation for ONIOM gradients:
 --
 -- \[
@@ -2128,11 +2107,14 @@ getJacobian realAtoms modelAtoms = do
                   -- values per atom (x, y, z) are present. These are the atom indices again now.
                   modelIx = modelCartIx `div` 3
                   realIx = realCartIx `div` 3
+
                   -- This is the cartesian component of the gradient of an atom. 0:x, 1:y, 2:z
                   modelComponent = modelCartIx `mod` 3
                   realComponent = realCartIx `mod` 3
+
                   -- Check wether the current real atom is also in the model system.
                   realInModel = join $ global2Local IntMap.!? realIx
+
                   -- If the real atom is present in the model system, the gradient of the model system
                   -- for this atom is used instead. Only use the gradient for the appropriate cartesian
                   -- components (x component provides x component, but not x provided y).
@@ -2140,6 +2122,7 @@ getJacobian realAtoms modelAtoms = do
                     Nothing -> 0
                     Just localModelKey ->
                       if modelIx == localModelKey && modelComponent == realComponent then 1 else 0
+
                   -- Check if the current pair belogns to a link atom in the model system. Keep it only
                   -- if the cartesian components match.
                   (link2ModelGValue, link2RealGValue) =
@@ -2283,9 +2266,8 @@ modifyMultipole f a =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Redistributes the multipole moments of the link atoms of a given molecule layer (not its sublayers)
--- homogenously among all other atoms of the the layer.
+-- | Redistributes the multipole moments of the link atoms of a given molecule layer (not its
+-- sublayers) homogenously among all other atoms of the the layer.
 redistributeLinkMoments :: Molecule -> Molecule
 redistributeLinkMoments mol =
   let zeroMoment =
@@ -2297,17 +2279,22 @@ redistributeLinkMoments mol =
             hexadecapole = Just $ Hexadecapole 0 0 0 0 0 0 0 0 0
           }
       allAtoms = mol ^. #atoms
+
       -- Link atoms of this layer.
       linkAtoms = IntMap.filter (isAtomLink . isLink) allAtoms
+
       -- The model atoms without the link atoms.
       set1Atoms = IntMap.filter (not . isAtomLink . isLink) allAtoms
       nSet1Atoms = IntMap.size set1Atoms
       sumOfLinkMoments = IntMap.foldl' (combineMultipoles (+)) zeroMoment . fmap (^. #multipoles) $ linkAtoms
       linkMomentsScaled = modifyMultipole (/ (fromIntegral nSet1Atoms)) sumOfLinkMoments
+
       -- Distribute the link atom multipoles homogenously over the set1 atoms.
       newSet1Atoms = fmap (\a -> a & #multipoles %~ (combineMultipoles (+)) linkMomentsScaled) set1Atoms
+
       -- Remove the multipole information from the link atoms.
       newLinkAtoms = fmap (\a -> a & #multipoles .~ def) linkAtoms
+
       -- Recombine the set 1 and 2 atoms again to give the layer with redistributed multipoles.
       newAtoms = IntMap.union newSet1Atoms newLinkAtoms
    in mol & #atoms .~ newAtoms
@@ -2325,6 +2312,7 @@ removeRealLinkTagsFromModel ::
 removeRealLinkTagsFromModel realMol modelCentre =
   let realLinkAtoms =
         IntMap.keysSet . IntMap.filter (isAtomLink . isLink) $ realMol ^. #atoms
+
       -- The model centres, but all atoms, that were already a link atom in the real system, do not
       -- longer have the link tag.
       newModel =

@@ -347,17 +347,12 @@ data Molecule = Molecule
     -- | A Molecule might contain deeper
     --   ONIOM layers.
     subMol :: !(IntMap Molecule),
-    -- | Fragments definition. They are
-    --   meant to be either empty, or
-    --   contain the whole system, usually
-    --   without bond cuts. The keys of
-    --   the 'IntMap' assign numbers to
-    --   the fragments, while the 'IntSet'
-    --   contains selections of atom
-    --   numbers (and indices of the bond
-    --   matrix, which belong to a
-    --   fragment). Fragments should not
-    --   contain deeper layers.
+    -- | Fragments definition. Every atom must
+    -- be assigned to exactly one fragment. This
+    -- fragment might be the whole system or a
+    -- fragment in the sense of a PDB residue
+    -- for example. Bond cuts through fragments
+    -- are okay.
     fragment :: !(IntMap Fragment),
     -- | The potential energy and its
     --   derivatives.

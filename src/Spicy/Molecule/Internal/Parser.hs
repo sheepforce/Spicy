@@ -59,10 +59,17 @@ xyz = do
   nAtoms <- skipHorizontalSpace *> decimal <* skipHorizontalSpace <* endOfLine
   label' <- skipHorizontalSpace *> takeWhile (not . isEndOfLine) <* endOfLine
   atoms' <- count nAtoms xyzLineParser
+  let atoms = IntMap.fromList $ zip [1 ..] atoms'
+      fragment =
+        Fragment
+          { label = "all",
+            chain = Nothing,
+            atoms = IntMap.keysSet atoms
+          }
   return
     Molecule
       { comment = label',
-        atoms = IntMap.fromList $ zip [1 ..] atoms',
+        atoms = atoms,
         bonds = HashMap.empty,
         subMol = IntMap.empty,
         fragment = IntMap.empty,
@@ -111,13 +118,19 @@ txyz = do
                  in bondsWithSameOrigin
             )
           $ conAndAtoms
+      fragment =
+        Fragment
+          { label = "all",
+            chain = Nothing,
+            atoms = IntMap.keysSet atoms'
+          }
   return
     Molecule
       { comment = label',
         atoms = atoms',
         bonds = bonds',
         subMol = IntMap.empty,
-        fragment = IntMap.empty,
+        fragment = IntMap.singleton 0 fragment,
         energyDerivatives = def,
         calcContext = Map.empty,
         jacobian = Nothing
