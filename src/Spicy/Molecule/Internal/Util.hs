@@ -648,10 +648,17 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
       -- Just the atoms from the old layer that are kept but no link atoms added yet.
       slAtomsToKeep = (mol ^. #atoms) `IntMap.restrictKeys` newLayerInds
 
+      -- Fragments of the new layer filtered by the new atom indices and fragments that became empty
+      -- removed.
+      slFragments =
+        let origFrags = mol ^. #fragment
+            fragsRestricted = origFrags & each % #atoms %~ IntSet.filter (`IntSet.member` newLayerInds)
+            nonEmptyFrags = IntMap.filter (\f -> not . IntSet.null $ f ^. #atoms) fragsRestricted
+         in nonEmptyFrags
+
       -- Bonds from the old layer to keep but no bonds for link atoms added yet.
       slBondsToKeep = cleanBondMatByAtomInds (mol ^. #bonds) newLayerInds
       slSubMol = IntMap.empty
-      slFragments = IntMap.empty
       slEnergyDerivatives = def :: EnergyDerivatives
       slCalcContext = Map.empty
 

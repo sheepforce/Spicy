@@ -60,7 +60,7 @@ xyz = do
   label' <- skipHorizontalSpace *> takeWhile (not . isEndOfLine) <* endOfLine
   atoms' <- count nAtoms xyzLineParser
   let atoms = IntMap.fromList $ zip [1 ..] atoms'
-      fragment =
+      fragment = IntMap.singleton 0
         Fragment
           { label = "all",
             chain = Nothing,
@@ -72,7 +72,7 @@ xyz = do
         atoms = atoms,
         bonds = HashMap.empty,
         subMol = IntMap.empty,
-        fragment = IntMap.empty,
+        fragment = fragment,
         energyDerivatives = def,
         calcContext = Map.empty,
         jacobian = Nothing
