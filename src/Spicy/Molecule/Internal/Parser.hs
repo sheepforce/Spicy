@@ -60,12 +60,14 @@ xyz = do
   label' <- skipHorizontalSpace *> takeWhile (not . isEndOfLine) <* endOfLine
   atoms' <- count nAtoms xyzLineParser
   let atoms = IntMap.fromList $ zip [1 ..] atoms'
-      fragment = IntMap.singleton 0
-        Fragment
-          { label = "all",
-            chain = Nothing,
-            atoms = IntMap.keysSet atoms
-          }
+      fragment =
+        IntMap.singleton
+          0
+          Fragment
+            { label = "all",
+              chain = Nothing,
+              atoms = IntMap.keysSet atoms
+            }
   return
     Molecule
       { comment = label',
@@ -75,7 +77,8 @@ xyz = do
         fragment = fragment,
         energyDerivatives = def,
         calcContext = Map.empty,
-        jacobian = Nothing
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     xyzLineParser :: Parser Atom
@@ -133,7 +136,8 @@ txyz = do
         fragment = IntMap.singleton 0 fragment,
         energyDerivatives = def,
         calcContext = Map.empty,
-        jacobian = Nothing
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     -- Parsing a single line of atomSeq. Tinker's format keeps bonds associated with atomSeq. So a tuple
@@ -189,7 +193,8 @@ mol2 = do
         fragment = fragments,
         energyDerivatives = def,
         calcContext = Map.empty,
-        jacobian = Nothing
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     -- Parse the @<TRIPOS>MOLECULE block of MOL2.
@@ -353,11 +358,12 @@ pdb = do
       { comment = fromMaybe "" label',
         atoms = atoms',
         bonds = bonds',
-        subMol = IntMap.empty,
+        subMol = mempty,
         fragment = fragments,
         energyDerivatives = def,
-        calcContext = Map.empty,
-        jacobian = Nothing
+        calcContext = mempty,
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     -- Parser fot HETATM and ATOM records.

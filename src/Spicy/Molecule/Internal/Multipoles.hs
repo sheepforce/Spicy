@@ -11,31 +11,55 @@
 -- conversion to point charges. For most of the definitions and conversion used see
 -- [A Novel, Computationally Efficient Multipolar Model Employing Distributed Charges for Molecular Dynamics Simulations](https://pubs.acs.org/doi/10.1021/ct500511t).
 --
--- \[
+-- The multipole moments up to the quadrupoles are defined as spherical tensors. Those multipoles
+-- can be exactly represented as an octahedral point charge model in the axis system of the
+-- quadrupole tensor, see 'toOctrahedralModel'.
 --
--- \]
+-- This octahedral model defined in the coordinate system of the quadrupole tensor must be rotated
+-- to the actual orientation of the molecule. For this purpose a local, orthogonal axis system is
+-- defined. The original literature defines only for completely bonded systems of at least 3
+-- non-colinear atoms how to define the axes system. In our case we do not treat completely bonded
+-- molecular systems, but whatever is given in a 'fragment' field of a 'Molecule', which potentially
+-- involves non-bonded atoms, only colinear atoms and other nasty cases that complicate finding a
+-- triple of three non-bonded atoms. Those cases are dealt with in 'selectCases'. To be able to
+-- treat corner cases correctly we also allow definition of groups of no or one patner atoms only,
+-- if no other atom is close by to define a proper reference system. In the case of no bond partner
+-- available the octahedron will not be rotated and the charges will be on the cartesian axes of the
+-- atom centred cartesian coordinate system. In the case of two binding partners only the z-axis
+-- will be defined and x and y will be chosen arbitrarily. This is legitimate if no other
+-- interacting partners are close and the charge distribution is spherical (no partner) or
+-- rotational symmetric (one partner).
 module Spicy.Molecule.Internal.Multipoles
   ( OctahedralModel (..),
     toOctrahedralModel,
     octahedronToLocalFrame,
     sphericalToLocal,
+    makeReferenceGroups,
+    groupsInFrag,
+    selectCases,
   )
 where
 
 import qualified Data.IntMap as IntMap
-import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (swap)
 import Data.Tuple (swap)
-import Optics hiding (Empty)
+import Optics hiding (Empty, (<|), (|>))
 import RIO hiding (Vector, lens, view, (%~), (.~), (^.), (^?))
-import qualified RIO.HashMap as HashMap
-import RIO.Seq (Seq (..))
+import qualified RIO.Map as Map
+import RIO.Seq ((|>))
 import qualified RIO.Seq as Seq
 import Spicy.Common
 import Spicy.Data
 import Spicy.Math
 import Spicy.Molecule.Internal.Types hiding (S, coordinates)
 import Spicy.Molecule.Internal.Util
+
+-- | The minimum distance a neighbourlist needs to find bond partners for reference frame
+-- definition.
+cutoffDistance :: Double
+cutoffDistance = 10
+
+----------------------------------------------------------------------------------------------------
 
 data OctahedralValues = OctahedralValues
   { -- | Positive X
@@ -82,7 +106,7 @@ data OctahedralModel
         values :: !OctahedralValues,
         -- | The local axes system.
         axesSystem :: !(Matrix S Double),
-        -- | The \(d_q\) value in Angstrom.
+        -- | The \(d_\mathrm{q}\) value in Angstrom.
         dq :: !Double,
         -- | The coordinates of the 6 point charges given in order (see 'OctahedralValues') as
         -- \(3 \times 6\) matrix with the coordinates given as column vectors of the matrix.
@@ -94,7 +118,7 @@ data OctahedralModel
         values :: !OctahedralValues,
         -- | The local axes system.
         axesSystem :: !(Matrix S Double),
-        -- | The \(d_q\) value in Angstrom.
+        -- | The \(d_\mathrm{q}\) value in Angstrom.
         dq :: !Double,
         -- | The coordinates of the 6 point charges given in order (see 'OctahedralValues') as
         -- \(3 \times 6\) matrix with the coordinates given as column vectors of the matrix.
@@ -123,9 +147,28 @@ isSphericalRef ref = case ref of
 ----------------------------------------------------------------------------------------------------
 
 -- | Converts the atomic multipoles to the octahedral charge model in the coordinate system of the
--- spherical quadrupole tensor. All moments higher than quadrupole will be neglected.
+-- spherical quadrupole tensor. All moments higher than quadrupole will be neglected. The octahedral
+-- charge model follows as the solution of a linear equation system with the following solutions:
+-- \[ q_{(d_\mathrm{q}, 0, 0)}  = \frac{Q_{00}}{6}                + \frac{Q_{11c}}{2 d_\mathrm{q}}
+--                              - \frac{Q_{20}}{6 d_\mathrm{q}^2} + \frac{Q_{22c}}{2 \sqrt{3} d_\mathrm{q}^2}
+-- \]
+-- \[ q_{(0, -d_\mathrm{q}, 0)} = \frac{Q_{00}}{6}                - \frac{Q_{11s}}{2 d_\mathrm{q}}
+--                              - \frac{Q_{20}}{6 d_\mathrm{q}^2} + \frac{Q_{22c}}{2 \sqrt{3} d_\mathrm{q}^2}
+-- \]
+-- \[ q_{(-d_\mathrm{q}, 0, 0)} = \frac{Q_{00}}{6}                - \frac{Q_{11c}}{2 d_\mathrm{q}}
+--                              - \frac{Q_{20}}{6 d_\mathrm{q}^2} + \frac{Q_{22c}}{2 \sqrt{3} d_\mathrm{q}^2}
+-- \]
+-- \[ q_{(0, 0, d_\mathrm{q})}  = \frac{Q_{00}}{6}                - \frac{Q_{10}}{2 d_\mathrm{q}}
+--                              + \frac{Q_{20}}{3 d_\mathrm{q}^2}
+-- \]
+-- \[ q_{(0, d_\mathrm{q}, 0)}  = \frac{Q_{00}}{6}                + \frac{Q_{11s}}{2 d_\mathrm{q}}
+--                              - \frac{Q_{20}}{6 d_\mathrm{q}^2} - \frac{Q_{22c}}{2 \sqrt{3} d_\mathrm{q}^2}
+-- \]
+-- \[ q_{(0, 0, -d_\mathrm{q})} = \frac{Q_{00}}{6}                - \frac{Q_{10}}{2 d_\mathrm{q}}
+--                              + \frac{Q_{20}}{3 d_\mathrm{q}^2}
+-- \]
 toOctrahedralModel ::
-  -- | The distance from the origin \(d_q\) in Angstrom. Default to \( \frac{1}{4} a_0 \)
+  -- | The distance from the origin \(d_\mathrm{q}\) in Angstrom. Default to \( \frac{1}{4} a_0 \)
   Maybe Double ->
   -- | The multipoles to convert.
   Multipoles ->
@@ -184,9 +227,9 @@ octahedronToLocalFrame atoms bondMat =
 -- \[ \mathbf{E} = \begin{bmatrix} \hat{\mathbf{e}}_x & \hat{\mathbf{e}}_y & \hat{\mathbf{e}}_z \end{bmatrix} \]
 -- and the coordinates of the point charges with column vectors of a matrix:
 -- \[ \mathbf{C} = \begin{bmatrix}
---      d_q & -d_q & 0   &    0 &   0 &    0 \\
---        0 &    0 & d_q & -d_q &   0 &    0 \\
---        0 &    0 &   0 &    0 & d_q & -d_q
+--      d_\mathrm{q} & -d_\mathrm{q} &            0 &             0 &            0 &             0 \\
+--                 0 &             0 & d_\mathrm{q} & -d_\mathrm{q} &            0 &             0 \\
+--                 0 &             0 &            0 &             0 & d_\mathrm{q} & -d_\mathrm{q}
 --    \end{bmatrix}
 -- \]
 -- the expression can be implemented with linear algebra:
@@ -242,74 +285,84 @@ data BestBondPartners
   | One (Int, Atom)
   deriving (Show)
 
+----------------------------------------------------------------------------------------------------
+
 -- | Groups the atoms into groups of three non-colinear atoms within fragments. These groups are
 -- allowed to overlap.
-makeGroups ::
+makeReferenceGroups ::
   (MonadThrow m, MonadIO m) =>
   -- | The whole layer for which to form groups.
   Molecule ->
-  -- | The neighbourlist of this group if already calculated.
-  Maybe (IntMap IntSet) ->
-  m (IntMap BestBondPartners)
-makeGroups mol nL = do
-  newNL <- neighbourList 10.0 mol
-  let atoms = mol ^. #atoms
-      frags = mol ^. #fragment
-      bondMat = mol ^. #bonds
-      actualNL = fromMaybe newNL nL
+  m (Seq BestBondPartners)
+makeReferenceGroups mol = do
+  -- Use a matching neighbourlist if already calculated or calculate a new one.
+  nl <- do
+    let matchingNLs = Map.lookupMin . Map.filterWithKey (\k _ -> k >= cutoffDistance) $ mol ^. #neighbourlist
+    case matchingNLs of
+      Nothing -> neighbourList cutoffDistance mol
+      Just (_, nl) -> return nl
 
-  return undefined
-  where
-    localExc = MolLogicException "makeGroups"
+  -- Obtain groups within the fragments of the molecule.
+  IntMap.foldl'
+    ( \acc' f -> do
+        acc <- acc'
+        let fragAtoms = IntMap.restrictKeys (mol ^. #atoms) (f ^. #atoms)
+            fragBonds = cleanBondMatByAtomInds (mol ^. #bonds) (f ^. #atoms)
+        fragRefGroups <- groupsInFrag fragAtoms nl fragBonds
+        return $ acc Seq.>< fragRefGroups
+    )
+    (pure Seq.Empty)
+    (mol ^. #fragment)
 
--- | Grouping within a fragment.
-groupInFrag :: MonadThrow m => IntMap Atom -> IntSet -> BondMatrix -> IntMap IntSet -> m (Seq BestBondPartners)
-groupInFrag atoms frags bonds nL = do
-  let atomsInFrag = IntMap.restrictKeys atoms frags
-      bondsInFrag = cleanBondMatByAtomInds bonds frags
-  groups <- case IntMap.size atomsInFrag of
-    0 -> throwM . localExc $ "No atoms in fragment."
-    1 -> return . Seq.singleton . One . IntMap.findMin $ atomsInFrag
-    2 -> return . Seq.singleton $ Two (IntMap.findMin atomsInFrag) (IntMap.findMax atomsInFrag)
-    _ -> undefined
-  return groups
-  where
-    localExc = MolLogicException "makeGroups"
+----------------------------------------------------------------------------------------------------
 
-data BondCase = NonTerminal | Terminal | TerminalColinear
-
--- | Folding into overlapping groups of atoms within a fragment.
-groupsOfThree :: MonadThrow m => IntMap Atom -> BondMatrix -> IntMap IntSet -> m (Seq BestBondPartners)
-groupsOfThree atoms bonds nL = do
+-- | Build the local reference frame atom groups within the atoms and bonds of a fragment.
+groupsInFrag ::
+  MonadThrow m =>
+  -- | Atoms in the current fragment only.
+  IntMap Atom ->
+  -- | The neighbourlist of the molecule with a matching search distance
+  NeighbourList ->
+  -- | The __intrafragment__ bond matrix. Must __not__ contain any bonds to atoms external to the
+  -- current fragment.
+  BondMatrix ->
+  m (Seq BestBondPartners)
+groupsInFrag atoms nl bondMat = do
   let dummyMol =
         Molecule
           { comment = mempty,
             atoms = atoms,
-            bonds = bonds,
+            bonds = bondMat,
             subMol = mempty,
             fragment = mempty,
             energyDerivatives = def,
+            neighbourlist = mempty,
             calcContext = mempty,
             jacobian = Nothing
           }
-  groups <- do
-    IntMap.foldlWithKey'
-      ( \acc k a -> do
-          -- Get the bond partners of the current atom.
-          bondPartners <- bondDistanceGroups dummyMol k 2
-          directPartners <- maybe2MThrow (localExc "Too few bonds specified") $ bondPartners Seq.!? 1
-          secondSphPartners <- maybe2MThrow (localExc "Too few bonds specified") $ bondPartners Seq.!? 2
-          return undefined
-      )
-      (pure Seq.empty)
-      atoms
-  return undefined
+  IntMap.foldlWithKey'
+    ( \acc' k a -> do
+        acc <- acc'
+        bondPartnerKeys <- bondDistanceGroups dummyMol k 2
+        let bondPartners = fmap (IntMap.toAscList . IntMap.restrictKeys atoms) bondPartnerKeys
+        sph1PartnerIdx <- maybe2MThrow atomIdxExc $ bondPartners Seq.!? 1
+        sph2PartnerIdx <- maybe2MThrow atomIdxExc $ bondPartners Seq.!? 2
+        thisAtomsNeighbours <- maybe2MThrow atomIdxExc $ nl IntMap.!? k
+        thisAtomsGroup <- selectCases atoms thisAtomsNeighbours (k, a) sph1PartnerIdx sph2PartnerIdx
+        return $ acc |> thisAtomsGroup
+    )
+    (pure Seq.Empty)
+    atoms
   where
-    localExc = MolLogicException "makeGroups"
+    localExc = MolLogicException "groupsInFrag"
+    atomIdxExc = localExc "Could not find atoms at index."
+
+----------------------------------------------------------------------------------------------------
 
 -- | This function obtains groups of 3 atoms to define a local coordinate system.
 -- We follow a decission table to select what the best way for this atom is to define its
 -- local group.
+--
 --   1. If there are at least 2 direct bond partners, that are not colinear with this
 --      atom, use them.
 --   2. If there is just 1 direct bond partner, but a second sphere bond partner exists,
@@ -329,9 +382,9 @@ selectCases ::
   -- | The index of the current atom, which must be part of all atoms in the fragment.
   (Int, Atom) ->
   -- | Atoms directly bonded to the current one.
-  Seq (Int, Atom) ->
+  [(Int, Atom)] ->
   -- | Atoms in the second sphere of bonds.
-  Seq (Int, Atom) ->
+  [(Int, Atom)] ->
   m BestBondPartners
 selectCases aif neigbourInds atomTuple@(_, atom) sph1Neighbours sph2Neighbours = do
   let -- Coordinates of the atom in question.
@@ -360,52 +413,52 @@ selectCases aif neigbourInds atomTuple@(_, atom) sph1Neighbours sph2Neighbours =
   -- Selecting the cases and entering recursion in a few colinear corner cases.
   case (sph1Neighbours, sph2Neighbours) of
     -- Case 1
-    (x1 :<| x2 :<| xs, _) -> do
+    (x1 : x2 : xs, _) -> do
       let coordsX1 = x1 ^. _2 % #coordinates
           coordsX2 = x2 ^. _2 % #coordinates
       isLin <- isColinear coordsX1 coordsC coordsX2
       if isLin
-        then selectCases aif neigbourInds atomTuple (x2 :<| xs) sph2Neighbours
+        then selectCases aif neigbourInds atomTuple (x2 : xs) sph2Neighbours
         else return $ Three atomTuple x1 x2
 
     -- Case 2
-    (x1 :<| Empty, y1 :<| ys) -> do
+    ([x1], y1 : ys) -> do
       let coordsX1 = x1 ^. _2 % #coordinates
           coordsY1 = y1 ^. _2 % #coordinates
       isLin <- isColinear coordsC coordsX1 coordsY1
       if isLin
-        then selectCases aif neigbourInds atomTuple (Seq.singleton x1) ys
+        then selectCases aif neigbourInds atomTuple [x1] ys
         else return $ Three atomTuple x1 y1
 
     -- Case 3
-    (x1 :<| Empty, Empty) -> do
+    ([x1], []) -> do
       let coordsX1 = x1 ^. _2 % #coordinates
           nearestNeighbour = neighboursDistsOrdered !? 0
       case nearestNeighbour of
         Nothing -> return $ Two atomTuple x1
-        Just z1@(_, key) -> do
-          atomZ1 <- maybe2MThrow atomIdxExc $ aif ^? ix key
+        Just (_, keyZ1) -> do
+          atomZ1 <- maybe2MThrow atomIdxExc $ aif ^? ix keyZ1
           let coordsZ1 = atomZ1 ^. #coordinates
           isLin <- isColinear coordsX1 coordsC coordsZ1
           if isLin
-            then selectCases (IntMap.delete key aif) neigbourInds atomTuple (Seq.singleton x1) Empty
-            else return $ Three atomTuple x1 (key, atomZ1)
+            then selectCases (IntMap.delete keyZ1 aif) neigbourInds atomTuple [x1] []
+            else return $ Three atomTuple x1 (keyZ1, atomZ1)
 
     -- Case 4
-    (Empty, _) -> do
+    ([], _) -> do
       let nearestNeighbour1 = neighboursDistsOrdered !? 0
           nearestNeighbour2 = neighboursDistsOrdered !? 1
       case (nearestNeighbour1, nearestNeighbour2) of
-        (Just z1@(_, keyZ1), Just z2@(_, keyZ2)) -> do
+        (Just (_, keyZ1), Just (_, keyZ2)) -> do
           atomZ1 <- maybe2MThrow atomIdxExc $ aif ^? ix keyZ1
           atomZ2 <- maybe2MThrow atomIdxExc $ aif ^? ix keyZ2
           let coordsZ1 = atomZ1 ^. #coordinates
               coordsZ2 = atomZ2 ^. #coordinates
           isLin <- isColinear coordsZ1 coordsC coordsZ2
           if isLin
-            then selectCases (IntMap.delete keyZ2 aif) neigbourInds atomTuple Empty Empty
+            then selectCases (IntMap.delete keyZ2 aif) neigbourInds atomTuple [] []
             else return $ Three atomTuple (keyZ1, atomZ1) (keyZ2, atomZ2)
-        (Just z1@(_, keyZ1), Nothing) -> do
+        (Just (_, keyZ1), Nothing) -> do
           atomZ1 <- maybe2MThrow atomIdxExc $ aif ^? ix keyZ1
           return $ Two atomTuple (keyZ1, atomZ1)
         _ -> return $ One atomTuple

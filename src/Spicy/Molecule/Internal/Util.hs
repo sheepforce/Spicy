@@ -373,6 +373,7 @@ isAtomLink NotLink = False
 isAtomLink IsLink {} = True
 
 ----------------------------------------------------------------------------------------------------
+
 -- |
 
 ----------------------------------------------------------------------------------------------------
@@ -747,7 +748,8 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
             fragment = slFragments,
             energyDerivatives = slEnergyDerivatives,
             calcContext = slCalcContext,
-            jacobian = Nothing
+            jacobian = Nothing,
+            neighbourlist = fmap (`IntMap.restrictKeys` newLayerInds) $ mol ^. #neighbourlist
           }
 
   -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the

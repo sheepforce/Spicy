@@ -358,15 +358,20 @@ data Molecule = Molecule
     --   derivatives.
     energyDerivatives :: !EnergyDerivatives,
     -- | Calculations to perform on
-    --    __this__ layer of the molecule.
-    --   The 'Text' values of the 'Map'
-    --   serve as unique identifiers for a
-    --   calculation on this molecule.
+    -- __this__ layer of the molecule.
+    -- The 'Text' values of the 'Map'
+    -- serve as unique identifiers for a
+    -- calculation on this molecule.
     calcContext :: !(Map CalcK CalcContext),
     -- | The Jacobian matrix for energy
-    --   derivative transformation from
-    --   this system to its parent system.
-    jacobian :: !(Maybe (MatrixS Double))
+    -- derivative transformation from
+    -- this system to its parent system.
+    jacobian :: !(Maybe (MatrixS Double)),
+    -- | Neighbourlists that have possibly been
+    -- calculated together with a given search distance.
+    -- Maps from the search distance to a sparse neighbourlist
+    -- representation. Also see 'Spicy.Molecule.Internal.Util.neighbourList'.
+    neighbourlist :: !(Map Double NeighbourList)
   }
   deriving (Show, Eq, Generic)
 
@@ -399,6 +404,9 @@ instance (k ~ A_Lens, a ~ Map CalcK CalcContext, b ~ a) => LabelOptic "calcConte
 
 instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "jacobian" k Molecule Molecule a b where
   labelOptic = lens (\s -> jacobian s) $ \s b -> s {jacobian = b}
+
+instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighbourlist" k Molecule Molecule a b where
+  labelOptic = lens (\s -> neighbourlist s) $ \s b -> s {neighbourlist = b}
 
 -- Reader Class
 class HasMolecule env where

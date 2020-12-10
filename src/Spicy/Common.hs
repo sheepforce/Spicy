@@ -122,6 +122,10 @@ module Spicy.Common
     bondMat2ImIs,
     makeBondMatUnidirectorial,
 
+    -- ** Neighbour Lists
+    -- $neighbouhrList
+    NeighbourList,
+
     -- ** Massiv
     VectorS (..),
     MatrixS (..),
@@ -1365,8 +1369,7 @@ bondMat2ImIs bondMat =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Makes the bond matrix unidirectorial by only taking the lower left triangular part of it. This means
+-- | Makes the bond matrix unidirectorial by only taking the lower left triangular part of it. This means
 -- that atoms only bind to those with higher index then their own.
 makeBondMatUnidirectorial :: BondMatrix -> BondMatrix
 makeBondMatUnidirectorial bondMat =
@@ -1375,12 +1378,20 @@ makeBondMatUnidirectorial bondMat =
 {-
 ====================================================================================================
 -}
+-- $ neighbouhrList
+
+-- | A type alias for neighbourlists. Maps from an atom key to its neighbours within a certain
+-- distance.
+type NeighbourList = IntMap IntSet
+
+{-
+====================================================================================================
+-}
 
 -- $massivWrapper
 -- JSON enabled wrapper types around Massiv.
 
--- |
--- Newtype wrapper for JSON serialisation around Massiv's unboxed 1D arrays.
+-- | Newtype wrapper for JSON serialisation around Massiv's unboxed 1D arrays.
 newtype VectorS a = VectorS {getVectorS :: Array Massiv.S Ix1 a}
   deriving (Generic, Show, Eq)
 
