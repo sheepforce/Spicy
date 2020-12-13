@@ -34,6 +34,7 @@ module Spicy.Molecule.Internal.Multipoles
     toOctrahedralModel,
     octahedronToLocalFrame,
     sphericalToLocal,
+    BestBondPartners (..),
     makeReferenceGroups,
     groupsInFrag,
     selectCases,
@@ -185,7 +186,7 @@ toOctrahedralModel dist mp =
       q22c = fromMaybe 0 $ mp ^? #quadrupole % _Just % #q22c
       e2 = 2 :: Int
    in SphericalRef
-        { axesSystem = Massiv.makeArray Seq (Sz (3 :. 3)) $ \(i :. j) -> if i == j then 1 else 0,
+        { axesSystem = computeS . identityMatrix $ Sz 3,
           dq = d,
           coordinates = Nothing,
           values =
@@ -473,3 +474,16 @@ selectCases aif neigbourInds atomTuple@(_, atom) sph1Neighbours sph2Neighbours =
       bc <- getVectorS b .-. getVectorS c
       alpha <- angle ab bc
       return . not $ alpha <= (179 / 360) * 2 * pi && alpha >= (1 / 360) * 2 * pi
+
+----------------------------------------------------------------------------------------------------
+
+-- | Construction of local axes system from 'BestBondPartners' data. In case of 'Three' the central
+-- atom is the first one. Builds for all atoms a local axes system. Returns a small 'IntMap' with
+-- the atom keys associated to their axes system.
+makeLocalAxesSystemE :: BestBondPartners -> IntMap (Matrix S Double)
+makeLocalAxesSystemE bbp =
+  let unitMat3x3 = computeS . identityMatrix $ Sz 3
+   in case bbp of
+        One (k, a) -> IntMap.singleton k unitMat3x3
+        Two (kB, aB) (kA, aA) -> undefined
+        Three (kB, aB) (kA, aA) (kC, aC) -> undefined
