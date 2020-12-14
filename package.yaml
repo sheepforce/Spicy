@@ -84,7 +84,7 @@ when:
         - -O0
     else:
       ghc-options:
-        - -Werror
+        # - -Werror
         - -O2
   - condition: flag(llvm)
     ghc-options:
@@ -128,25 +128,9 @@ executables:
       - OverloadedStrings
       - NoImplicitPrelude
     ghc-options:
-      - -threaded
-      - -rtsopts
-      - -with-rtsopts=-N
-
-  unittests-exe:
-    main: testing.hs
-    source-dirs: app
-    dependencies:
-      - spicy
-      - tasty >= 0.11.3
-      - tasty-hunit -any
-      - tasty-golden >= 2.3.1
-    default-extensions:
-      - BangPatterns
-      - OverloadedStrings
-      - NoImplicitPrelude
-    ghc-options:
-      - -threaded
-      - -rtsopts
+     - -threaded
+     - -rtsopts
+     - -with-rtsopts=-N2
 
 tests:
   unittests:
@@ -160,3 +144,39 @@ tests:
     ghc-options:
       - -threaded
       - -rtsopts
+
+benchmarks:
+  bench:
+    main: bench.hs
+    source-dirs: app
+    dependencies:
+      - spicy
+      - criterion >= 1.5.9.0 && < 1.6
+    default-extensions:
+      - BangPatterns
+      - OverloadedStrings
+      - NoImplicitPrelude
+      - FlexibleContexts
+      - ScopedTypeVariables
+      - OverloadedLabels
+      - DataKinds
+      - FlexibleInstances
+      - MultiParamTypeClasses
+      - UndecidableInstances
+      - TypeFamilies
+      - DuplicateRecordFields
+      - ScopedTypeVariables
+      - DataKinds
+      - DeriveAnyClass
+      - DeriveDataTypeable
+      - DeriveGeneric
+      - DeriveTraversable
+      - FlexibleInstances
+      - GeneralizedNewtypeDeriving
+      - TypeApplications
+      - RecordWildCards
+      - NamedFieldPuns
+    # ghc-options:
+    #   - -threaded
+    #   - -rtsopts
+    #   - -with-rtsopts=-N
