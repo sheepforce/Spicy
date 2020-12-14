@@ -23,7 +23,6 @@ import Control.Applicative
 import Data.Attoparsec.Text
 import Data.Char
 import Data.Default
-import Data.Either
 import Data.Foldable
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.IntSet as IntSet
@@ -463,12 +462,6 @@ pdb = do
       bondTargets <- many1 $ (Text.strip <$> take 5) >>= nextParse decimal
       -- Do no parse EOL. The EOL is parsed in the beginning as the start of an record.
       return $ List.zip (List.repeat bondOrigin) bondTargets
-
-    -- A helper function to feed the result of one parser into another.
-    nextParse :: Parser a -> Text -> Parser a
-    nextParse nextParser text = case parseOnly nextParser text of
-      Left err -> fail err
-      Right res -> return res
 
     -- Converts a 'Maybe' result to a 'Parser' result.
     maybeToParserMonad :: Maybe a -> Parser a

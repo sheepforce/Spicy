@@ -166,12 +166,6 @@ multipoleCentre = do
         hexadecapole = hexadecapole
       }
   where
-    -- A helper function to feed the result of one parser into another.
-    nextParse :: Parser a -> Text -> Parser a
-    nextParse nextParser t = case parseOnly nextParser t of
-      Left err -> fail err
-      Right res -> return res
-
     -- Parsing the magnitude field of a multipole. Looks like @|Qx|@, where x is the multipole rank.
     -- Returns the rank and the magnitude of this multipole moment.
     magnitudeField :: Parser (Int, Double)

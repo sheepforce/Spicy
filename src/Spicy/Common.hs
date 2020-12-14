@@ -25,6 +25,7 @@ module Spicy.Common
     -- * Parser Helper Functions
     -- $parserHelper
     parse',
+    nextParse,
     skipHorizontalSpace,
     maybeOption,
     parseYamlFile,
@@ -305,8 +306,7 @@ class PrettyPrint a where
 
 -- $parserHelper
 
--- |
--- This is a wrapper around Attoparsec's 'parse' function. Contrary to 'parse', this function fails
+-- | This is a wrapper around Attoparsec's 'parse' function. Contrary to 'parse', this function fails
 -- with  an composable error type in 'MonadThrow'.
 parse' :: MonadThrow m => Parser a -> Text -> m a
 parse' p t = case parse p t of
@@ -319,14 +319,21 @@ parse' p t = case parse p t of
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- As Attoparsec's 'skipSpace', but skips horizintal space only.
+-- | Feed the result of one parser, that obtains a text in the next parser.
+nextParse :: Parser a -> Text -> Parser a
+nextParse nextParser t = case parseOnly nextParser t of
+  Left err -> fail err
+  Right res -> return res
+
+----------------------------------------------------------------------------------------------------
+
+-- | As Attoparsec's 'skipSpace', but skips horizintal space only.
 skipHorizontalSpace :: Parser ()
 skipHorizontalSpace = do
   _ <- takeWhile (`elem` [' ', '\t', '\f', '\v'])
   return ()
 
-----------------------------------------------------------------------------------------------------x
+----------------------------------------------------------------------------------------------------
 
 -- |
 -- Make a parser optional and wrap it in a 'Maybe'.
@@ -636,12 +643,6 @@ fE width precision a =
       _ <- char 'e' <|> char 'E'
       expo <- signed decimal
       return (coeff, expo)
-
-    -- A helper function to feed the result of one parser into another.
-    nextParse :: Parser a -> Text -> Parser a
-    nextParse nextParser t = case parseOnly nextParser t of
-      Left err -> fail err
-      Right res -> return res
 
 {-
 -- | Fortran E formatting.
@@ -1378,6 +1379,7 @@ makeBondMatUnidirectorial bondMat =
 {-
 ====================================================================================================
 -}
+
 -- $ neighbouhrList
 
 -- | A type alias for neighbourlists. Maps from an atom key to its neighbours within a certain
