@@ -52,24 +52,33 @@ import Spicy.Common
 import Spicy.Molecule.Internal.Types
 import Spicy.Molecule.Internal.Util
 
--- |
--- Parse a .xyz file (has no connectivity, atom types or partioal charges). Atom counting starts at 1
--- for XYZ files, which makes it more convenient to use with most visualisation software.
+-- | Parse a .xyz file (has no connectivity, atom types or partioal charges). Atom counting starts
+-- at 1 for XYZ files, which makes it more convenient to use with most visualisation software.
 xyz :: Parser Molecule
 xyz = do
   nAtoms <- skipHorizontalSpace *> decimal <* skipHorizontalSpace <* endOfLine
   label' <- skipHorizontalSpace *> takeWhile (not . isEndOfLine) <* endOfLine
   atoms' <- count nAtoms xyzLineParser
+  let atoms = IntMap.fromList $ zip [1 ..] atoms'
+      fragment =
+        IntMap.singleton
+          0
+          Fragment
+            { label = "all",
+              chain = Nothing,
+              atoms = IntMap.keysSet atoms
+            }
   return
     Molecule
       { comment = label',
-        atoms = IntMap.fromList $ zip [1 ..] atoms',
+        atoms = atoms,
         bonds = HashMap.empty,
         subMol = IntMap.empty,
-        fragment = IntMap.empty,
+        fragment = fragment,
         energyDerivatives = def,
         calcContext = Map.empty,
-        jacobian = Nothing
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     xyzLineParser :: Parser Atom
@@ -93,10 +102,9 @@ xyz = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Parse a Tinker XYZ formatted file. It has coordinates and might have connectivity and atom typeSeq.
--- This format and therefore parser are not using any submolecules or fragments. The atom counting is
--- directly taken from the file.
+-- | Parse a Tinker XYZ formatted file. It has coordinates and might have connectivity and atom
+-- types. This format and therefore parser are not using any submolecules or fragments. The atom
+-- counting is directly taken from the file.
 txyz :: Parser Molecule
 txyz = do
   nAtoms <- skipHorizontalSpace *> (decimal :: Parser Int)
@@ -113,16 +121,23 @@ txyz = do
                  in bondsWithSameOrigin
             )
           $ conAndAtoms
+      fragment =
+        Fragment
+          { label = "all",
+            chain = Nothing,
+            atoms = IntMap.keysSet atoms'
+          }
   return
     Molecule
       { comment = label',
         atoms = atoms',
         bonds = bonds',
         subMol = IntMap.empty,
-        fragment = IntMap.empty,
+        fragment = IntMap.singleton 0 fragment,
         energyDerivatives = def,
         calcContext = Map.empty,
-        jacobian = Nothing
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     -- Parsing a single line of atomSeq. Tinker's format keeps bonds associated with atomSeq. So a tuple
@@ -158,8 +173,7 @@ txyz = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Parse the "interesting" fields of a MOL2 file. This contains partial charges as well as
+-- | Parse the "interesting" fields of a MOL2 file. This contains partial charges as well as
 -- connectivity. There is no special understanding for the atom types, that are available in MOL2
 -- fileSeq. They will simply be treated as the force field string. See
 -- <http://chemyang.ccnu.edu.cn/ccb/server/AIMMS/mol2.pdf>.
@@ -179,7 +193,8 @@ mol2 = do
         fragment = fragments,
         energyDerivatives = def,
         calcContext = Map.empty,
-        jacobian = Nothing
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     -- Parse the @<TRIPOS>MOLECULE block of MOL2.
@@ -343,11 +358,12 @@ pdb = do
       { comment = fromMaybe "" label',
         atoms = atoms',
         bonds = bonds',
-        subMol = IntMap.empty,
+        subMol = mempty,
         fragment = fragments,
         energyDerivatives = def,
-        calcContext = Map.empty,
-        jacobian = Nothing
+        calcContext = mempty,
+        jacobian = Nothing,
+        neighbourlist = mempty
       }
   where
     -- Parser fot HETATM and ATOM records.

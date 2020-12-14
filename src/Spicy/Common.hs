@@ -54,6 +54,14 @@ module Spicy.Common
     text2Utf8Builder,
     removeWhiteSpace,
 
+    -- *** Fortran Formatting Functions
+    -- $fortranFormatters
+    fA,
+    fI,
+    fE,
+    fX,
+    fL,
+
     -- ** UTF8 Builder
     -- $utf8builderOperations
     utf8Show,
@@ -114,6 +122,10 @@ module Spicy.Common
     bondMat2ImIs,
     makeBondMatUnidirectorial,
 
+    -- ** Neighbour Lists
+    -- $neighbouhrList
+    NeighbourList,
+
     -- ** Massiv
     VectorS (..),
     MatrixS (..),
@@ -155,13 +167,18 @@ import Data.Massiv.Array as Massiv hiding
 import qualified Data.Massiv.Array as Massiv
 import Data.Maybe
 import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy.Builder as TB
+import qualified Data.Text.Lazy.Builder.RealFloat as TB
 import Data.Yaml.Include (decodeFileWithWarnings)
+import Formatting hiding (char)
 import Optics (A_Getter, Is, Optic', (^.))
 import RIO hiding
   ( Vector,
     lens,
     takeWhile,
     view,
+    (%~),
+    (&),
     (^.),
   )
 import qualified RIO.HashMap as HashMap
@@ -174,6 +191,7 @@ import RIO.Seq
 import qualified RIO.Seq as Seq
 import qualified RIO.Set as Set
 import qualified RIO.Text as Text
+import qualified RIO.Text.Lazy as TL
 import System.IO
   ( hSetEncoding,
     utf8,
@@ -527,7 +545,7 @@ replaceProblematicChars path2Sanitise =
 -- Wrapper around RIO's writing of unicode formatted text to a file ('writeFileUtf8'), compatible with
 -- typed paths.
 writeFileUTF8 :: MonadIO m => Path.AbsRelFile -> Text -> m ()
-writeFileUTF8 path' text = writeFileUtf8 (Path.toString path') text
+writeFileUTF8 path' text' = writeFileUtf8 (Path.toString path') text'
 
 ----------------------------------------------------------------------------------------------------
 
@@ -543,9 +561,9 @@ readFileUTF8 path' = readFileUtf8 (Path.toString path')
 -- Appending for UTF-8 encoded files in RIO's style of writing formatted text to a file, compatible
 -- with typed paths.
 appendFileUTF8 :: MonadIO m => Path.AbsRelFile -> Text -> m ()
-appendFileUTF8 path' text = liftIO . Path.withFile path' Path.AppendMode $ \h -> do
+appendFileUTF8 path' text' = liftIO . Path.withFile path' Path.AppendMode $ \h -> do
   hSetEncoding h utf8
-  T.hPutStr h text
+  T.hPutStr h text'
 
 ----------------------------------------------------------------------------------------------------
 
@@ -568,6 +586,87 @@ text2Utf8Builder = Utf8Builder . Builder.byteString . Text.encodeUtf8
 removeWhiteSpace :: Text -> Text
 removeWhiteSpace = Text.concat . Text.words
 
+{-
+====================================================================================================
+-}
+
+-- $fortranFormatters
+-- Formatters for common Fortran write styles.
+
+-- | Fortran A formatting.
+fA :: Int -> Text -> TB.Builder
+fA width a = bformat (right width ' ' %. fitRight width %. stext) a
+
+-- | Fortran I formatting.
+fI :: Integral a => Int -> a -> TB.Builder
+fI width a = bformat (left width ' ' %. fitLeft width %. int) a
+
+-- | Fortran X formatting.
+fX :: Int -> TB.Builder
+fX width = TB.fromText . Text.replicate width $ " "
+
+-- | Fortran L formatting.
+fL :: Int -> Bool -> TB.Builder
+fL width True = bformat (left width ' ' %. builder) "T"
+fL width False = bformat (left width ' ' %. builder) "F"
+
+-- | Fortran E formatting.
+fE :: RealFloat a => Int -> Int -> a -> TB.Builder
+fE width precision a =
+  let -- The exponent has a lower letter e and is unsigned. Must be changed.
+      (coeff, expo) =
+        fromMaybe (0, 0)
+          . parse' doubleParser
+          . TL.toStrict
+          . TB.toLazyText
+          . TB.formatRealFloat TB.Exponent (Just precision)
+          $ a
+      isPos = expo >= 0
+
+      coeffFmt = fixed precision
+      expoFmt = (if isPos then "+" else "-") % (left 2 '0' %. int)
+   in bformat
+        ((fitLeft width %. left width ' ') %. (coeffFmt % "E" % expoFmt))
+        coeff
+        (abs expo)
+  where
+    doubleParser :: Parser (Double, Int)
+    doubleParser = do
+      coeff <- takeTill (\c -> c == 'e' || c == 'E') >>= nextParse double
+      _ <- char 'e' <|> char 'E'
+      expo <- signed decimal
+      return (coeff, expo)
+
+    -- A helper function to feed the result of one parser into another.
+    nextParse :: Parser a -> Text -> Parser a
+    nextParse nextParser t = case parseOnly nextParser t of
+      Left err -> fail err
+      Right res -> return res
+
+{-
+-- | Fortran E formatting.
+fE :: RealFloat a => Int -> Int -> a -> TB.Builder
+fE width precision a =
+  let aScientific = normalize . fromFloatDigits $ a
+      isAPositive = aScientific >= 0
+   in undefined
+  where
+    -- The coefficient is written as an integer. Find the amount of digits in this integer.
+    coeffMag :: Scientific -> Int
+    coeffMag a = floor . logBase 10 . fromInteger . abs . coefficient $ a
+
+    -- Obtain the exponent of the number.
+    getBase10Exp :: Scientific -> Int
+    getBase10Exp a = base10Exponent a + coeffMag a
+
+    -- Obtain the coefficient of the number. This works just in the assumptions of the embedding
+    -- function, as simply a decimal point will be inserted into the STRING of the number.
+    getAbsCoeff :: Int -> Scientific -> TB.Builder
+    getAbsCoeff prcs a =
+      let (preDecimal, postDecimal) = Text.splitAt 1 . tShow . abs . coefficient $ a
+          postPrcs = if Text.length postDecimal
+       in undefined
+-}
 {-
 ====================================================================================================
 -}
@@ -1270,8 +1369,7 @@ bondMat2ImIs bondMat =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Makes the bond matrix unidirectorial by only taking the lower left triangular part of it. This means
+-- | Makes the bond matrix unidirectorial by only taking the lower left triangular part of it. This means
 -- that atoms only bind to those with higher index then their own.
 makeBondMatUnidirectorial :: BondMatrix -> BondMatrix
 makeBondMatUnidirectorial bondMat =
@@ -1280,12 +1378,20 @@ makeBondMatUnidirectorial bondMat =
 {-
 ====================================================================================================
 -}
+-- $ neighbouhrList
+
+-- | A type alias for neighbourlists. Maps from an atom key to its neighbours within a certain
+-- distance.
+type NeighbourList = IntMap IntSet
+
+{-
+====================================================================================================
+-}
 
 -- $massivWrapper
 -- JSON enabled wrapper types around Massiv.
 
--- |
--- Newtype wrapper for JSON serialisation around Massiv's unboxed 1D arrays.
+-- | Newtype wrapper for JSON serialisation around Massiv's unboxed 1D arrays.
 newtype VectorS a = VectorS {getVectorS :: Array Massiv.S Ix1 a}
   deriving (Generic, Show, Eq)
 
