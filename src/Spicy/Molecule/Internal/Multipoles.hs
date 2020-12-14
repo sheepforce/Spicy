@@ -372,8 +372,7 @@ groupsInFrag atoms nl bondMat = do
 --      the nearest neighbour of the first atom. This requires the neighbourlist.
 --   4. If there is no bond partner at all we use the 2 nearest neighbours of this atom.
 --      This requires a neighbourlist.
---      4.1. If there is just one or none neighbour in the neighbourlist 'Two' or 'One' will be
---           returned.
+--   5. If there is just one or none neighbour in the neighbourlist 'Two' or 'One' will be returned.
 selectCases ::
   MonadThrow m =>
   -- | All atoms in the current fragment.
@@ -480,10 +479,55 @@ selectCases aif neigbourInds atomTuple@(_, atom) sph1Neighbours sph2Neighbours =
 -- | Construction of local axes system from 'BestBondPartners' data. In case of 'Three' the central
 -- atom is the first one. Builds for all atoms a local axes system. Returns a small 'IntMap' with
 -- the atom keys associated to their axes system.
-makeLocalAxesSystemE :: BestBondPartners -> IntMap (Matrix S Double)
+makeLocalAxesSystemE :: MonadThrow m => BestBondPartners -> m (IntMap (Matrix S Double))
 makeLocalAxesSystemE bbp =
   let unitMat3x3 = computeS . identityMatrix $ Sz 3
    in case bbp of
-        One (k, a) -> IntMap.singleton k unitMat3x3
-        Two (kB, aB) (kA, aA) -> undefined
-        Three (kB, aB) (kA, aA) (kC, aC) -> undefined
+        One (k, _) -> return $ IntMap.singleton k unitMat3x3
+        Two (kB, aB) (kA, aA) -> do
+          -- Get the coordinates of the atoms.
+          let rA = getVectorS $ aA ^. #coordinates
+              rB = getVectorS $ aB ^. #coordinates
+
+          -- Calculate the axes from the reference system. The y-axis is freely chosen to be
+          -- orthogonal to the z-axis and the x-axis is the normalised cross product of them.
+          zAB <- (rA .-. rB) >>= \rAB -> pure $ rAB .* (1 / magnitude rAB)
+          zABx <- zAB !? 0
+          zABy <- zAB !? 1
+          zABz <- zAB !? 2
+          let yABNoNorm = Massiv.fromList @S Seq [1, (- zABx - zABz) / zABy, 1]
+              yAB = yABNoNorm .* (1 / magnitude yABNoNorm)
+          xAB :: Vector S Double <- zAB `cross3` yAB >>= \cp -> pure $ cp .* (1 / magnitude cp)
+
+          -- Construct the axes matrices.
+          axesA <- coordsToAxesMat [xAB, yAB, zAB]
+          axesB <- return axesA
+
+          -- Construct the IntMap associations between atoms and their axes systems.
+          return . IntMap.fromList $ [(kA, axesA), (kB, axesB)]
+        Three (kB, aB) (kA, aA) (kC, aC) -> do
+          -- Get the coordinates of the atoms.
+          let rA = getVectorS $ aA ^. #coordinates
+              rB = getVectorS $ aB ^. #coordinates
+              rC = getVectorS $ aC ^. #coordinates
+
+          -- Calculate the axes from the reference atom coordinates.
+          zAB <- (rA .-. rB) >>= \rAB -> pure $ rAB .* (1 / magnitude rAB)
+          zC <- (rB .-. rC) >>= \rBC -> pure $ rBC .* (1 / magnitude rBC)
+          yABC <- zAB `cross3` zC >>= \cp -> pure $ cp .* (1 / magnitude cp)
+          xAB <- zAB `cross3` yABC
+          xC <- zC `cross3` yABC
+
+          -- Construct the axes matrices.
+          axesA <- coordsToAxesMat [xAB, yABC, zAB]
+          axesB <- return axesA
+          axesC <- coordsToAxesMat [xC, yABC, zC]
+
+          -- Construct the IntMap associations between atoms and axes systems.
+          return . IntMap.fromList $ [(kA, axesA), (kB, axesB), (kC, axesC)]
+  where
+    coordsToAxesMat :: (Foldable f, MonadThrow m) => f (Vector S Double) -> m (Matrix S Double)
+    coordsToAxesMat vecs =
+      concatM 1 vecs
+        >>= resizeM (Sz $ 3 :. 3)
+        >>= pure . computeS @S . transpose . computeS @S
