@@ -24,6 +24,7 @@ module Spicy.Math
     magnitude,
     angle,
     cross3,
+    lu,
 
     -- * Conversion
 
@@ -44,7 +45,7 @@ import Data.Massiv.Core.Operations ()
 import qualified Data.Vector.Generic as GenericVec
 import Math.NumberTheory.Roots
 import qualified Numeric.LinearAlgebra as LA
-import RIO hiding (Vector)
+import RIO hiding (Vector, (%~))
 import Spicy.Common
 
 data MathException = MathException String deriving (Show)
@@ -119,6 +120,12 @@ cross3 a b = do
       c2 = a3 * b1 - a1 * b3
       c3 = a1 * b2 - a2 * b1
   return . Massiv.fromList Seq $ [c1, c2, c3]
+
+----------------------------------------------------------------------------------------------------
+
+-- | LUP decomposition backed up by LAPACK.
+lu :: (Mutable r Ix2 e, Mutable r Ix1 e, LA.Field e) => Matrix r e -> (Matrix r e, Matrix r e, Matrix r e, e)
+lu mat = (\(l, u, p, s) -> (matH2M l, matH2M u, matH2M p, s)) . LA.lu . matM2H $ mat
 
 {-
 ####################################################################################################
