@@ -31,13 +31,14 @@
 -- rotational symmetric (one partner).
 module Spicy.Molecule.Internal.Multipoles
   ( OctahedralModel (..),
+    molToPointCharges,
     toOctrahedralModel,
-    octahedronToLocalFrame,
     sphericalToLocal,
     BestBondPartners (..),
     makeReferenceGroups,
     groupsInFrag,
     selectCases,
+    makeLocalAxesSystemE,
   )
 where
 
@@ -62,88 +63,99 @@ cutoffDistance = 10
 
 ----------------------------------------------------------------------------------------------------
 
-data OctahedralValues = OctahedralValues
-  { -- | Positive X
-    qXu :: !Double,
-    -- | Negative X
-    qXd :: !Double,
-    -- | Positive Y
-    qYu :: !Double,
-    -- | Negative Y
-    qYd :: !Double,
-    -- | Positive Z
-    qZu :: !Double,
-    -- | Negative Z
-    qZd :: !Double
-  }
-  deriving (Eq, Show)
-
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "qXu" k OctahedralValues OctahedralValues a b where
-  labelOptic = lens (\s -> qXu s) $ \s b -> s {qXu = b}
-
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "qXd" k OctahedralValues OctahedralValues a b where
-  labelOptic = lens (\s -> qXd s) $ \s b -> s {qXd = b}
-
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "qYu" k OctahedralValues OctahedralValues a b where
-  labelOptic = lens (\s -> qYu s) $ \s b -> s {qYu = b}
-
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "qYd" k OctahedralValues OctahedralValues a b where
-  labelOptic = lens (\s -> qYd s) $ \s b -> s {qYd = b}
-
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "qZu" k OctahedralValues OctahedralValues a b where
-  labelOptic = lens (\s -> qZu s) $ \s b -> s {qZu = b}
-
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "qZd" k OctahedralValues OctahedralValues a b where
-  labelOptic = lens (\s -> qZd s) $ \s b -> s {qZd = b}
-
-----------------------------------------------------------------------------------------------------
-
 -- | The multipoles can be converted to an octahedral point charge model. Those charges might be
 -- defined with respect to the principal axis of the spherical quadrupole tensor or in a local
 -- reference frame of the molecule.
 data OctahedralModel
   = SphericalRef
-      { -- | The values of the point charges in the corners of the octahedron in the given axes system.
-        values :: !OctahedralValues,
-        -- | The local axes system.
+      { -- | The local axes system (3 x 3 matrix of basis vectors).
         axesSystem :: !(Matrix S Double),
-        -- | The \(d_\mathrm{q}\) value in Angstrom.
-        dq :: !Double,
-        -- | The coordinates of the 6 point charges given in order (see 'OctahedralValues') as
-        -- \(3 \times 6\) matrix with the coordinates given as column vectors of the matrix.
-        -- | These are the global cartesian coordinates in angstrom (same as for 'Molecule').
-        coordinates :: !(Maybe (Matrix S Double))
+        -- | The point charges as a 4 x 6 matrix. The columns represent one point charge each.
+        -- The first three rows are cartesian coordinates in angstrom, the fourth row is the
+        -- magnitude of the point charge.
+        values :: !(Matrix S Double)
       }
   | LocalRef
-      { -- | The values of the point charges in the corners of the octahedron in the given axes system.
-        values :: !OctahedralValues,
-        -- | The local axes system.
+      { -- | The local axes system (3 x 3 matrix of basis vectors).
         axesSystem :: !(Matrix S Double),
-        -- | The \(d_\mathrm{q}\) value in Angstrom.
-        dq :: !Double,
-        -- | The coordinates of the 6 point charges given in order (see 'OctahedralValues') as
-        -- \(3 \times 6\) matrix with the coordinates given as column vectors of the matrix.
-        -- | These are the global cartesian coordinates in angstrom (same as for 'Molecule').
-        coordinates :: !(Maybe (Matrix S Double))
+        -- | The point charges as a 4 x 6 matrix. The columns represent one point charge each.
+        -- The first three rows are cartesian coordinates in angstrom, the fourth row is the
+        -- magnitude of the point charge.
+        values :: !(Matrix S Double)
       }
 
 -- Lenses
-instance (k ~ A_Lens, a ~ OctahedralValues, b ~ a) => LabelOptic "values" k OctahedralModel OctahedralModel a b where
-  labelOptic = lens (\s -> values s) $ \s b -> s {values = b}
-
 instance (k ~ A_Lens, a ~ Matrix S Double, b ~ a) => LabelOptic "axesSystem" k OctahedralModel OctahedralModel a b where
   labelOptic = lens (\s -> axesSystem s) $ \s b -> s {axesSystem = b}
 
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "dq" k OctahedralModel OctahedralModel a b where
-  labelOptic = lens (\s -> dq s) $ \s b -> s {dq = b}
-
-instance (k ~ A_Lens, a ~ Maybe (Matrix S Double), b ~ a) => LabelOptic "coordinates" k OctahedralModel OctahedralModel a b where
-  labelOptic = lens (\s -> coordinates s) $ \s b -> s {coordinates = b}
+instance (k ~ A_Lens, a ~ Matrix S Double, b ~ a) => LabelOptic "values" k OctahedralModel OctahedralModel a b where
+  labelOptic = lens (\s -> values s) $ \s b -> s {values = b}
 
 isSphericalRef :: OctahedralModel -> Bool
 isSphericalRef ref = case ref of
   SphericalRef {} -> True
   _ -> False
+
+----------------------------------------------------------------------------------------------------
+
+-- | Converts the entire current layer of the molecule to a point charge representation, where to
+-- multipole moments up to quadrupoles are represented as point charges. Only dummy atoms will
+-- have a multipole point charge model in the result, but the other atoms might be used for bonding
+-- information. The point charges will be represented in a \(4 \times (p N)\) matrix, where \(p\) is
+-- the number of point charges used per atom to expand the multipole moments, see also
+-- 'OctahedralModel'.
+molToPointCharges :: (MonadThrow m, MonadIO m) => Molecule -> m (Matrix S Double)
+molToPointCharges mol = do
+  let -- Obtain some initial information.
+      atoms = mol ^. #atoms
+      dummyAtoms = IntMap.keysSet . IntMap.filter (\a -> a ^. #isDummy) $ atoms
+
+      -- Make an octahedral point charge model per dummy atom.
+      dummiesWithSph =
+        fmap (\a -> toOctrahedralModel Nothing $ a ^. #multipoles)
+          . IntMap.filter (\a -> a ^. #isDummy)
+          $ atoms
+
+  -- Obtain the groups of atoms in which the reference frames will be defined.
+  localRefGroups <- makeReferenceGroups mol
+  localAxesSystems <-
+    IntMap.unions
+      <$> traverse (\x -> flip IntMap.restrictKeys dummyAtoms <$> makeLocalAxesSystemE x) localRefGroups
+
+  -- Transform all spherical models to local models in their respective reference frames.
+  dummiesLocalModel <-
+    sequence $
+      IntMap.intersectionWith
+        ( \dummySpherical localAxesSystem ->
+            sphericalToLocal localAxesSystem dummySpherical
+        )
+        dummiesWithSph
+        localAxesSystems
+
+  -- Generate the 4x(6N) matrix of the octahedral charge models. N is the number dummy atoms.
+  -- Has one column per point charge, the first three rows being the cartesian coordinates of the
+  coordChargeMatPerAtom <-
+    sequence $
+      IntMap.intersectionWith
+        ( \atom localModel -> do
+            let valueMat = delay $ localModel ^. #values
+                Sz (m :. n) = size valueMat
+                atomCoords = expandInner (Sz n) const . getVectorS $ atom ^. #coordinates
+
+            unless (m == 4) . throwM . localExc $
+              "Representation of the point charges requires a matrix with 4 rows."
+
+            relativeChargeCoords <- extractFromToM (0 :. 0) (2 :. n - 1) valueMat
+            computeS @S <$> atomCoords .+. relativeChargeCoords
+        )
+        atoms
+        dummiesLocalModel
+
+  coordChargeMat <- computeP <$> concatM 1 coordChargeMatPerAtom
+
+  return coordChargeMat
+  where
+    localExc = MolLogicException "molToPointCharges"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -177,7 +189,8 @@ toOctrahedralModel ::
   -- spherical quadrupole tensor.
   OctahedralModel
 toOctrahedralModel dist mp =
-  let d = fromMaybe (bohr2Angstrom 0.25) (bohr2Angstrom <$> dist)
+  let -- Input values expanded into components.
+      d = fromMaybe (bohr2Angstrom 0.25) (bohr2Angstrom <$> dist)
       q00 = fromMaybe 0 $ mp ^? #monopole % _Just % #q00
       q10 = fromMaybe 0 $ mp ^? #dipole % _Just % #q10
       q11c = fromMaybe 0 $ mp ^? #dipole % _Just % #q11c
@@ -185,31 +198,30 @@ toOctrahedralModel dist mp =
       q20 = fromMaybe 0 $ mp ^? #quadrupole % _Just % #q20
       q22c = fromMaybe 0 $ mp ^? #quadrupole % _Just % #q22c
       e2 = 2 :: Int
+
+      -- The values of the point charges.
+      qXu = (q00 / 6) + (q11c / (2 * d)) - (q20 / (6 * d ^ e2)) + (q22c / (2 * sqrt (3) * d ^ e2))
+      qYd = (q00 / 6) - (q11s / (2 * d)) - (q20 / (6 * d ^ e2)) - (q22c / (2 * sqrt (3) * d ^ e2))
+      qXd = (q00 / 6) - (q11c / (2 * d)) - (q20 / (6 * d ^ e2)) + (q22c / (2 * sqrt (3) * d ^ e2))
+      qZu = (q00 / 6) + (q10 / (2 * d)) + (q20 / (3 * d ^ e2))
+      qYu = (q00 / 6) + (q11s / (2 * d)) - (q20 / (6 * d ^ e2)) - (q22c / (2 * sqrt (3) * d ^ e2))
+      qZd = (q00 / 6) - (q10 / (2 * d)) + (q20 / (3 * d ^ e2))
+
+      -- Combine them to the matrix representation.
+      chargeMagnitudes = Massiv.fromLists' @S @Ix2 @Double Seq [[qXu, qXd, qYu, qYd, qZu, qZd]]
+      relativeCoordinates =
+        Massiv.fromLists' @S @Ix2 @Double
+          Seq
+          --  Xu,  Xd,  Yu,  Yd, Zu, Zd
+          [ [d, - d, 0, 0, 0, 0],
+            [0, 0, d, - d, 0, 0],
+            [0, 0, 0, 0, d, - d]
+          ]
+      valueMat = computeS $ append' 2 relativeCoordinates chargeMagnitudes
    in SphericalRef
         { axesSystem = computeS . identityMatrix $ Sz 3,
-          dq = d,
-          coordinates = Nothing,
-          values =
-            OctahedralValues
-              { qXu = (q00 / 6) + (q11c / (2 * d)) - (q20 / (6 * d ^ e2)) + (q22c / (2 * sqrt (3) * d ^ e2)),
-                qYd = (q00 / 6) - (q11s / (2 * d)) - (q20 / (6 * d ^ e2)) - (q22c / (2 * sqrt (3) * d ^ e2)),
-                qXd = (q00 / 6) - (q11c / (2 * d)) - (q20 / (6 * d ^ e2)) + (q22c / (2 * sqrt (3) * d ^ e2)),
-                qZu = (q00 / 6) + (q10 / (2 * d)) + (q20 / (3 * d ^ e2)),
-                qYu = (q00 / 6) + (q11s / (2 * d)) - (q20 / (6 * d ^ e2)) - (q22c / (2 * sqrt (3) * d ^ e2)),
-                qZd = (q00 / 6) - (q10 / (2 * d)) + (q20 / (3 * d ^ e2))
-              }
+          values = valueMat
         }
-
-----------------------------------------------------------------------------------------------------
-
--- | Transformation of an octahedral charge model to the local reference frame defined by bonds.
--- Although in case of a non bonded atom the multipole orientation *should* not matter to much, this
--- function will fall back to define two bonds to arbitrarily chosen atoms. This should allow to
--- treat polarisation effects of monoatomic ions in solution or something like this.
-octahedronToLocalFrame :: IntMap Atom -> BondMatrix -> IntMap OctahedralModel
-octahedronToLocalFrame atoms bondMat =
-  let
-   in undefined
 
 ----------------------------------------------------------------------------------------------------
 
@@ -245,33 +257,28 @@ sphericalToLocal ::
   -- as part of the result.
   m OctahedralModel
 sphericalToLocal matE sphModel = do
+  -- Perform some preliminary checks.
+  let valueMat = sphModel ^. #values
+      Sz (mC :. nC) = size valueMat
   unless (isSphericalRef sphModel) . throwM . localExc $
     "Input reference system is not spherical."
+  unless (mC == 4) . throwM . localExc $ "Value matrix of point charges has wrong number of rows."
 
   let matP = sphModel ^. #axesSystem
       matPT = computeAs S . setComp Seq . transpose $ matP
-      dq = sphModel ^. #dq
-
-  -- The 3 x 6 matrix with the octahedral coordinates. The coordinates appear as defined above
-  -- and are column vectors.
-  {- ORMOLU_DISABLE -}
-  (matC :: Matrix S Double) <- Massiv.fromListsM Seq
-    --  Xu,  Xd,  Yu,  Yd, Zu, Zd
-    [ [ dq, -dq,   0,   0,  0,   0]
-    , [  0,   0,  dq, -dq,  0,   0]
-    , [  0,   0,   0,   0, dq, -dq]
-    ]
-  {- ORMOLU_ENABLE -}
+  matC <- extractFromToM (0 :. 0) (2 :. nC - 1) valueMat
+  chargeMag <- extractFromToM (3 :. 0) (3 :. nC - 1) valueMat
 
   -- The matrix equation applied.
-  matC' <- matPT .><. matE >>= \pe -> (computeAs S pe) .><. matC
+  matC' <- matPT .><. matE >>= \pe -> (computeS @S pe) .><. matC
+
+  -- Reconstruction of the value matrix with the magnitudes of charges readded.
+  valueMat' <- computeS @S <$> appendM 2 matC' chargeMag
 
   return $
     LocalRef
-      { values = sphModel ^. #values,
-        axesSystem = matE,
-        dq = dq,
-        coordinates = Just . computeS $ matC'
+      { values = valueMat',
+        axesSystem = matE
       }
   where
     localExc = MolLogicException "sphericalToLocal"
