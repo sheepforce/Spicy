@@ -1734,6 +1734,11 @@ fragmentDetectionDetached mol = do
 -- introduces some ambiguity to the scaling. This will use the smallest distance found to select the
 -- scaling factor. Therefore @b@ and @d@ will both be treated as being in a distance of 1 bond, not @b@
 -- having a distance of 1 with respect to @A@ and a distance of 3 to @E@.
+--
+-- The function obtains a representation suitable for
+-- 'Spicy.Molecule.Internal.Multipoles.molToPointCharges', where the atoms of the layer above are
+-- dummy atoms but still connected in the bond matrix, which is important for definition of the
+-- local axes system of the multipole point charges.
 getPolarisationCloudFromAbove ::
   (MonadThrow m) =>
   -- | The whole molecular system with the multipoles at least in the layer above the
@@ -1809,9 +1814,33 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
             polarisationCentresUnscaled
             poleScalings
 
-  -- Add the scaled polarisation centres to the model system.
+  -- Bond matrix combined for both systems. Link atoms of the current system are removed.
+  let modelLinkAtoms =
+        IntMap.keysSet
+          . IntMap.filter (\a -> isAtomLink $ a ^. #isLink)
+          $ layerOfInterest ^. #atoms
+      combinedBondMat =
+        flip cleanBondMatByAtomInds modelLinkAtoms $
+          HashMap.union (layerOfInterest ^. #bonds) (layerOfPolarisationCloud ^. #bonds)
+
+  -- Fragment data combined for both layers. Shared fragments will be reconnected, which is very
+  -- important for definition of the local axes groups.
+  let fragmentData =
+        IntMap.unionWith
+          (\fM fP -> fM & #atoms %~ (<> fP ^. #atoms))
+          (layerOfInterest ^. #fragment)
+          (layerOfPolarisationCloud ^. #fragment)
+
+  -- Add the scaled polarisation centres to the model system as dummy atoms. Also combines the
+  -- fragments and bond maps to match the expecations of molToPointCharges.
+  -- The neighbourlist is inherited from the layer above and still applies.
   let polarisedModelSystem =
-        layerOfInterest & #atoms %~ flip IntMap.union polarisationCentresScaled
+        layerOfInterest
+          & #atoms %~ flip IntMap.union polarisationCentresScaled
+          & #bonds .~ combinedBondMat
+          & #fragment .~ fragmentData
+          & #neighbourlist .~ (layerOfPolarisationCloud ^. #neighbourlist)
+
   return polarisedModelSystem
   where
     -- Getting the distance of real system atoms to the capped atoms of the model system, gives
