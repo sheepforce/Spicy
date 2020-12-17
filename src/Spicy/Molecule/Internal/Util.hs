@@ -1830,8 +1830,11 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
       let accumulatorMol =
             localModel
               & #atoms %~ (<> realAtomsScaled)
-              & #bonds %~ (<> realBonds)
-              & #fragment %~ (<> realFragments)
+              & #bonds %~ HashMap.unionWith (||) realBonds
+              & #fragment
+                %~ IntMap.unionWith
+                  (\fM fR -> fM & #atoms %~ (<> fR ^. #atoms))
+                  realFragments
 
       go accumulatorMol polID
 
