@@ -47,6 +47,7 @@ module Spicy.Molecule.Internal.Util
     guessBondMatrix,
     fragmentDetectionDetached,
     getPolarisationCloudFromAbove,
+    combineDistanceGroups,
     bondDistanceGroups,
     getAtomAssociationMap,
     fragmentAtomInfo2AtomsAndFragments,
@@ -1761,132 +1762,133 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
   -- sense.
   _ <- checkMolecule mol
 
-  -- Check if we are at least 1 layer deep into the ONIOM structure, otherwise asking for a
-  -- polarisation cloud makes no sense. If we are at least one layer deep, we can also get the ID of
-  -- one layer above, which provides the polarisation cloud.
-  molIdAbove <- case layerID of
-    Empty ->
-      throwM $
-        MolLogicException
-          "getPolarisationCloudFromAbove"
-          "Requested to obtain a polarisation cloud for the real system, but this makes no sense."
-    above :|> _ -> return above
-
-  -- Get the layer, that shall be polarised and the layer above this one.
-  layerOfInterest <- getMolByID mol layerID
-  layerOfPolarisationCloud <- getMolByID mol molIdAbove
-
-  -- Get the atoms, that will be used for polarisation. This excludes atoms, which are also part of
-  -- the model system and also atoms, that were already dummy atoms in the real system.
-  let atomIndicesModelSystem = IntMap.keysSet $ layerOfInterest ^. #atoms
-      polarisationCentresUnscaled =
-        IntMap.withoutKeys (layerOfPolarisationCloud ^. #atoms) atomIndicesModelSystem
-
-  -- Get polarisation centres n bonds away from the capped model-system atoms. This distance is used
-  -- to scale the multipole moments. Potential problems arise, when an atom of the real system is
-  -- in a different distance to capped atoms. In this case, the smallest distance will be used for
-  -- scaling.
-  let searchDistance = Seq.length poleScalings
-      cappedOrigins = IntMap.keys . getCappedAtoms $ layerOfInterest ^. #atoms
-  distanceGroups <-
-    mapM
-      (\startAtom -> bondDistanceGroups layerOfPolarisationCloud startAtom searchDistance)
-      cappedOrigins
-  let distanceGroupsJoined = combineDistanceGroups distanceGroups
-
-  -- Apply the scaling to the polarisation centres.
-  let polarisationCentresScaled =
-        IntMap.map (& #isDummy .~ True) $
-          Seq.foldlWithIndex
-            ( \atomMapAcc currentDist scaleAtDist ->
-                let atomsIndsAtThisDistance =
-                      fromMaybe IntSet.empty $ distanceGroupsJoined Seq.!? (currentDist + 1)
-                    atomsWithPolesAtThisDistScaled =
-                      IntMap.mapWithKey
-                        ( \key atom ->
-                            if key `IntSet.member` atomsIndsAtThisDistance
-                              then atom & #multipoles %~ modifyMultipole (* scaleAtDist)
-                              else atom
-                        )
-                        atomMapAcc
-                 in atomsWithPolesAtThisDistScaled
-            )
-            polarisationCentresUnscaled
-            poleScalings
-
-  -- Bond matrix combined for both systems. Link atoms of the current system are removed.
-  let modelLinkAtoms =
-        IntMap.keysSet
-          . IntMap.filter (\a -> isAtomLink $ a ^. #isLink)
-          $ layerOfInterest ^. #atoms
-      combinedBondMat =
-        flip cleanBondMatByAtomInds modelLinkAtoms $
-          HashMap.union (layerOfInterest ^. #bonds) (layerOfPolarisationCloud ^. #bonds)
-
-  -- Fragment data combined for both layers. Shared fragments will be reconnected, which is very
-  -- important for definition of the local axes groups.
-  let fragmentData =
-        IntMap.unionWith
-          (\fM fP -> fM & #atoms %~ (<> fP ^. #atoms))
-          (layerOfInterest ^. #fragment)
-          (layerOfPolarisationCloud ^. #fragment)
-
-  -- Add the scaled polarisation centres to the model system as dummy atoms. Also combines the
-  -- fragments and bond maps to match the expecations of molToPointCharges.
-  -- The neighbourlist is inherited from the layer above and still applies.
-  let polarisedModelSystem =
-        layerOfInterest
-          & #atoms %~ flip IntMap.union polarisationCentresScaled
-          & #bonds .~ combinedBondMat
-          & #fragment .~ fragmentData
-          & #neighbourlist .~ (layerOfPolarisationCloud ^. #neighbourlist)
-
-  return polarisedModelSystem
+  go mol layerID
   where
-    -- Getting the distance of real system atoms to the capped atoms of the model system, gives
-    -- multiple distances of a given real system atom to the model system atoms in bond distances.
-    -- This function joins the real system atoms, which are grouped by bond distance from a given
-    -- capped model system atom, in a way to ensure that a real system atom always only appears at
-    -- the lowest possible distance to the model system.
-    combineDistanceGroups :: [Seq IntSet] -> Seq IntSet
-    combineDistanceGroups distGroups =
-      let -- Join all the distance groups of different capped atoms. An atom of the real system might
-          -- appear here mutliple times with different distances.
-          combinationWithAmbigousAssignments =
-            List.foldl'
-              ( \acc thisGroup ->
-                  let lengthAcc = Seq.length acc
-                      lengthThis = Seq.length thisGroup
+    go ::
+      (MonadThrow m) =>
+      -- | The whole molecular system with the multipoles at least in the layer above the
+      --   specified one.
+      Molecule ->
+      -- | Specificaiton of the molecule layer, which should get a polarisation cloud from
+      --   the layer above. The layer above is also determined from the MolID by removing
+      --   its last element.
+      MolID ->
+      -- | The specified layer of the molecule only with polarisation centres added. All
+      --   submolecules or fragments this layer may have had are removed.
+      m Molecule
+    -- The system has been reduced to a single layer and is definitely done. Return it.
+    go currentMol Empty = return currentMol
+    -- There are more layers above the current one which shall be polarised. Use the layer directly
+    -- abpve the current model system for polarisation and join.
+    go currentMol currentMolID@(polID :|> _modelID) = do
+      -- Obtain the local model system and the local real system, which is being used for
+      -- polarisation of the model.
+      localModel <- getMolByID currentMol currentMolID
+      localReal <- getMolByID currentMol polID
 
-                      -- Adjust the length of the accumulator and this group, to match the longer one of both.
-                      lengthAdjAcc =
-                        if lengthThis > lengthAcc
-                          then acc Seq.>< Seq.replicate (lengthThis - lengthAcc) IntSet.empty
-                          else acc
-                      lengthAdjThis =
-                        if lengthAcc > lengthThis
-                          then thisGroup Seq.>< Seq.replicate (lengthAcc - lengthThis) IntSet.empty
-                          else thisGroup
+      -- Deconstruct the real system and do some adjustements.
+      let --  - Dummy atoms are removed from the real system.
+          --  - Link atoms will be changed to normal atoms.
+          --  - All remaining atoms will be dummy atoms.
+          realAtoms =
+            IntMap.map (\a -> a & #isDummy .~ True)
+              . IntMap.filter (\a -> not $ a ^. #isDummy)
+              . IntMap.map (\a -> a & #isLink .~ NotLink)
+              $ localReal ^. #atoms
+          -- - The bond matrix will be updated only to contain the filtered atoms.
+          realBonds = cleanBondMatByAtomInds (localReal ^. #bonds) (IntMap.keysSet realAtoms)
+          -- - The fragments will be updated only to contain the filtered atoms.
+          realFragments =
+            IntMap.map
+              (\f -> f & #atoms %~ IntSet.intersection (IntMap.keysSet realAtoms))
+              $ localReal ^. #fragment
 
-                      -- Join this group with the accumulator.
-                      newAcc = Seq.zipWith IntSet.union lengthAdjAcc lengthAdjThis
-                   in newAcc
+      -- Get the link atoms of the model system and groups of their bonding partners in the real
+      -- system in a given distance of bonds. The first entry is dropped as those are distance 0
+      -- atoms (therefore the capped atoms themselves).
+      let modelCappedAtoms = IntMap.keys . getCappedAtoms $ localModel ^. #atoms
+          searchDistance = Seq.length poleScalings
+      distanceGroups <-
+        combineDistanceGroups
+          <$> mapM
+            (\cappedStartAtom -> Seq.drop 1 <$> bondDistanceGroups localReal cappedStartAtom searchDistance)
+            modelCappedAtoms
+
+      -- Scale the polarisation centres of the real system according to their distance to the capped
+      -- atoms of the model system.
+      let realAtomsScaled =
+            Seq.foldlWithIndex
+              ( \atomsAcc bondDist atomsAtDist ->
+                  let scaleFactor = fromMaybe 0 $ poleScalings Seq.!? bondDist
+                   in scaleMultipoles atomsAcc atomsAtDist scaleFactor
               )
-              Seq.empty
-              distGroups
-          -- Make sure, that a given atom always only appears at the lower distance and remove its
-          -- occurence at a higher distance, if already found at a lower distance.
-          combinationUnambigous =
-            foldl
-              ( \(atomsAtLowerDist, unambDistSeqAcc) thisDistanceAtoms ->
-                  let thisWithLowerRemoved = thisDistanceAtoms IntSet.\\ atomsAtLowerDist
-                      newAtomsAtLowerDist = thisWithLowerRemoved `IntSet.union` atomsAtLowerDist
-                      newUnambDistSeqAcc = unambDistSeqAcc |> thisWithLowerRemoved
-                   in (newAtomsAtLowerDist, newUnambDistSeqAcc)
-              )
-              (IntSet.empty, Seq.empty)
-              combinationWithAmbigousAssignments
-       in snd combinationUnambigous
+              realAtoms
+              distanceGroups
+
+      -- Combine the model system (and its already existing polarisation centres) with the modified
+      -- stuff of the real layer.
+      let accumulatorMol =
+            localModel
+              & #atoms %~ (<> realAtomsScaled)
+              & #bonds %~ (<> realBonds)
+              & #fragment %~ (<> realFragments)
+
+      go accumulatorMol polID
+
+    -- Function to scale all Multipoles of the atoms in the input set with a factor.
+    scaleMultipoles :: IntMap Atom -> IntSet -> Double -> IntMap Atom
+    scaleMultipoles atoms selection factor =
+      IntSet.foldl'
+        (\accAtoms sel -> IntMap.adjust (& #multipoles %~ modifyMultipole (* factor)) sel accAtoms)
+        atoms
+        selection
+
+----------------------------------------------------------------------------------------------------
+
+-- | Getting the distance of real system atoms to the capped atoms of the model system, gives
+-- multiple distances of a given real system atom to the model system atoms in bond distances.
+-- This function joins the real system atoms, which are grouped by bond distance from a given
+-- capped model system atom, in a way to ensure that a real system atom always only appears at
+-- the lowest possible distance to the model system.
+combineDistanceGroups :: [Seq IntSet] -> Seq IntSet
+combineDistanceGroups distGroups =
+  let -- Join all the distance groups of different capped atoms. An atom of the real system might
+      -- appear here mutliple times with different distances.
+      combinationWithAmbigousAssignments =
+        List.foldl'
+          ( \acc thisGroup ->
+              let lengthAcc = Seq.length acc
+                  lengthThis = Seq.length thisGroup
+
+                  -- Adjust the length of the accumulator and this group, to match the longer one of both.
+                  lengthAdjAcc =
+                    if lengthThis > lengthAcc
+                      then acc Seq.>< Seq.replicate (lengthThis - lengthAcc) IntSet.empty
+                      else acc
+                  lengthAdjThis =
+                    if lengthAcc > lengthThis
+                      then thisGroup Seq.>< Seq.replicate (lengthAcc - lengthThis) IntSet.empty
+                      else thisGroup
+
+                  -- Join this group with the accumulator.
+                  newAcc = Seq.zipWith IntSet.union lengthAdjAcc lengthAdjThis
+               in newAcc
+          )
+          Seq.empty
+          distGroups
+      -- Make sure, that a given atom always only appears at the lower distance and remove its
+      -- occurence at a higher distance, if already found at a lower distance.
+      combinationUnambigous =
+        foldl
+          ( \(atomsAtLowerDist, unambDistSeqAcc) thisDistanceAtoms ->
+              let thisWithLowerRemoved = thisDistanceAtoms IntSet.\\ atomsAtLowerDist
+                  newAtomsAtLowerDist = thisWithLowerRemoved `IntSet.union` atomsAtLowerDist
+                  newUnambDistSeqAcc = unambDistSeqAcc |> thisWithLowerRemoved
+               in (newAtomsAtLowerDist, newUnambDistSeqAcc)
+          )
+          (IntSet.empty, Seq.empty)
+          combinationWithAmbigousAssignments
+   in snd combinationUnambigous
 
 ----------------------------------------------------------------------------------------------------
 
