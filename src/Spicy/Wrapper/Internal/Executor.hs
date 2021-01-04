@@ -45,9 +45,12 @@ import System.Path
 import qualified System.Path as Path
 import qualified System.Path.Directory as Dir
 
--- |
--- Run all calculations of a complete molecular system on all layers. Moves top down the leftmost tree
--- first.
+logSource :: LogSource
+logSource = "Wraper Executor"
+
+----------------------------------------------------------------------------------------------------
+-- | Run all calculations of a complete molecular system on all layers. Moves top down the leftmost
+-- tree first.
 runAllCalculations ::
   (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
   RIO env Molecule
@@ -94,8 +97,8 @@ runCalculation ::
   CalcID ->
   RIO env Molecule
 runCalculation calcID = do
-  -- Initial logging.
-  logInfo $
+  -- LOG
+  logInfoS logSource $
     "Running calculation with ID \""
       <> displayShow (calcID ^. #calcKey)
       <> "\" on "

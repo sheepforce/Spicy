@@ -336,13 +336,14 @@ groupsInFrag ::
   BondMatrix ->
   m (Seq BestBondPartners)
 groupsInFrag atoms nl bondMat = do
-  let dummyMol =
+  let dummyFrag = Fragment { label = "dummy", chain = Nothing, atoms = IntMap.keysSet atoms}
+      dummyMol =
         Molecule
           { comment = mempty,
             atoms = atoms,
             bonds = bondMat,
             subMol = mempty,
-            fragment = mempty,
+            fragment = IntMap.singleton 0 dummyFrag,
             energyDerivatives = def,
             neighbourlist = mempty,
             calcContext = mempty,

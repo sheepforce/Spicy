@@ -17,12 +17,14 @@ where
 
 import Data.Aeson
 import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (drop)
 import qualified Data.Text.Lazy.Builder as Builder
 import Optics
 import RIO hiding
   ( Vector,
     (%~),
+    (.~),
     (^.),
     (^?),
   )
@@ -116,7 +118,9 @@ translate2Input mol calcID = do
         WTHessian -> True
         _ -> False
   contextMolecule <- toMolRepr molContext program'
+  traceM "Does work"
   contextMultipoles <- toMultipoleRep molContext program'
+  traceM "Does it work?"
   contextTask <- toTask task' program'
   let context =
         object
@@ -170,7 +174,6 @@ translate2Input mol calcID = do
 ----------------------------------------------------------------------------------------------------
 
 -- | This gives a 'Molecule' in the program specific representation for a wrapper calculation.
--- TODO (phillip|p=100|#Wrong) - This works only if no multipoles are inherited. The writers here are not aware of dummy types and how to insert multipoles.
 toMolRepr ::
   MonadThrow m =>
   -- | The __current__ 'Molecule' layer for which to perform the calculation.
@@ -186,9 +189,14 @@ toMolRepr mol program'
     throwM $
       WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
   where
-    simpleCartesianAngstrom =
-      let molReal = mol & #atoms %~ IntMap.filter (\a -> a ^. #isDummy)
-       in Text.unlines . drop 2 . Text.lines <$> writeXYZ molReal
+    realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ mol ^. #atoms
+    realMol =
+      mol
+        & #atoms %~ flip IntMap.restrictKeys realAtomInds
+        & #fragment % each % #atoms %~ IntSet.intersection realAtomInds
+        & #bonds %~ flip cleanBondMatByAtomInds realAtomInds
+        & #subMol .~ mempty
+    simpleCartesianAngstrom = Text.unlines . drop 2 . Text.lines <$> writeXYZ realMol
 
 ----------------------------------------------------------------------------------------------------
 
@@ -202,13 +210,17 @@ toMultipoleRep ::
   Program ->
   m Text
 toMultipoleRep mol program'
-  | program' == Psi4 = psi4Charges
+  | program' == Psi4 = do
+      traceM "Creating Psi4 compatible representation of charges"
+      psi4Charges
   | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
   where
     localExc = WrapperGenericException "toMultipoleRep"
 
     psi4Charges = do
+      traceM "Function to prepare Psi4 charges."
       pointChargeVecs <- innerSlices <$> molToPointCharges mol
+      traceM $ "Obtained point charge vector: " <> tShow pointChargeVecs
       let toText vec =
             let q = Builder.fromText . tShow $ vec Massiv.! 3
                 x = Builder.fromText . tShow $ vec Massiv.! 0
@@ -220,6 +232,7 @@ toMultipoleRep mol program'
             "Chrgfield = QMMM()\n"
               <> chargeLines
               <> "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
+      traceM $ "I am here!"
       return . Text.toStrict . Builder.toLazyText $ psi4Builder
 
 ----------------------------------------------------------------------------------------------------

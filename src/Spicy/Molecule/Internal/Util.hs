@@ -109,8 +109,7 @@ import Spicy.Molecule.Internal.Types
 "pA" = link atoms
 -}
 
--- |
--- Check sanity of 'Molecule', which means test the following criteria:
+-- | Check sanity of 'Molecule', which means test the following criteria:
 --
 --   - The 'IntMap.Key's of the '_#atoms' 'IntMap' are a superset of all 'IntMap.Key's and 'IntSet.Key's
 --     appearing in the 'IntMap' 'IntSet' of '_#bonds'
@@ -121,44 +120,29 @@ import Spicy.Molecule.Internal.Types
 --   - The size of '_atom_Coordinates' is strictly 3 for all atoms of this layer
 checkMolecule :: MonadThrow m => Molecule -> m Molecule
 checkMolecule mol = do
-  unless layerIndCheck . throwM $
-    MolLogicException
-      "checkMolecule"
-      "Bonds vs Atoms mismatch. Your bonds bind to non existing atoms."
-  unless subMolAtomsDisjCheck . throwM $
-    MolLogicException
-      "checkMolecule"
-      "The atoms of deeper layers are not disjoint but shared by fragments."
-  unless subsetCheckAtoms . throwM $
-    MolLogicException
-      "checkMolecule"
-      "The atoms of deeper layers are not a subset of this layer."
-  unless bondBidectorialCheck . throwM $
-    MolLogicException
-      "checkMolecule"
-      "The bonds are not bidirectorially defined."
-  unless atomCoordCheck . throwM $
-    MolLogicException
-      "checkMolecule"
-      "The dimension of the coordinate vectors of the atoms is not exactly 3 for all atoms."
-  unless fragmentsSelectionRangeCheck . throwM $
-    MolLogicException
-      "checkMolecule"
-      "The fragments contain indices of atoms, that do not exist in this molecule layer."
-  unless fragmentCompletenessCheck . throwM $
-    MolLogicException
-      "chechMolecule"
-      "The fragments must contain all atoms of a layer."
-  unless calcCheck . throwM $
-    MolLogicException
-      "checkMolecule"
-      "A calculation context has an impossible combination of charge and multiplicity."
+  unless layerIndCheck . throwM . localExc $
+    "Bonds vs Atoms mismatch. Your bonds bind to non existing atoms."
+  unless subMolAtomsDisjCheck . throwM . localExc $
+    "The atoms of deeper layers are not disjoint but shared by fragments."
+  unless subsetCheckAtoms . throwM . localExc $
+    "The atoms of deeper layers are not a subset of this layer."
+  unless bondBidectorialCheck . throwM . localExc $
+    "The bonds are not bidirectorially defined."
+  unless atomCoordCheck . throwM . localExc $
+    "The dimension of the coordinate vectors of the atoms is not exactly 3 for all atoms."
+  unless fragmentsSelectionRangeCheck . throwM . localExc $
+    "The fragments contain indices of atoms, that do not exist in this molecule layer."
+  unless fragmentCompletenessCheck . throwM . localExc $
+    "The fragments must contain all atoms of a layer."
+  unless calcCheck . throwM . localExc $
+    "A calculation context has an impossible combination of charge and multiplicity."
   if IntMap.null (mol ^. #subMol)
     then return mol
     else do
       subMols <- traverse checkMolecule $ mol ^. #subMol
       return $ mol & #subMol .~ subMols
   where
+    localExc = MolLogicException "checkMolecule"
     -- Indices of the atoms
     atomInds = IntMap.keysSet $ mol ^. #atoms
 
