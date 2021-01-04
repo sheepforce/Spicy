@@ -1,53 +1,178 @@
-# Official Nix image. Makes sure everything is build in a well defined environment.
-image: nixos/nix
-
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-
-# Stuff that is always being executed before any step.
-before_script:
-  # Set the appropriate channel for the evaluation.
-  - nix-channel --list
-  - nix-channel --add https://nixos.org/channels/nixos-20.09 nixos
-  - nix-channel --update
-  - nix-channel --list
-  # Enable Hydra binary cache for IOHK Haskell.nix first.
-  - mkdir -p ~/.config/nix/
-  - echo 'trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=' > ~/.config/nix/nix.conf
-  - echo 'substituters = https://hydra.iohk.io' >> ~/.config/nix/nix.conf
-  # Make sure cachix is installed and set up.
-  - nix-env -iA nixos.cachix nixos.bash
-  - cachix authtoken $CACHIX_AUTHTOKEN
-  - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY
-  - cachix use spicy
-  - cachix use chemix
-  # Disallow unfree packages, so that everything is for sure redistributable.
-  - export NIXPKGS_ALLOW_UNFREE=0
-  # Save all paths that are currently present in the store.
-  - nix path-info --all > /tmp/store-path-pre-build
 
 stages:
   - build
   - docs
 
-# Build with the pinnded release stuff first.
-releaseBuild:
+# Build fully with Cabal without nix stuff.
+cabalReleaseBuild:
+  image: debian:buster
   stage: build
+  before_script:
+    # Install dependencies
+    - apt update && apt install -y curl gcc g++ libgmp-dev libncurses-dev libffi-dev make xz-utils tar perl wget libopenblas-dev
+    # Install GHC-UP
+    - mkdir -p $HOME/.cabal/bin $HOME/.ghcup/bin
+    - export PATH=$HOME/.cabal/bin:$HOME/.ghcup/bin:$PATH
+    - wget https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup
+    - chmod +x x86_64-linux-ghcup && mv x86_64-linux-ghcup $HOME/.ghcup/bin/ghcup
+    # Install Haskell toolchain
+    - ghcup upgrade
+    - ghcup install ghc 8.10.2
+    - ghcup install cabal
+    - ghcup set ghc 8.10.2
+    - cabal update
   script:
-    - nix-build nix/release.nix -A spicy.components.library
-    - nix-build nix/release.nix -A spicy.components.exes
-    - nix-build nix/release.nix -A spicy.components.tests
+    - cabal build
+  cache:
+    paths:
+      - dist-newstyle
+  only:
+    refs:
+      - develop
+      - master
+      - release
+
+# Build fully with Cabal without nix stuff.
+cabalDevBuild:
+  image: debian:buster
+  stage: build
+  before_script:
+    # Install dependencies
+    - apt update && apt install -y curl gcc g++ libgmp-dev libncurses-dev libffi-dev make xz-utils tar perl wget libopenblas-dev
+    # Install GHC-UP
+    - mkdir -p $HOME/.cabal/bin $HOME/.ghcup/bin
+    - export PATH=$HOME/.cabal/bin:$HOME/.ghcup/bin:$PATH
+    - wget https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup
+    - chmod +x x86_64-linux-ghcup && mv x86_64-linux-ghcup $HOME/.ghcup/bin/ghcup
+    # Install Haskell toolchain
+    - ghcup upgrade
+    - ghcup install ghc 8.10.2
+    - ghcup install cabal
+    - ghcup set ghc 8.10.2
+    - cabal update
+  script:
+    - cabal build -f dev
+  cache:
+    paths:
+      - dist-newstyle
+
+# Build with the pinnded release stuff first.
+nixReleaseBuild:
+  stage: build
+  image: nixos/nix
+  before_script:
+    # Setup nix channels
+    - nix-channel --list;
+    - nix-channel --add https://nixos.org/channels/nixos-20.09 nixos;
+    - nix-channel --update;
+    - nix-channel --list;
+    # Make a nix configuration with all substituters enabled
+    - mkdir -p /etc/nix;
+    - echo 'substituters = https://chemix.cachix.org https://hydra.iohk.io https://cache.nixos.org/ https://spicy.cachix.org' > /etc/nix/nix.conf
+    - echo 'trusted-substituters = https://chemix.cachix.org https://hydra.iohk.io https://spicy.cachix.org' >> /etc/nix/nix.conf
+    - echo 'trusted-public-keys = chemix.cachix.org-1:fsf9IweV024l7WnScInCSqrSS5N1T9hmOCbSrzOWIZM= spicy.cachix.org-1:f30r4wtVBZ3jMmmx6BZTVbFC3CgOq03HwJiB98U9QyY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=' >> /etc/nix/nix.conf
+    # Install dependencies
+    - nix-env -iA nixos.cachix nixos.bash;
+    - cachix authtoken $CACHIX_AUTHTOKEN;
+    - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY;
+    - cachix use spicy;
+    - cachix use chemix;
+    - export NIXPKGS_ALLOW_UNFREE=0;
+    # Make a snapshot of the nix store
+    - nix path-info --all > /tmp/store-path-pre-build;
+  script:
+    - nix-build nix/release.nix -A spicy.components.library |& tee ReleaseBuildLib.log
+    - nix-build nix/release.nix -A spicy.components.exes |& tee ReleaseBuildExe.log
+    - nix-build nix/release.nix -A spicy.components.tests |& tee ReleaseBuildTest.log
+  artifacts:
+    when: always
+    paths:
+      - ReleaseBuildLib.log
+      - ReleaseBuildExe.log
+      - ReleaseBuildTest.log
+    expire_in: 1 year
+  only:
+    refs:
+      - master
+      - release
   after_script:
     # Push everything that has been build since initialisation to the Cache.
-    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push chemix"
+    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push spicy"
 
 # Build with the current dev branches of dependencies.
-devBuild:
+nixDevBuild:
   stage: build
+  image: nixos/nix
+  before_script:
+    # Setup nix channels
+    - nix-channel --list;
+    - nix-channel --add https://nixos.org/channels/nixos-20.09 nixos;
+    - nix-channel --update;
+    - nix-channel --list;
+    # Make a nix configuration with all substituters enabled
+    - mkdir -p /etc/nix;
+    - echo 'substituters = https://chemix.cachix.org https://hydra.iohk.io https://cache.nixos.org/ https://spicy.cachix.org' > /etc/nix/nix.conf
+    - echo 'trusted-substituters = https://chemix.cachix.org https://hydra.iohk.io https://spicy.cachix.org' >> /etc/nix/nix.conf
+    - echo 'trusted-public-keys = chemix.cachix.org-1:fsf9IweV024l7WnScInCSqrSS5N1T9hmOCbSrzOWIZM= spicy.cachix.org-1:f30r4wtVBZ3jMmmx6BZTVbFC3CgOq03HwJiB98U9QyY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=' >> /etc/nix/nix.conf
+    # Install dependencies
+    - nix-env -iA nixos.cachix nixos.bash;
+    - cachix authtoken $CACHIX_AUTHTOKEN;
+    - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY;
+    - cachix use spicy;
+    - cachix use chemix;
+    - export NIXPKGS_ALLOW_UNFREE=0;
+    # Make a snapshot of the nix store
+    - nix path-info --all > /tmp/store-path-pre-build;
   script:
-    - nix-build nix/default.nix -A spicy.components.library
-    - nix-build nix/default.nix -A spicy.components.exes
-    - nix-build nix/default.nix -A spicy.components.tests
+    - nix-build nix/default.nix -A spicy.components.library |& tee DevBuildLib.log
+    - nix-build nix/default.nix -A spicy.components.exes |& tee DevBuildExe.log
+    - nix-build nix/default.nix -A spicy.components.tests |& tee DevBuildTest.log
+  artifacts:
+    when: always
+    paths:
+      - DevBuildLib.log
+      - DevBuildExe.log
+      - DevBuildTest.log
+    expire_in: 1 year
+  only:
+    refs:
+      - develop
+      - master
+      - release
   after_script:
     # Push everything that has been build since initialisation to the Cache.
-    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push chemix"
+    - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push spicy"
+
+# Build fully with Cabal without nix stuff.
+cabalDocs:
+  image: debian:buster
+  stage: docs
+  before_script:
+    # Install dependencies
+    - apt update && apt install -y curl gcc g++ libgmp-dev libncurses-dev libffi-dev make xz-utils tar perl wget libopenblas-dev
+    # Install GHC-UP
+    - mkdir -p $HOME/.cabal/bin $HOME/.ghcup/bin
+    - export PATH=$HOME/.cabal/bin:$HOME/.ghcup/bin:$PATH
+    - wget https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup
+    - chmod +x x86_64-linux-ghcup && mv x86_64-linux-ghcup $HOME/.ghcup/bin/ghcup
+    # Install Haskell toolchain
+    - ghcup upgrade
+    - ghcup install ghc 8.10.2
+    - ghcup install cabal
+    - ghcup set ghc 8.10.2
+    - cabal update
+  script:
+    - cabal haddock -f dev
+    - cp -r $(dirname $(cabal haddock -f dev 2>/dev/null | tail -n 1)) public
+    - ls -lah public/
+  artifacts:
+    paths:
+      - public
+  # only:
+  #   refs:
+  #     - develop
+  cache:
+    paths:
+      - dist-newstyle
