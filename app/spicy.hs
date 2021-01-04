@@ -1,6 +1,6 @@
 import RIO
--- import Spicy.Initiator
+import Spicy.Initiator
 
 
 main :: IO ()
-main = undefined
+main = spicyMain

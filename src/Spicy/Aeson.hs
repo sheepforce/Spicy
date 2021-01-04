@@ -17,9 +17,8 @@ import Data.Aeson.TH
 import RIO
 import qualified RIO.Char as Char
 
--- |
--- Aeson options for nice parsing of JSON/YAML fields in combination with nice ability to still create
--- lenses.
+-- | Aeson options for nice parsing of JSON/YAML fields in combination with nice ability to still
+-- create lenses.
 spicyJOption :: Options
 spicyJOption =
   defaultOptions

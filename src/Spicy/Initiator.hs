@@ -31,10 +31,8 @@ import RIO.Process
 import Spicy.CmdArgs
 import Spicy.Common
 import Spicy.InputFile
+import Spicy.JobDriver
 import Spicy.Molecule
--- import           Spicy.JobDriver
--- import           Spicy.Logger
-
 import Spicy.RuntimeEnv
 import System.Console.CmdArgs hiding (def)
 import System.Environment
@@ -66,7 +64,7 @@ spicyMain = runSimpleApp $ do
     Exec {} -> do
       spicyEnv <- inputToEnv
       runRIO spicyEnv $ do
-        -- spicyExecMain
+        spicyExecMain
         logError "Not implemented yet."
     Translate {} -> do
       logError "Not implemented yet."
