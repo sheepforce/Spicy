@@ -4,7 +4,7 @@ scratch:
   dirpath: Tests/scratch
 molecule:
   path:
-    filepath: goldentests/input/Ferrocene.xyz
+    filepath: goldentests/input/molecules/Ferrocene.xyz
   fileType: xyz
 model:
   theoryLayer:
@@ -13,7 +13,7 @@ model:
     charge: 0
     mult: 1
     templateFile:
-      filepath: goldentests/input/Psi4_HF_STO-3G.psi
+      filepath: goldentests/input/calculations/wrapper/Psi4/Ferrocene/Template.psi
     execution:
       nProcesses: 1
       nThreads: 8

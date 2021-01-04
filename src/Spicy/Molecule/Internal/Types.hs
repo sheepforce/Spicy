@@ -236,7 +236,8 @@ data Element
 instance ToJSON Element where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Element
+instance FromJSON Element where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Element where
   prettyP = displayShow
@@ -274,7 +275,8 @@ data Atom = Atom
 instance ToJSON Atom where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Atom
+instance FromJSON Atom where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Element, b ~ a) => LabelOptic "element" k Atom Atom a b where
@@ -378,7 +380,8 @@ data Molecule = Molecule
 instance ToJSON Molecule where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Molecule
+instance FromJSON Molecule where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "comment" k Molecule Molecule a b where
@@ -440,7 +443,8 @@ data LinkInfo
 instance ToJSON LinkInfo where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON LinkInfo
+instance FromJSON LinkInfo where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _NotLink :: Prism' LinkInfo ()
@@ -490,7 +494,8 @@ instance Eq FFType where
 instance ToJSON FFType where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON FFType
+instance FromJSON FFType where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _FFMol2 :: Prism' FFType Text
@@ -536,7 +541,8 @@ data Fragment = Fragment
 instance ToJSON Fragment where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Fragment
+instance FromJSON Fragment where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "label" k Fragment Fragment a b where
@@ -606,7 +612,8 @@ data CalcK
 instance ToJSON CalcK where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcK
+instance FromJSON CalcK where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _ONIOMKey :: Prism' CalcK ONIOMHierarchy
@@ -628,7 +635,8 @@ data ONIOMHierarchy
 instance ToJSON ONIOMHierarchy where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON ONIOMHierarchy
+instance FromJSON ONIOMHierarchy where
+  parseJSON = genericParseJSON spicyJOption
 
 {-
 ====================================================================================================
@@ -647,7 +655,8 @@ data Multipoles = Multipoles
 instance ToJSON Multipoles where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Multipoles
+instance FromJSON Multipoles where
+  parseJSON = genericParseJSON spicyJOption
 
 instance Default Multipoles where
   def =
@@ -689,7 +698,8 @@ data Monopole = Monopole
 instance ToJSON Monopole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Monopole
+instance FromJSON Monopole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Monopole where
   prettyP = ppMonopole
@@ -713,7 +723,8 @@ data Dipole = Dipole
 instance ToJSON Dipole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Dipole
+instance FromJSON Dipole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Dipole where
   prettyP = ppDipole
@@ -745,7 +756,8 @@ data Quadrupole = Quadrupole
 instance ToJSON Quadrupole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Quadrupole
+instance FromJSON Quadrupole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Quadrupole where
   prettyP = ppQuadrupole
@@ -785,7 +797,8 @@ data Octopole = Octopole
 instance ToJSON Octopole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Octopole
+instance FromJSON Octopole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Octopole where
   prettyP = ppOctopole
@@ -833,7 +846,8 @@ data Hexadecapole = Hexadecapole
 instance ToJSON Hexadecapole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Hexadecapole
+instance FromJSON Hexadecapole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Hexadecapole where
   prettyP = ppHexadecapole
@@ -884,7 +898,8 @@ data Embedding
 instance ToJSON Embedding where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Embedding
+instance FromJSON Embedding where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _Mechanical :: Prism' Embedding ()
@@ -915,7 +930,8 @@ data EnergyDerivatives = EnergyDerivatives
 instance ToJSON EnergyDerivatives where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON EnergyDerivatives
+instance FromJSON EnergyDerivatives where
+  parseJSON = genericParseJSON spicyJOption
 
 instance Default EnergyDerivatives where
   def =
@@ -950,7 +966,8 @@ data NumericalEfficiency
 instance ToJSON NumericalEfficiency where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON NumericalEfficiency
+instance FromJSON NumericalEfficiency where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 
@@ -967,7 +984,8 @@ data WrapperTask
 instance ToJSON WrapperTask where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON WrapperTask
+instance FromJSON WrapperTask where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 
@@ -983,7 +1001,8 @@ data QMContext = QMContext
 instance ToJSON QMContext where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON QMContext
+instance FromJSON QMContext where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "charge" k QMContext QMContext a b where
@@ -1001,7 +1020,8 @@ data MMContext = MMContext
 instance ToJSON MMContext where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON MMContext
+instance FromJSON MMContext where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1044,7 +1064,8 @@ data CalcContext = CalcContext
 instance ToJSON CalcContext where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcContext
+instance FromJSON CalcContext where
+  parseJSON = genericParseJSON spicyJOption
 
 instance (k ~ A_Lens, a ~ CalcInput, b ~ a) => LabelOptic "input" k CalcContext CalcContext a b where
   labelOptic = lens (\s -> input s) $ \s b -> s {input = b}
@@ -1100,7 +1121,8 @@ data CalcInput = CalcInput
 instance ToJSON CalcInput where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcInput
+instance FromJSON CalcInput where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ WrapperTask, b ~ a) => LabelOptic "task" k CalcInput CalcInput a b where
@@ -1159,7 +1181,8 @@ data CalcOutput = CalcOutput
 instance ToJSON CalcOutput where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcOutput
+instance FromJSON CalcOutput where
+  parseJSON = genericParseJSON spicyJOption
 
 instance (k ~ A_Lens, a ~ EnergyDerivatives, b ~ a) => LabelOptic "energyDerivatives" k CalcOutput CalcOutput a b where
   labelOptic = lens (\s -> (energyDerivatives :: CalcOutput -> EnergyDerivatives) s) $
@@ -1182,7 +1205,8 @@ data Program
 instance ToJSON Program where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Program
+instance FromJSON Program where
+  parseJSON = genericParseJSON spicyJOption
 
 {-
 ####################################################################################################
