@@ -35,6 +35,10 @@ import Spicy.ONIOM.Layout
 import Spicy.RuntimeEnv
 import qualified System.Path as Path
 
+logSource :: LogSource
+logSource = "JobDriver"
+
+----------------------------------------------------------------------------------------------------
 -- | The Spicy Logo as ASCII art.
 jobDriverText :: Text
 jobDriverText =
@@ -55,13 +59,15 @@ spicyExecMain = do
   -- Open the log file by starting with the job driver headline.
   mapM_ (logInfo . text2Utf8Builder) $ Text.lines jobDriverText
 
-  -- Apply topology updates as given in the input file to the molecule.
+  -- LOG
   logInfo "Applying changes to the input topology:"
+  -- Apply topology updates as given in the input file to the molecule.
   molTopologyAdaptions <- changeTopologyOfMolecule
 
+  -- LOG
+  logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
-  logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
   molLayouted <- local (& moleculeL .~ molTopologyAdaptions) layoutMoleculeForCalc
   logInfo $
     "Layouting done. Writing layout to "

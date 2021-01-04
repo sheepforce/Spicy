@@ -40,6 +40,10 @@ import System.Path ((</>))
 import qualified System.Path as Path
 import qualified System.Path.Directory as Dir
 
+logSource :: LogSource
+logSource = "Initiator"
+----------------------------------------------------------------------------------------------------
+
 -- | The Spicy Logo as ASCII art.
 spicyLogo :: Utf8Builder
 spicyLogo = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/Fonts/SpicyLogo.txt")
@@ -58,16 +62,13 @@ spicyMain = runSimpleApp $ do
   logInfo $ "Spicy version " <> versionInfo
 
   -- Get command line arguments to Spicy.
-  spicyArgs <- liftIO $ cmdArgs spicyModes
+  inputArgs <- liftIO $ cmdArgs spicyArgs
 
-  case spicyArgs of
-    Exec {} -> do
-      spicyEnv <- inputToEnv
-      runRIO spicyEnv $ do
-        spicyExecMain
-        logError "Not implemented yet."
-    Translate {} -> do
-      logError "Not implemented yet."
+  -- LOG
+  logDebugS logSource $ "Running with command line arguments:\n" <> displayShow inputArgs
+
+  spicyEnv <- inputToEnv
+  runRIO spicyEnv spicyExecMain
 
 ----------------------------------------------------------------------------------------------------
 
@@ -85,7 +86,7 @@ spicyMain = runSimpleApp $ do
 --   spicy.
 inputToEnv :: (HasLogFunc env) => RIO env SpicyEnv
 inputToEnv = do
-  spicyArgs <- liftIO $ cmdArgs spicyModes
+  inputArgs <- liftIO $ cmdArgs spicyArgs
 
   -- Look for a the spicyrc in the environment or alternatively in the home directory.
   homeDir <- liftIO $ Dir.getHomeDirectory
@@ -96,7 +97,7 @@ inputToEnv = do
   wrapperConfigs' <- parseYamlFile spicyrcPath
 
   -- Read the input file.
-  let inputPathRel = Path.toAbsRel . Path.relFile $ spicyArgs ^. #input
+  let inputPathRel = Path.toAbsRel . Path.relFile $ inputArgs ^. #input
   inputPathAbs <- liftIO $ Path.dynamicMakeAbsoluteFromCwd inputPathRel
   inputFile <- parseYamlFile inputPathAbs
 
@@ -106,8 +107,15 @@ inputToEnv = do
   -- Construct the process context
   procCntxt' <- mkDefaultProcessContext
 
+  -- LOG
+  logDebugS logSource $ "Home directory: " <> displayShow homeDir
+  logDebugS logSource $ "SpicyRC: " <> displayShow spicyrcPath
+  logDebugS logSource $ "Wrapper configuration:\n" <> displayShow wrapperConfigs'
+  logDebugS logSource $ "Input file:\n" <> displayShow inputFile
+  logDebugS logSource $ "Input molecule:\n" <> displayShow molecule'
+
   -- Construct the LogFunction and return the runtime environment
-  logOptions' <- logOptionsHandle stdout (spicyArgs ^. #verbose)
+  logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
   let logOptions = setLogUseTime True $ logOptions'
   withLogFunc logOptions $ \lf -> do
     let spicyEnv =
