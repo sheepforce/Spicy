@@ -56,24 +56,24 @@ versionInfo = displayShow . showVersion $ version
 
 ----------------------------------------------------------------------------------------------------
 spicyMain :: IO ()
-spicyMain = runSimpleApp $ do
-  -- Greet with the Spicy logo and emit some version information.
-  logInfo spicyLogo
-  logInfo $ "Spicy version " <> versionInfo
+spicyMain =
+  runSimpleApp $ do
+    -- Greet with the Spicy logo and emit some version information.
+    logInfo spicyLogo
+    logInfo $ "Spicy version " <> versionInfo
 
-  -- Get command line arguments to Spicy.
-  inputArgs <- liftIO $ cmdArgs spicyArgs
+    -- Get command line arguments to Spicy.
+    inputArgs <- liftIO $ cmdArgs spicyArgs
 
-  -- LOG
-  logDebugS logSource $ "Running with command line arguments:\n" <> displayShow inputArgs
+    -- LOG
+    logDebugS logSource $ "Running with command line arguments:\n" <> displayShow inputArgs
 
-  spicyEnv <- inputToEnv
-  runRIO spicyEnv spicyExecMain
+    inputToEnvAndRun
 
 ----------------------------------------------------------------------------------------------------
 
--- | Prepare 'SpicyEnv' for a normal execution run by reading necessary files from disk and
--- converting into data structures according to input format.
+-- | Prepare 'SpicyEnv' for a normal execution run and then start Spicy. Reads necessary files from
+--  disk and converts them into data structures according to input format.
 --
 -- This function will behave in the following way:
 --
@@ -84,8 +84,8 @@ spicyMain = runSimpleApp $ do
 -- - The molecule will be read from a file as specified in the input file. It will be used directly as
 --   obtained from the parser. Layouting for subsequent calculations is subject to the main call of
 --   spicy.
-inputToEnv :: (HasLogFunc env) => RIO env SpicyEnv
-inputToEnv = do
+inputToEnvAndRun   :: (HasLogFunc env) => RIO env ()
+inputToEnvAndRun = do
   inputArgs <- liftIO $ cmdArgs spicyArgs
 
   -- Look for a the spicyrc in the environment or alternatively in the home directory.
@@ -127,7 +127,7 @@ inputToEnv = do
               procCntxt = procCntxt',
               logFunc = lf
             }
-    runRIO spicyEnv $ ask >>= return
+    runRIO spicyEnv spicyExecMain
 
 ----------------------------------------------------------------------------------------------------
 
