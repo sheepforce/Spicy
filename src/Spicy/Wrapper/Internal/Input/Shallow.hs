@@ -118,9 +118,7 @@ translate2Input mol calcID = do
         WTHessian -> True
         _ -> False
   contextMolecule <- toMolRepr molContext program'
-  traceM "Does work"
   contextMultipoles <- toMultipoleRep molContext program'
-  traceM "Does it work?"
   contextTask <- toTask task' program'
   let context =
         object
@@ -166,7 +164,8 @@ translate2Input mol calcID = do
               <> show err
               <> "."
           )
-    Right (_warnings, mustacheResult) -> return . Text.toStrict $ mustacheResult
+    Right (_warnings, mustacheResult) -> do
+      return . Text.toStrict $ mustacheResult
   where
     maybeContext :: Show a => Maybe a -> Text
     maybeContext a = fromMaybe "Nothing" $ tShow <$> a
@@ -210,17 +209,13 @@ toMultipoleRep ::
   Program ->
   m Text
 toMultipoleRep mol program'
-  | program' == Psi4 = do
-      traceM "Creating Psi4 compatible representation of charges"
-      psi4Charges
+  | program' == Psi4 = psi4Charges
   | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
   where
     localExc = WrapperGenericException "toMultipoleRep"
 
     psi4Charges = do
-      traceM "Function to prepare Psi4 charges."
       pointChargeVecs <- innerSlices <$> molToPointCharges mol
-      traceM $ "Obtained point charge vector: " <> tShow pointChargeVecs
       let toText vec =
             let q = Builder.fromText . tShow $ vec Massiv.! 3
                 x = Builder.fromText . tShow $ vec Massiv.! 0
@@ -232,7 +227,6 @@ toMultipoleRep mol program'
             "Chrgfield = QMMM()\n"
               <> chargeLines
               <> "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
-      traceM $ "I am here!"
       return . Text.toStrict . Builder.toLazyText $ psi4Builder
 
 ----------------------------------------------------------------------------------------------------
