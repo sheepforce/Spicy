@@ -1,2 +1,3 @@
-#!/usr/bin/env bash
-nix-shell --pure -p gdma --run "gdma $@"
+#! /usr/bin/env nix-shell
+#! nix-shell -i bash -p gdma --pure
+gdma $@

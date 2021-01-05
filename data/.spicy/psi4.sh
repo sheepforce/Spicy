@@ -1,2 +1,3 @@
-#!/usr/bin/env bash
-nix-shell --pure -p psi4_9b60184 --run "psi4 $@"
+#! /usr/bin/env nix-shell
+#! nix-shell -i bash -p psi4_9b60184 --pure
+psi4 $@
