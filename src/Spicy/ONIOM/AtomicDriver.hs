@@ -103,8 +103,7 @@ multicentreOniomNDriver atomicTask = do
           thisLayerMaybeWithPolarisation <-
             if currentMolID == Empty
               then return currentMol
-              else -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
-              do
+              else do -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
                 let embeddingOfThisOrignalLayer =
                       currentMol
                         ^? #calcContext

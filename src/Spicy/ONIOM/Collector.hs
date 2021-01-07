@@ -535,11 +535,10 @@ hessianCollector mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This collector does not perform any actual calculation, but rather sets the multipoles of the atoms.
--- In similiar spirit to the other collectors, this happens in a local MC-ONIOM2 recursion. The
--- multipole moments of the current real layer are taken from the local model if this atom was part of
--- the local model system and from this real layers original calculation context otherwise.
+-- | This collector does not perform any actual calculation, but rather sets the multipoles of the
+-- atoms. In similiar spirit to the other collectors, this happens in a local MC-ONIOM2 recursion.
+-- The multipole moments of the current real layer are taken from the local model if this atom was
+-- part of the local model system and from this real layers original calculation context otherwise.
 --
 -- The final toplayer allows to calculate the electrostatic energy from all its atoms directly then.
 multipoleTransferCollector :: MonadThrow m => Molecule -> m Molecule
@@ -573,12 +572,14 @@ multipoleTransferCollector mol = do
               % #output
               % _Just
               % #multipoles
-      let realAtomsNoPoles = mol' ^. #atoms
+      let realAtomsNoPoles = IntMap.filter
+            (\a -> not $ a ^. #isDummy || (isAtomLink $ a ^. #isLink))
+              $ mol' ^. #atoms
 
       -- Check that the wrapper produced outputs for the correct atoms and that the output is
       -- complete.
       unless
-        (IntMap.keysSet maybeOriginalCalcMultipoles == IntMap.keysSet maybeOriginalCalcMultipoles)
+        (IntMap.keysSet maybeOriginalCalcMultipoles == IntMap.keysSet realAtomsNoPoles)
         . throwM
         $ MolLogicException
           "multipoleTransferCollector"

@@ -60,7 +60,7 @@ spicyExecMain = do
   mapM_ (logInfo . text2Utf8Builder) $ Text.lines jobDriverText
 
   -- LOG
-  logInfo "Applying changes to the input topology:"
+  logInfo "Applying changes to the input topology ..."
   -- Apply topology updates as given in the input file to the molecule.
   molTopologyAdaptions <- changeTopologyOfMolecule
 
@@ -78,8 +78,10 @@ spicyExecMain = do
   -- Perform the specified tasks on the input file.
   -- TODO (phillip|p=100|#Unfinished) - This is here for testing purposes. The real implementation should use a more abstract driver, that composes atomic tasks.
   _molProcessed <- local (& moleculeL .~ molLayouted) (multicentreOniomNDriver WTGradient)
+  logDebug . display . writeSpicy $ _molProcessed
 
-  return ()
+  -- LOG
+  logInfo "Spicy execution finished. Wup Wup!"
 
 ----------------------------------------------------------------------------------------------------
 

@@ -98,7 +98,7 @@ runCalculation ::
   RIO env Molecule
 runCalculation calcID = do
   -- LOG
-  logInfoS logSource $
+  logInfo $
     "Running calculation with ID \""
       <> displayShow (calcID ^. #calcKey)
       <> "\" on "
