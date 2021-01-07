@@ -475,7 +475,26 @@ writeFChk fchk =
           "Number of independent functions",
           "Atomic numbers",
           "Nuclear charges",
-          "Current cartesian coordinates"
+          "Current cartesian coordinates",
+          "Integer atomic weights",
+          "Real atomic weights",
+          "Number of primitive shells",
+          "Number of contracted shells",
+          "Pure/Cartesian d shells",
+          "Pure/Cartesian f shells",
+          "Highest angular momentum",
+          "Largest degree of contraction",
+          "Number of primitive shells",
+          "Shell types",
+          "Number of primitives per shell",
+          "Shell to atom map",
+          "Primitive exponents",
+          "Contraction coefficients",
+          "P(S=P) Contraction coefficients",
+          "Total SCF Density",
+          "Total MP2 Density",
+          "Total CI Density",
+          "Total CC Density"
         ]
 
       orderedBlocks =
