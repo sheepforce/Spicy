@@ -1,0 +1,41 @@
+permanent:
+  dirpath: Tests/permanent
+scratch:
+  dirpath: Tests/scratch
+molecule:
+  path:
+    filepath: goldentests/input/molecules/Ethanal.mol2
+  fileType: mol2
+model:
+  theoryLayer:
+    name: HF/STO3-G
+    program: psi4
+    charge: 0
+    mult: 1
+    templateFile:
+      filepath: goldentests/input/calculations/oniom/oniom2-me_1/hf.psi
+    execution:
+      nProcesses: 1
+      nThreads: 8
+      memory: 5000
+    selection: [1,2,3,4,5,6,7]
+    embedding:
+      tag: mechanical
+    deeperLayer:
+      - theoryLayer:
+          name: HF/STO-3G
+          program: psi4
+          charge: 0
+          mult: 1
+          templateFile:
+            filepath: goldentests/input/calculations/oniom/oniom2-me_1/hf.psi
+          execution:
+            nProcesses: 1
+            nThreads: 8
+            memory: 5000
+          selection: [1,2,3,4,5,6,7]
+          embedding:
+            tag: mechanical
+          deeperLayer: []
+task:
+- energy

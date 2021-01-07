@@ -18,8 +18,8 @@ extra-source-files:
   - README.md
   - LICENSE
   - data/Fonts/*
-  - goldentests/input/*
-  - goldentests/goldenfiles/*
+  - goldentests/input/
+  - goldentests/goldenfiles/
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package

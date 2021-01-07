@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.2.
+-- This file has been generated from package.yaml by hpack version 0.34.3.
 --
 -- see: https://github.com/sol/hpack
 
@@ -18,30 +18,8 @@ extra-source-files:
     LICENSE
     data/Fonts/JobDriver.txt
     data/Fonts/SpicyLogo.txt
-    goldentests/input/1hfe.pdb
-    goldentests/input/4ndg.pdb
-    goldentests/input/6cvr.pdb
-    goldentests/input/Ethanal.mol2
-    goldentests/input/FePorphyrine.mol2
-    goldentests/input/FePorphyrine.txyz
-    goldentests/input/FePorphyrine.xyz
-    goldentests/input/Ferrocene.xyz
-    goldentests/input/Ferrocene_WrapperOnly.yaml
-    goldentests/input/HeteroTraj.xyz
-    goldentests/input/N2_bonded.xyz
-    goldentests/input/N2_nonbonded.xyz
-    goldentests/input/Peptid.mol2
-    goldentests/input/Peptid.pdb
-    goldentests/input/Psi4_HF_STO-3G.psi
-    goldentests/input/RuKomplex.txyz
-    goldentests/input/SulfateInSolution.txyz
-    goldentests/input/SulfateInSolution.xyz
-    goldentests/input/TolueneCl2.txyz
-    goldentests/input/TolueneCl2.xyz
-    goldentests/input/TolueneCl2_ONIOM-n.yml
-    goldentests/input/TolueneCl2_ONIOM-n_ChargeTransfer.yml
-    goldentests/input/TolueneCl2_ONIOM-n_RealSystem.yml
-    goldentests/input/TolueneCl2_ONIOM-n_SolvationShell.yml
+    goldentests/input/
+    goldentests/goldenfiles/
 
 source-repository head
   type: git
