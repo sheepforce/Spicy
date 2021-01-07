@@ -39,6 +39,9 @@ import Spicy.ONIOM.Collector
 import Spicy.RuntimeEnv
 import Spicy.Wrapper
 
+
+-- TODO (phillip|p=100|#Wrong) - The way the molecule calculation traverses does not support electronic embedding.
+
 -- | A driver function for an atomic step in Multicentre-ONIOM-n methods. Performs a single point energy
 -- calculation, a gradient calculation or a hessian calculation on a given layout and builds the ONIOM
 -- result from the individual results of the calculations on the layers.
@@ -103,7 +106,8 @@ multicentreOniomNDriver atomicTask = do
           thisLayerMaybeWithPolarisation <-
             if currentMolID == Empty
               then return currentMol
-              else do -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
+              else do
+                -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
                 let embeddingOfThisOrignalLayer =
                       currentMol
                         ^? #calcContext
