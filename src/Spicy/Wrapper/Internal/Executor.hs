@@ -338,7 +338,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
   let modelAtomKeys =
         IntSet.toAscList
           . IntMap.keysSet
-          . IntMap.filter (isAtomLink . isLink)
+          . IntMap.filter (not . isAtomLink . isLink)
           $ atoms
       multipoleMap = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
 

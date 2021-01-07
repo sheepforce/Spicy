@@ -171,7 +171,7 @@ multipoleCentre = do
     magnitudeField :: Parser (Int, Double)
     magnitudeField = do
       rank <- char '|' *> char 'Q' *> (decimal <|> (char 'A' *> pure 10)) <* char '|' <* char ' ' <* char '='
-      mag <- skipMany (char ' ') *> double
+      mag <- skipHorizontalSpace *> double
       return (rank, mag)
 
     -- Parses a labeled component field of a multipole. Gives @(Rank, (Component, s/c), Value) for
@@ -188,5 +188,8 @@ multipoleCentre = do
     rankBlock :: Parser (Map MultipoleIdx Double)
     rankBlock = do
       _mf <- magnitudeField
-      assocMap <- Map.fromList <$> (many' $ skipHorizontalSpace *> labeledComponent <* skipSpace)
-      return assocMap
+      assocMap <-
+        (endOfLine *> return mempty)
+          <|> (many1 $ skipHorizontalSpace *> labeledComponent <* skipSpace)
+
+      return . Map.fromList $ assocMap
