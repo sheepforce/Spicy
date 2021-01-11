@@ -296,7 +296,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
     WrapperGenericException "executeGDMA" "The formatted checkpoint file does not exist."
 
   -- Read the FChk and reconstruct it with link atoms replaced by an uncommon element.
-  let linkReplacement = Og
+  let linkReplacement = Xe -- Xenon ist the heaviest element supported by GDMA.
       gdmaFChkPath = Path.takeDirectory fchkPath </> (Path.takeBaseName fchkPath <++> "_gdma" <++> ".fchk")
   fchkOrig <- readFileUTF8 (Path.toAbsRel fchkPath) >>= parse' fChk
   fchkLink <- relabelLinkAtoms linkReplacement atoms fchkOrig
@@ -313,6 +313,9 @@ gdmaAnalysis fchkPath atoms expOrder = do
             "start"
           ]
 
+  -- LOG
+  logDebug $ "Running GDMA with input:\n" <> displayShow gdmaInput
+
   -- Execute GDMA on the input file now and pipe the input file into it.
   (exitCode, gdmaOut, gdmaErr) <-
     proc
@@ -328,6 +331,9 @@ gdmaAnalysis fchkPath atoms expOrder = do
     logError . displayShow $ gdmaOut
     throwM . localExcp $ "GDMA run uncessfull"
 
+  -- LOG
+  logDebug $ "GDMA output:\n" <> displayShow gdmaOut
+
   -- Parse the GDMA output and rejoin them with the model atoms.
   modelMultipoleList <-
     getResOrErr
@@ -341,6 +347,9 @@ gdmaAnalysis fchkPath atoms expOrder = do
           . IntMap.filter (not . isAtomLink . isLink)
           $ atoms
       multipoleMap = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
+
+  -- LOG
+  logDebug $ "Obtained multipoles from GDMA:\n" <> displayShow modelMultipoleList
 
   unless (List.length modelMultipoleList == List.length modelAtomKeys) $ do
     logError
