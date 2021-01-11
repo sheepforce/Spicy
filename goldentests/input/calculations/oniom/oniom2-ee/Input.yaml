@@ -9,7 +9,7 @@ molecule:
 model:
   theoryLayer:
     templateFile:
-      filepath: goldentests/input/calculations/oniom/oniom2-me_1/hf.psi
+      filepath: goldentests/input/calculations/oniom/oniom2-me/hf.psi
     program: psi4
     name: HF/STO-3G
     embedding:
@@ -23,11 +23,12 @@ model:
     selection: [1,2,3,4,5,6,7]
     deeperLayer:
     - templateFile:
-        filepath: goldentests/input/calculations/oniom/oniom2-me_1/ccsd.psi
+        filepath: goldentests/input/calculations/oniom/oniom2-me/ccsd.psi
       program: psi4
       name: CCSD/cc-pVDZ
       embedding:
-        tag: mechanical
+        tag: electronic
+        contents: []
       execution:
         nProcesses: 1
         nThreads: 8
