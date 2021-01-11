@@ -68,6 +68,7 @@ import Data.Massiv.Array as Massiv hiding
     all,
     index,
     mapM,
+    new,
     sum,
     toList,
   )
@@ -774,7 +775,8 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
         ( \accIndxAndMol' linkAtom -> do
             (accIndx, accMol) <- accIndxAndMol'
             let newAtomIndex = accIndx + 1
-            molAtomAdded <- addAtomWithKeyLocal accMol newAtomIndex linkAtom
+            linkFragID <- findAtomInFragment linkBondPartner $ mol' ^. #fragment
+            molAtomAdded <- addAtomWithKeyLocal accMol newAtomIndex (Just linkFragID) linkAtom
             molAtomAndBondAdded <- changeBond Add molAtomAdded (linkBondPartner, newAtomIndex)
             return (newAtomIndex, molAtomAndBondAdded)
         )
@@ -979,16 +981,45 @@ addAtom fullMol molID' atom = do
 -- thrown. But if a sublayer is given to this function and you specify a key to this function, which
 -- is present in layers above (not visible to this function) but not in the layers visible, you will
 -- end up with an inconsistent molecule.
-addAtomWithKeyLocal :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
-addAtomWithKeyLocal mol key atom = do
+--
+-- The new atom will be added to a fragment to keep consistency with 'Molecule' data structure
+-- assumptions. The fragment ID needs to be specified or a new fragment will be added.
+addAtomWithKeyLocal ::
+  MonadThrow m =>
+  -- | Molecule to which an atom will be added.
+  Molecule ->
+  -- | The key the newly added atom shall have. Must not be used in any layer yet.
+  Int ->
+  -- | A fragment ID to which the atom should be added. If none is given, a new fragment will be
+  -- created.
+  Maybe Int ->
+  Atom ->
+  m Molecule
+addAtomWithKeyLocal mol key fragID atom = do
   -- Before doing anything, make sure that the input is sane.
   _ <- checkMolecule mol
 
-  newMol <- goInsert mol key atom
+  -- Find the largest fragment ID, that is in use yet.
+  let fragKeys = IntMap.keysSet $ mol ^. #fragment
+      unwrapKey = maybe2MThrow (localExc "No fragments in the top layer.") . fmap fst
+  fragIDTopMax <- unwrapKey . IntSet.maxView $ fragKeys
+  fragIDMax <-
+    molFoldl
+      ( \maxFragID thisMol -> do
+          thisFragIDMax <- unwrapKey . IntMap.lookupMax $ thisMol ^. #fragment
+          maxFragID >>= \accID -> return $ max thisFragIDMax accID
+      )
+      (pure fragIDTopMax)
+      mol
+
+  -- Construct the modified molecule recursively.
+  newMol <- goInsert mol key (fromMaybe fragIDMax fragID) atom
   return newMol
   where
-    goInsert :: MonadThrow m => Molecule -> Int -> Atom -> m Molecule
-    goInsert mol' newKey' atom' = do
+    localExc = MolLogicException "addAtomWithKeyLocal"
+
+    goInsert :: MonadThrow m => Molecule -> Int -> Int -> Atom -> m Molecule
+    goInsert mol' newKey' fragID' atom' = do
       let atoms' = mol' ^. #atoms
 
       when (newKey' `IntMap.member` atoms')
@@ -998,15 +1029,35 @@ addAtomWithKeyLocal mol key atom = do
           <> show newKey'
           <> " to the current molecule layer. The key already exists."
 
-      -- Add the atom with the given index to the current layer.
-      let thisLayerMolAtomAdded = mol' & #atoms %~ IntMap.insert newKey' atom'
+      -- Add the atom with the given index to the current layer and invalidate all data, that are
+      -- not valid anymore.
+      let singularFrag =
+            IntMap.singleton fragID' $
+              Fragment
+                { label = mempty,
+                  chain = Nothing,
+                  atoms = IntSet.singleton newKey'
+                }
+          thisLayerMolAtomAdded =
+            mol
+              -- Invalidate data.
+              & #energyDerivatives .~ def
+              & #jacobian .~ Nothing
+              & #neighbourlist .~ mempty
+              -- Add data.
+              & #atoms %~ IntMap.insert newKey' atom'
+              & #fragment
+                %~ IntMap.unionWith
+                  (\orig new -> orig & #atoms %~ IntSet.union (new ^. #atoms))
+                  singularFrag
+
           subMols = thisLayerMolAtomAdded ^. #subMol
 
       -- Add recursively also to all deeper layers.
       if IntMap.null subMols
         then return thisLayerMolAtomAdded
         else do
-          updateSubMols <- traverse (\m -> goInsert m newKey' atom') subMols
+          updateSubMols <- traverse (\m -> goInsert m newKey' fragID' atom') subMols
           return $ thisLayerMolAtomAdded & #subMol .~ updateSubMols
 
 ----------------------------------------------------------------------------------------------------
@@ -1139,13 +1190,17 @@ changeBond operation mol (at1, at2) = do
               then updateFunction thisLayerBonds (at1', at2')
               else thisLayerBonds
 
+          -- Update bonds data and invalidate the ones, that make no sense after bond updates.
+          molUpdated = mol' & #bonds .~ thisLayerBondsUpdated
+                            & #jacobian .~ Nothing
+
           -- Lazily update the submolecules recursively.
-          subMols = mol' ^. #subMol
+          subMols = molUpdated ^. #subMol
           subMolsUpdated =
             IntMap.map (\m -> goDeepAddRemove operation' m ((at1', wasLink1), (at2', wasLink2))) subMols
        in if IntMap.null subMols -- Update deeper layers only if required to end the recursion.
-            then mol' & #bonds .~ thisLayerBondsUpdated
-            else mol' & #bonds .~ thisLayerBondsUpdated & #subMol .~ subMolsUpdated
+            then molUpdated
+            else molUpdated & #subMol .~ subMolsUpdated
 
 ----------------------------------------------------------------------------------------------------
 
