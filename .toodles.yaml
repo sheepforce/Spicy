@@ -1,0 +1,4 @@
+ignore:
+  - .git
+  - .gitlab
+  - dist-newstyle
