@@ -655,7 +655,6 @@ multipoleTransferCollector mol = do
 multipoleTransfer :: MonadThrow m => CalcID -> Molecule -> m Molecule
 multipoleTransfer calcID mol = do
   let layerID = calcID ^. #molID
-      calcK = calcID ^. #calcKey
       calcLens = calcIDLensGen calcID
       layerLens = molIDLensGen layerID
 
