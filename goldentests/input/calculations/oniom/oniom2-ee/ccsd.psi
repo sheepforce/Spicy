@@ -12,7 +12,7 @@ set {
   {{/has_nopenshells}}
 }
 
-{{ multipoles }}
+{{{ multipoles }}}
 
 o, wfn = {{ task }}("ccsd", return_wfn = True)
 fchk(wfn, "{{ prefix }}.fchk" )
