@@ -1,0 +1,56 @@
+permanent:
+  dirpath: Tests/permanent
+scratch:
+  dirpath: Tests/scratch
+molecule:
+  path:
+    filepath: goldentests/input/molecules/Ethanal.mol2
+  fileType: mol2
+model:
+  theoryLayer:
+    templateFile:
+      filepath: goldentests/input/calculations/oniom/mc-oniom2-ee/hf.psi
+    program: psi4
+    name: HF/STO-3G
+    embedding:
+      tag: mechanical
+    execution:
+      nProcesses: 1
+      nThreads: 8
+      memory: 5000
+    charge: 0
+    mult: 1
+    selection: [1,2,3,4,5,6,7]
+    deeperLayer:
+    - templateFile:
+        filepath: goldentests/input/calculations/oniom/mc-oniom2-ee/ccsd.psi
+      program: psi4
+      name: CCSD/cc-pVDZ
+      embedding:
+        tag: electronic
+        contents: []
+      execution:
+        nProcesses: 1
+        nThreads: 8
+        memory: 5000
+      charge: 0
+      mult: 1
+      selection: [2,6,7]
+      deeperLayer: []
+    - templateFile:
+        filepath: goldentests/input/calculations/oniom/mc-oniom2-ee/ccsd.psi
+      program: psi4
+      name: CCSD/cc-pVDZ
+      embedding:
+        tag: electronic
+        contents: []
+      execution:
+        nProcesses: 1
+        nThreads: 8
+        memory: 5000
+      charge: 0
+      mult: 1
+      selection: [1,3,4,5]
+      deeperLayer: []
+task:
+- energy

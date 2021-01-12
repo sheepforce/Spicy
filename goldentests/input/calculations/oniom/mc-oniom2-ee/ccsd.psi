@@ -1,0 +1,21 @@
+memory {{ memory }} MB
+
+molecule {
+  {{ charge }} {{ multiplicity }}
+  {{ molecule }}
+}
+
+set {
+  basis cc-pvdz
+  {{#has_nopenshells}}
+  reference rhf
+  {{/has_nopenshells}}
+}
+
+{{{ multipoles }}}
+
+o, wfn = {{ task }}("ccsd", return_wfn = True)
+fchk(wfn, "{{ prefix }}.fchk" )
+{{#doHessian}}
+np.array(o)
+{{/doHessian}}
