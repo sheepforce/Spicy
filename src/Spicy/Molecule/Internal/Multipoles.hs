@@ -145,8 +145,11 @@ molToPointCharges mol = do
             unless (m == 4) . throwM . localExc $
               "Representation of the point charges requires a matrix with 4 rows."
 
-            relativeChargeCoords <- extractFromToM (0 :. 0) (2 :. n - 1) valueMat
-            computeS @S <$> atomCoords .+. relativeChargeCoords
+            relativeChargeCoords <- extractFromToM (0 :. 0) (3 :. n) valueMat
+            chargeRow <- extractFromToM (3 :. 0) (4 :. n) valueMat
+            absoluteCoords <- atomCoords .+. relativeChargeCoords
+
+            computeS @S <$> appendM 2 absoluteCoords chargeRow
         )
         atoms
         dummiesLocalModel
@@ -266,8 +269,8 @@ sphericalToLocal matE sphModel = do
 
   let matP = sphModel ^. #axesSystem
       matPT = computeAs S . setComp Seq . transpose $ matP
-  matC <- extractFromToM (0 :. 0) (2 :. nC - 1) valueMat
-  chargeMag <- extractFromToM (3 :. 0) (3 :. nC - 1) valueMat
+  matC <- extractFromToM (0 :. 0) (3 :. nC) valueMat
+  chargeMag <- extractFromToM (3 :. 0) (4 :. nC) valueMat
 
   -- The matrix equation applied.
   matC' <- matPT .><. matE >>= \pe -> (computeS @S pe) .><. matC

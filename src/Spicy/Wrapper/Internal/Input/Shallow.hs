@@ -156,17 +156,16 @@ translate2Input mol calcID = do
 
   case mustacheResultWithWarnings of
     Left err ->
-      throwM
-        . WrapperGenericException "translate2Input"
-        $ ( "Could not parse the mustache template for CalcID "
-              <> show calcID
-              <> " with: "
-              <> show err
-              <> "."
-          )
+      throwM . localExc $
+        "Could not parse the mustache template for CalcID "
+          <> show calcID
+          <> " with: "
+          <> show err
+          <> "."
     Right (_warnings, mustacheResult) -> do
       return . Text.toStrict $ mustacheResult
   where
+    localExc = WrapperGenericException "translate2Input"
     maybeContext :: Show a => Maybe a -> Text
     maybeContext a = fromMaybe "Nothing" $ tShow <$> a
 
