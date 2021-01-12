@@ -345,6 +345,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
         IntSet.toAscList
           . IntMap.keysSet
           . IntMap.filter (not . isAtomLink . isLink)
+          . IntMap.filter (\a -> not $ a ^. #isDummy)
           $ atoms
       multipoleMap = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
 

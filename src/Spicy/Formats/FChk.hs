@@ -395,14 +395,13 @@ relabelLinkAtoms ::
 relabelLinkAtoms newLinkElem atoms fchk = do
   -- Common bindings.
   let blocks = fchk ^. #blocks
+      nonDummyAtoms = IntMap.filter (\a -> not $ a ^. #isDummy) atoms
       atomicNumbersKey = "Atomic numbers"
-      sparse2Dense = getSparse2Dense atoms
+      sparse2Dense = getSparse2Dense nonDummyAtoms
       linkAtomsSparse = IntMap.keysSet . IntMap.filter (isAtomLink . isLink) $ atoms
       linkAtomsDense = intReplaceSet sparse2Dense linkAtomsSparse
       newLinkElemNumber = fromEnum newLinkElem + 1
-
-  -- Obtain initial values.
-  let nAtomsMol = IntMap.size atoms
+      nAtomsMol = IntMap.size nonDummyAtoms
 
   nAtomsFChk <-
     maybe2MThrow (localExcp "Could not find number of Atoms in the FChk.") $
