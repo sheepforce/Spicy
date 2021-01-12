@@ -161,7 +161,7 @@ checkMolecule mol = do
     sM = mol ^. #subMol
 
     -- Disjointment test (no atoms and bonds shared through submolecules). This will not check
-    -- link atoms (they will be removed before the disjoint check), as the may have common numbers
+    -- dummy atoms (they will be removed before the disjoint check), as the may have common numbers
     -- shared through the fragemnts.
     -- "bA" = Bool_A, "aA" = Atoms_A
     subMolAtomsDisjCheck =
@@ -171,7 +171,7 @@ checkMolecule mol = do
               if aA `intMapDisjoint` aB && bA then (True, aA `IntMap.union` aB) else (False, aA)
           )
           (True, IntMap.empty)
-        . IntMap.map (\atoms' -> (True, IntMap.filter (not . isAtomLink . isLink) atoms'))
+        . IntMap.map (\atoms' -> (True, IntMap.filter (\a -> not $ a ^. #isDummy) atoms'))
         . fmap (^. #atoms)
         $ sM
 

@@ -132,7 +132,7 @@ oniomNLayout = do
   case deeperLayers of
     Empty -> return molRealSystem
     moreLayers ->
-      fst <$> createNextLayers maxKeyOniomReal Empty molRealSystem calcContextTop moreLayers
+      (^. _1) <$> createNextLayers maxKeyOniomReal Empty molRealSystem calcContextTop moreLayers
   where
     createNextLayers ::
       (HasInputFile env, HasLogFunc env) =>
@@ -145,9 +145,9 @@ oniomNLayout = do
       -- | Current ONIOM layer, below which no submolecules should exist
       --   yet.
       Molecule ->
-      CalcContext -> --   Calculation context of the current layer, which needs to be
+      -- | Calculation context of the current layer, which needs to be
       --   inherited for the new layers below.
-
+      CalcContext ->
       -- | The 'TheoryLayer's, from which deeper submolecules will be
       --   created.
       Seq TheoryLayer ->
@@ -155,13 +155,13 @@ oniomNLayout = do
       --   theorylayers and the ID of the last oniom layer reached in the
       --   recursion. The ID is only used internally as a fold
       --   accumulator
-      RIO env (Molecule, MolID)
+      RIO env (Molecule, MolID, Int)
     createNextLayers maxKeyFullSystem oniomIDAbove molAbove contextAbove theoryLayers =
       foldl'
         ( \accumulator currentTheoLayer -> do
             -- Unwrap the current accumulator. Contains the accumulator of the molecule and the ID, which
             -- are updated synchronously.
-            (molAcc, idAcc) <- accumulator
+            (molAcc, idAcc, mayKeyAcc) <- accumulator
 
             -- Get input information.
             inputFile <- view inputFileL
@@ -256,7 +256,7 @@ oniomNLayout = do
                       (currentTheoLayer ^. #mult)
 
             -- Create the new sub layer below the current one.
-            molLayerAddedNoContext <- newSubLayer maxKeyFullSystem molAcc atomSelection Nothing Nothing
+            molLayerAddedNoContext <- newSubLayer mayKeyAcc molAcc atomSelection Nothing Nothing
             (newHighestSubMolIndex, newSubMolOnly) <-
               case IntMap.lookupMax $ molLayerAddedNoContext ^. #subMol of
                 Just (newIndex, newSubMol) -> return (newIndex, newSubMol)
@@ -284,14 +284,19 @@ oniomNLayout = do
               Empty -> return subMolWithContext
               -- If deeper layers can be found, use this function recursively to also create thus.
               moreLayers ->
-                fst <$> createNextLayers newMaxAtomKey idAcc subMolWithContext calcContextThis moreLayers
+                (^. _1)
+                  <$> createNextLayers
+                    newMaxAtomKey
+                    idAcc
+                    subMolWithContext
+                    calcContextThis
+                    moreLayers
 
             -- Now that the context of this sublayer and all its sublayers below have been prepared,
             -- return the layer that was given as input with the new sublayer created. Use it as the new
             -- accumulator.
-            let molUpdated =
-                  molAcc & #subMol %~ IntMap.insert newHighestSubMolIndex finalNewSubMol
-            return (molUpdated, oniomIDNextCentre)
+            let molUpdated = molAcc & #subMol %~ IntMap.insert newHighestSubMolIndex finalNewSubMol
+            return (molUpdated, oniomIDNextCentre, newMaxAtomKey)
         )
-        (return (molAbove, oniomIDAbove |> 0))
+        (return (molAbove, oniomIDAbove |> 0, maxKeyFullSystem))
         theoryLayers
