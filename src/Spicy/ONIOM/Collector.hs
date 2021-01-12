@@ -15,6 +15,7 @@ module Spicy.ONIOM.Collector
     gradientCollector,
     hessianCollector,
     multipoleTransferCollector,
+    multipoleTransfer
   )
 where
 
@@ -28,6 +29,7 @@ import Optics hiding (view)
 import RIO hiding
   ( Vector,
     view,
+    (%~),
     (.~),
     (^.),
     (^?),
@@ -572,8 +574,9 @@ multipoleTransferCollector mol = do
               % #output
               % _Just
               % #multipoles
-      let realAtomsNoPoles = IntMap.filter
-            (\a -> not $ a ^. #isDummy || (isAtomLink $ a ^. #isLink))
+      let realAtomsNoPoles =
+            IntMap.filter
+              (\a -> not $ a ^. #isDummy || (isAtomLink $ a ^. #isLink))
               $ mol' ^. #atoms
 
       -- Check that the wrapper produced outputs for the correct atoms and that the output is
@@ -644,3 +647,41 @@ multipoleTransferCollector mol = do
         realMol
           & (#atoms .~ realAtomsUpdated)
           & (#subMol .~ modelCentresWithTheirRealMultipoles)
+
+----------------------------------------------------------------------------------------------------
+
+-- | Not a collector in the sense of the others. Simply transfers the multipoles from a given CalcID
+-- to the corresponding fields of the molecule.
+multipoleTransfer :: MonadThrow m => CalcID -> Molecule -> m Molecule
+multipoleTransfer calcID mol = do
+  let layerID = calcID ^. #molID
+      calcK = calcID ^. #calcKey
+      calcLens = calcIDLensGen calcID
+      layerLens = molIDLensGen layerID
+
+  -- Obtain the atoms of this layer.
+  atoms <- maybe2MThrow (localExc "The specified layer does not exist.") $ mol ^? layerLens % #atoms
+  let multipolesInAtoms = fmap (^. #multipoles) atoms
+
+  -- Obtain multipoles from the output of the calculation.
+  multiPolesInOutput <-
+    maybe2MThrow (localExc "Requested calculation does not exist or did not produce output.") $
+      mol ^? calcLens % #output % _Just % #multipoles
+
+  -- Check that not too many or mismatching multipoles have been obtained.
+  let atomKeys = IntMap.keysSet multipolesInAtoms
+      atomsWithMPAvailable = IntMap.keysSet multiPolesInOutput
+  unless (atomsWithMPAvailable `IntSet.isSubsetOf` atomKeys) . throwM . localExc $
+    "The calculation seems to have produced multipoles for non existing atoms."
+
+  -- Update the multipoles and rejoin with the atoms.
+  let updatedPoles = IntMap.union multiPolesInOutput multipolesInAtoms
+      updatedAtoms = IntMap.intersectionWith (\atom mp -> atom & #multipoles .~ mp) atoms updatedPoles
+
+  -- Check that we did not loose atoms.
+  unless (IntMap.keysSet updatedAtoms == atomKeys) . throwM . localExc $
+    "Lost atoms during the multipole transfer."
+
+  return $ mol & layerLens % #atoms .~ updatedAtoms
+  where
+    localExc = MolLogicException "multipoleTransfer"
