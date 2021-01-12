@@ -222,10 +222,8 @@ toMultipoleRep mol program'
                 z = Builder.fromText . tShow $ vec Massiv.! 2
              in "Chrgfield.extern.addCharge(" <> q <> ", " <> x <> ", " <> y <> ", " <> z <> ")\n"
           chargeLines = Massiv.foldMono toText pointChargeVecs
-          psi4Builder =
-            "Chrgfield = QMMM()\n"
-              <> chargeLines
-              <> "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
+          settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
+          psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
       return . Text.toStrict . Builder.toLazyText $ psi4Builder
 
 ----------------------------------------------------------------------------------------------------
