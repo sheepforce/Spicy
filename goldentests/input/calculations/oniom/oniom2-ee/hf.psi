@@ -12,6 +12,8 @@ set {
   {{/has_nopenshells}}
 }
 
+{{ multipoles }}
+
 o, wfn = {{ task }}("scf", return_wfn = True)
 fchk(wfn, "{{ prefix }}.fchk" )
 {{#doHessian}}
