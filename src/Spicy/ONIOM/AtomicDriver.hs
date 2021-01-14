@@ -133,9 +133,6 @@ multicentreOniomNDriver atomicTask = do
           -- full ONIOM structure.
           let molWithPolarisation = molAcc & layerLens .~ thisLayerMaybeWithPolarisation
 
-          -- LOG
-          logDebug $ "Current molecule with polarisation:\n" <> displayShow molWithPolarisation
-
           -- The calculation is performed on the current layer. The runCalculation function updates
           -- the outputs of the calculation layer on the fly.
           let calcCntxts = layerMol ^. #calcContext

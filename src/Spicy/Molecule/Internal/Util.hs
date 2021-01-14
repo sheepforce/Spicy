@@ -208,6 +208,7 @@ checkMolecule mol = do
        in diffSet == IntSet.empty
 
     -- Check if charge and multiplicity combinations of this layer are fine.
+    molNoDummies = mol & #atoms %~ IntMap.filter (\a -> not $ a ^. #isDummy)
     calcCheck =
       all (== True)
         . Map.map
@@ -215,13 +216,13 @@ checkMolecule mol = do
               let qmLens = #input % #qMMMSpec % _QM
                   qmCharge = calcContext' ^? qmLens % #charge
                   qmMult = calcContext' ^? qmLens % #mult
-                  nElectrons = getNElectrons mol <$> qmCharge
+                  nElectrons = getNElectrons molNoDummies <$> qmCharge
                   qmElectronsOK = case (nElectrons, qmMult) of
                     (Just n, Just m) -> n + 1 >= m && ((even n && odd m) || (odd n && even m))
                     _ -> True
                in qmElectronsOK
           )
-        $ (mol ^. #calcContext)
+        $ (molNoDummies ^. #calcContext)
 
 {-
 -- This check doesn't need to be true, as link bonds can break the subset property.
