@@ -156,4 +156,4 @@ angstrom2Bohr lenghtInAngstrom = lenghtInAngstrom * 1.889725989
 -- |
 -- Conversion from Bohr to Angstrom.
 bohr2Angstrom :: Double -> Double
-bohr2Angstrom lengthInBohr = lengthInBohr / (1 / angstrom2Bohr 1)
+bohr2Angstrom lengthInBohr = lengthInBohr / (angstrom2Bohr 1)
