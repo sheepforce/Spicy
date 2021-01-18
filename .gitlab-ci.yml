@@ -80,7 +80,7 @@ nixReleaseBuild:
     - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY;
     - cachix use spicy;
     - cachix use chemix;
-    - export NIXPKGS_ALLOW_UNFREE=0;
+    - export NIXPKGS_ALLOW_UNFREE=1;
     # Make a snapshot of the nix store
     - nix path-info --all > /tmp/store-path-pre-build;
   script:
@@ -124,7 +124,7 @@ nixDevBuild:
     - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY;
     - cachix use spicy;
     - cachix use chemix;
-    - export NIXPKGS_ALLOW_UNFREE=0;
+    - export NIXPKGS_ALLOW_UNFREE=1;
     # Make a snapshot of the nix store
     - nix path-info --all > /tmp/store-path-pre-build;
   script:
