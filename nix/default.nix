@@ -16,5 +16,6 @@ pkgs.haskell-nix.project {
       "--disable-executable-dynamic"
       "--disable-shared"
       "--ghc-option=-optl=-static"
+      "--constraint=\"hmatrix +no-random_r\""
     ] else "";
 }
