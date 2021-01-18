@@ -54,8 +54,7 @@ import Spicy.Common
 import Spicy.Molecule.Internal.Types
 import Spicy.Molecule.Internal.Util
 
--- |
--- Write a Molden XYZ file from a molecule. This format ignores all deep level layers of a molecule.
+-- | Write a Molden XYZ file from a molecule. This format ignores all deep level layers of a molecule.
 writeXYZ :: MonadThrow m => Molecule -> m Text
 writeXYZ mol = do
   _ <- checkMolecule mol

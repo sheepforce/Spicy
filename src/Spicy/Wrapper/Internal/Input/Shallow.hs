@@ -16,9 +16,16 @@ module Spicy.Wrapper.Internal.Input.Shallow
 where
 
 import Data.Aeson
+import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
+import Data.Massiv.Array as Massiv hiding (drop)
+import qualified Data.Text.Lazy.Builder as Builder
 import Optics
 import RIO hiding
-  ( (^.),
+  ( Vector,
+    (%~),
+    (.~),
+    (^.),
     (^?),
   )
 import qualified RIO.Text as Text
@@ -42,6 +49,7 @@ import Text.Mustache
 --
 --   - @molecule@: program specific representation of the molecule (most often cartesian in angstrom).
 --   - @task@: a task string to tell the program which quantity to calculate.
+--   - @multipoles@: program specific representation of the multipole moments as point charges.
 --   - @doEnergy@: boolean, that tells if an energy calculation shall be performed. Also true for
 --     hessian and gradient calculations.
 --   - @doGradient@: boolean, that tells if a gradient calculation shall be performed.
@@ -65,7 +73,7 @@ import Text.Mustache
 --   name `{{ prefix }}.fchk`. Hessian information need to be saved by numpy as plain text array, as
 --   they don't make it to the FChk for some reason in Psi4.
 translate2Input ::
-  MonadThrow m =>
+  (MonadThrow m, MonadIO m) =>
   -- | The complete molecule construct from top level on.
   Molecule ->
   -- | The ID of the calculation to perform on the molecule.
@@ -110,10 +118,12 @@ translate2Input mol calcID = do
         WTHessian -> True
         _ -> False
   contextMolecule <- toMolRepr molContext program'
+  contextMultipoles <- toMultipoleRep molContext program'
   contextTask <- toTask task' program'
   let context =
         object
           [ "molecule" .= contextMolecule,
+            "multipoles" .= contextMultipoles,
             "task" .= contextTask,
             "doEnergy" .= contextDoEnergy,
             "doGradient" .= contextDoGradient,
@@ -134,7 +144,7 @@ translate2Input mol calcID = do
             "has_restart" .= contextHasRestart
           ]
 
-  -- Parse the Ginger template.
+  -- Parse the Mustache template.
   let template = calcInput ^. #template
       parsedTemplate =
         compileMustacheText
@@ -146,25 +156,22 @@ translate2Input mol calcID = do
 
   case mustacheResultWithWarnings of
     Left err ->
-      throwM
-        . WrapperGenericException "translate2Input"
-        $ ( "Could not parse the mustache template for CalcID "
-              <> show calcID
-              <> " with: "
-              <> show err
-              <> "."
-          )
-    Right (_warnings, mustacheResult) -> return . Text.toStrict $ mustacheResult
+      throwM . localExc $
+        "Could not parse the mustache template for CalcID "
+          <> show calcID
+          <> " with: "
+          <> show err
+          <> "."
+    Right (_warnings, mustacheResult) -> do
+      return . Text.toStrict $ mustacheResult
   where
+    localExc = WrapperGenericException "translate2Input"
     maybeContext :: Show a => Maybe a -> Text
     maybeContext a = fromMaybe "Nothing" $ tShow <$> a
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This gives a 'Molecule' in the program specific representation for a wrapper calculation.
-
--- TODO (phillip|p=100|#Wrong) - This works only if no multipoles are inherited. The writers here are not aware of dummy types and how to insert multipoles.
+-- | This gives a 'Molecule' in the program specific representation for a wrapper calculation.
 toMolRepr ::
   MonadThrow m =>
   -- | The __current__ 'Molecule' layer for which to perform the calculation.
@@ -180,12 +187,48 @@ toMolRepr mol program'
     throwM $
       WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
   where
-    simpleCartesianAngstrom = Text.unlines . drop 2 . Text.lines <$> writeXYZ mol
+    realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ mol ^. #atoms
+    realMol =
+      mol
+        & #atoms %~ flip IntMap.restrictKeys realAtomInds
+        & #fragment % each % #atoms %~ IntSet.intersection realAtomInds
+        & #bonds %~ flip cleanBondMatByAtomInds realAtomInds
+        & #subMol .~ mempty
+    simpleCartesianAngstrom = Text.unlines . drop 2 . Text.lines <$> writeXYZ realMol
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Generates a "task" string specific for computational chemistry 'Program'.
+-- | Generates the multipole representation of a molecule for the specific program.
+toMultipoleRep ::
+  (MonadThrow m, MonadIO m) =>
+  -- | The __current__ 'Molecule' layer for which to perform the calculation. The multipoles must
+  -- therefore already be present and multipole centres must be marked as Dummy atoms.
+  Molecule ->
+  -- | The 'Program' for which the representation shall be generated.
+  Program ->
+  m Text
+toMultipoleRep mol program'
+  | program' == Psi4 = psi4Charges
+  | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
+  where
+    localExc = WrapperGenericException "toMultipoleRep"
+
+    psi4Charges = do
+      pointChargeVecs <- innerSlices <$> molToPointCharges mol
+      let toText vec =
+            let q = Builder.fromText . tShow $ vec Massiv.! 3
+                x = Builder.fromText . tShow $ vec Massiv.! 0
+                y = Builder.fromText . tShow $ vec Massiv.! 1
+                z = Builder.fromText . tShow $ vec Massiv.! 2
+             in "Chrgfield.extern.addCharge(" <> q <> ", " <> x <> ", " <> y <> ", " <> z <> ")\n"
+          chargeLines = Massiv.foldMono toText pointChargeVecs
+          settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
+          psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
+      return . Text.toStrict . Builder.toLazyText $ psi4Builder
+
+----------------------------------------------------------------------------------------------------
+
+-- | Generates a "task" string specific for computational chemistry 'Program'.
 toTask :: MonadThrow m => WrapperTask -> Program -> m Text
 toTask task' program'
   | program' == Psi4 = psi4Task

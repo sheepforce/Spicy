@@ -31,16 +31,18 @@ import RIO.Process
 import Spicy.CmdArgs
 import Spicy.Common
 import Spicy.InputFile
+import Spicy.JobDriver
 import Spicy.Molecule
--- import           Spicy.JobDriver
--- import           Spicy.Logger
-
 import Spicy.RuntimeEnv
 import System.Console.CmdArgs hiding (def)
 import System.Environment
 import System.Path ((</>))
 import qualified System.Path as Path
 import qualified System.Path.Directory as Dir
+
+logSource :: LogSource
+logSource = "Initiator"
+----------------------------------------------------------------------------------------------------
 
 -- | The Spicy Logo as ASCII art.
 spicyLogo :: Utf8Builder
@@ -54,27 +56,24 @@ versionInfo = displayShow . showVersion $ version
 
 ----------------------------------------------------------------------------------------------------
 spicyMain :: IO ()
-spicyMain = runSimpleApp $ do
-  -- Greet with the Spicy logo and emit some version information.
-  logInfo spicyLogo
-  logInfo $ "Spicy version " <> versionInfo
+spicyMain =
+  runSimpleApp $ do
+    -- Greet with the Spicy logo and emit some version information.
+    logInfo spicyLogo
+    logInfo $ "Spicy version " <> versionInfo
 
-  -- Get command line arguments to Spicy.
-  spicyArgs <- liftIO $ cmdArgs spicyModes
+    -- Get command line arguments to Spicy.
+    inputArgs <- liftIO $ cmdArgs spicyArgs
 
-  case spicyArgs of
-    Exec {} -> do
-      spicyEnv <- inputToEnv
-      runRIO spicyEnv $ do
-        -- spicyExecMain
-        logError "Not implemented yet."
-    Translate {} -> do
-      logError "Not implemented yet."
+    -- LOG
+    logDebugS logSource $ "Running with command line arguments:\n" <> displayShow inputArgs
+
+    inputToEnvAndRun
 
 ----------------------------------------------------------------------------------------------------
 
--- | Prepare 'SpicyEnv' for a normal execution run by reading necessary files from disk and
--- converting into data structures according to input format.
+-- | Prepare 'SpicyEnv' for a normal execution run and then start Spicy. Reads necessary files from
+--  disk and converts them into data structures according to input format.
 --
 -- This function will behave in the following way:
 --
@@ -85,9 +84,9 @@ spicyMain = runSimpleApp $ do
 -- - The molecule will be read from a file as specified in the input file. It will be used directly as
 --   obtained from the parser. Layouting for subsequent calculations is subject to the main call of
 --   spicy.
-inputToEnv :: (HasLogFunc env) => RIO env SpicyEnv
-inputToEnv = do
-  spicyArgs <- liftIO $ cmdArgs spicyModes
+inputToEnvAndRun   :: (HasLogFunc env) => RIO env ()
+inputToEnvAndRun = do
+  inputArgs <- liftIO $ cmdArgs spicyArgs
 
   -- Look for a the spicyrc in the environment or alternatively in the home directory.
   homeDir <- liftIO $ Dir.getHomeDirectory
@@ -98,7 +97,7 @@ inputToEnv = do
   wrapperConfigs' <- parseYamlFile spicyrcPath
 
   -- Read the input file.
-  let inputPathRel = Path.toAbsRel . Path.relFile $ spicyArgs ^. #input
+  let inputPathRel = Path.toAbsRel . Path.relFile $ inputArgs ^. #input
   inputPathAbs <- liftIO $ Path.dynamicMakeAbsoluteFromCwd inputPathRel
   inputFile <- parseYamlFile inputPathAbs
 
@@ -108,8 +107,15 @@ inputToEnv = do
   -- Construct the process context
   procCntxt' <- mkDefaultProcessContext
 
+  -- LOG
+  logDebugS logSource $ "Home directory: " <> displayShow homeDir
+  logDebugS logSource $ "SpicyRC: " <> displayShow spicyrcPath
+  logDebugS logSource $ "Wrapper configuration:\n" <> displayShow wrapperConfigs'
+  logDebugS logSource $ "Input file:\n" <> displayShow inputFile
+  logDebugS logSource $ "Input molecule:\n" <> displayShow molecule'
+
   -- Construct the LogFunction and return the runtime environment
-  logOptions' <- logOptionsHandle stdout (spicyArgs ^. #verbose)
+  logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
   let logOptions = setLogUseTime True $ logOptions'
   withLogFunc logOptions $ \lf -> do
     let spicyEnv =
@@ -121,12 +127,11 @@ inputToEnv = do
               procCntxt = procCntxt',
               logFunc = lf
             }
-    runRIO spicyEnv $ ask >>= return
+    runRIO spicyEnv spicyExecMain
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Load the whole molecular system from an external file. If a filetype is not provided, try to guess
+-- | Load the whole molecular system from an external file. If a filetype is not provided, try to guess
 -- it by the file extension. If the extension cannot be understood, try the desperate choice of
 -- defaulting to XYZ. If nothing works, this will simply fail.
 loadInputMolecule :: InputMolecule -> RIO env Molecule

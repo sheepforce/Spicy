@@ -8,11 +8,12 @@
 -- Portability : POSIX, Windows
 module Spicy.Molecule
   ( -- * Types
+
     -- ** Molecular Structure
-    Element(..),
-    Atom(..),
-    Molecule(..),
-    HasMolecule(..),
+    Element (..),
+    Atom (..),
+    Molecule (..),
+    HasMolecule (..),
     MolID,
 
     -- ** Calculations
@@ -87,6 +88,7 @@ module Spicy.Molecule
     redistributeLinkMoments,
     isAtomLink,
     removeRealLinkTagsFromModel,
+    molToPointCharges,
 
     -- * Writer
     writeXYZ,
@@ -98,6 +100,7 @@ module Spicy.Molecule
   )
 where
 
+import Spicy.Molecule.Internal.Multipoles
 import Spicy.Molecule.Internal.Parser
 import Spicy.Molecule.Internal.Types
 import Spicy.Molecule.Internal.Util

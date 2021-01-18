@@ -1,0 +1,19 @@
+memory {{ memory }} MB
+
+molecule {
+  {{ charge }} {{ multiplicity }}
+  {{ molecule }}
+}
+
+set {
+  basis def2-svp
+  {{#has_nopenshells}}
+  reference rhf
+  {{/has_nopenshells}}
+}
+
+o, wfn = {{ task }}("bp86", return_wfn = True)
+fchk(wfn, "{{ prefix }}.fchk" )
+{{#doHessian}}
+np.array(o)
+{{/doHessian}}

@@ -54,7 +54,8 @@ data InputFile = InputFile
 instance ToJSON InputFile where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON InputFile
+instance FromJSON InputFile where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Seq Task, b ~ a) => LabelOptic "task" k InputFile InputFile a b where
@@ -99,7 +100,8 @@ data Task
 instance ToJSON Task where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Task
+instance FromJSON Task where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 data InputMolecule = InputMolecule
@@ -114,7 +116,8 @@ data InputMolecule = InputMolecule
 instance ToJSON InputMolecule where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON InputMolecule
+instance FromJSON InputMolecule where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Maybe FileType, b ~ a) => LabelOptic "fileType" k InputMolecule InputMolecule a b where
@@ -140,7 +143,8 @@ data FileType
 instance ToJSON FileType where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON FileType
+instance FromJSON FileType where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 
@@ -163,7 +167,8 @@ data TopoChanges = TopoChanges
 instance ToJSON TopoChanges where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON TopoChanges
+instance FromJSON TopoChanges where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "guessBonds" k TopoChanges TopoChanges a b where
@@ -194,7 +199,8 @@ data Model = ONIOMn
 instance ToJSON Model where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Model
+instance FromJSON Model where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ TheoryLayer, b ~ a) => LabelOptic "theoryLayer" k Model Model a b where
@@ -237,7 +243,8 @@ data TheoryLayer = TheoryLayer
 instance ToJSON TheoryLayer where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON TheoryLayer
+instance FromJSON TheoryLayer where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "name" k TheoryLayer TheoryLayer a b where
@@ -284,7 +291,8 @@ data Execution = Execution
 instance ToJSON Execution where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Execution
+instance FromJSON Execution where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "nProcesses" k Execution Execution a b where

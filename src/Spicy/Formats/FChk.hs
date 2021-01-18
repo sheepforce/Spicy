@@ -1,42 +1,66 @@
 -- |
--- Module      : Spicy.Wrapper.Internal.Output.FChk
--- Description : Parsers for Gaussian FChk files.
+-- Module      : Spicy.Formats.FChk
+-- Description : Functions to work with FChk files
 -- Copyright   : Phillip Seeber, 2019
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
 -- Portability : POSIX, Windows
 --
--- This module provides parsers for FChk outputs.
-module Spicy.Wrapper.Internal.Output.FChk
-  ( FChk (..),
+-- This module provides functions to read, manipulate and write FChk files.
+module Spicy.Formats.FChk
+  ( -- * Types
+    -- $types
+    FChk (..),
+
+    -- * Parsers/Analysers
+    -- $analysers
     getResultsFromFChk,
     fChk,
+
+    -- * Manipulation
+    -- $manipulation
+    relabelLinkAtoms,
+
+    -- * Writer
+    -- $writer
+    writeFChk,
   )
 where
 
 import Control.Applicative
 import Data.Attoparsec.Text
 import Data.Default
+import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
 import Data.Massiv.Array ()
 import Data.Massiv.Array as Massiv hiding
   ( take,
     takeWhile,
   )
+import Data.Text.Lazy.Builder (Builder)
+import qualified Data.Text.Lazy.Builder as TB
 import Optics
 import RIO hiding
-  ( Vector,
+  ( Builder,
+    Vector,
     lens,
     take,
     takeWhile,
+    (.~),
     (^.),
     (^?),
   )
+import qualified RIO.List as List
 import qualified RIO.Map as Map
+import qualified RIO.Set as Set
 import qualified RIO.Text as Text
+import qualified RIO.Text.Lazy as TL
 import Spicy.Common
 import Spicy.Math
 import Spicy.Molecule
+
+-- $types
 
 -- | The contents of an FChk.
 data FChk = FChk
@@ -195,7 +219,11 @@ data CalcType
     MIXED
   deriving (Eq, Show)
 
-----------------------------------------------------------------------------------------------------
+{-
+####################################################################################################
+-}
+
+-- $analysers
 
 -- | A function that uses information from FChk files to obtain 'CalcOutput'. The function will not
 -- fill in a value ('Just') if it cannot be found in the FChk and fail if the FChk cannot be parsed
@@ -206,12 +234,12 @@ getResultsFromFChk content = do
   -- the lower triangular matrix and needs to be expanded to the full square matrix here.
   fchk <- parse' fChk content
   let fchkBlocks = fchk ^. #blocks
-      energy = fchkBlocks Map.!? "Total Energy"
-      gradient = fchkBlocks Map.!? "Cartesian Gradient"
+      energy' = fchkBlocks Map.!? "Total Energy"
+      gradient' = fchkBlocks Map.!? "Cartesian Gradient"
       hessianContent = fchkBlocks Map.!? "Cartesian Force Constants"
 
   let hessianLTVec = hessianContent ^? _Just % _Array % _ArrayDouble
-  hessian <- case hessianLTVec of
+  hessian' <- case hessianLTVec of
     Just vec -> Just . MatrixS <$> ltMat2Square vec
     Nothing -> return Nothing
 
@@ -220,18 +248,9 @@ getResultsFromFChk content = do
       { multipoles = def,
         energyDerivatives =
           EnergyDerivatives
-            { energy =
-                energy
-                  ^? _Just
-                    % _Scalar
-                    % _ScalarDouble,
-              gradient =
-                VectorS
-                  <$> gradient
-                  ^? _Just
-                    % _Array
-                    % _ArrayDouble,
-              hessian = hessian
+            { energy = energy' ^? _Just % _Scalar % _ScalarDouble,
+              gradient = VectorS <$> gradient' ^? _Just % _Array % _ArrayDouble,
+              hessian = hessian'
             }
       }
 
@@ -306,8 +325,7 @@ scalar = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Parser for 'Array' fields in FChk files.
+-- | Parser for 'Array' fields in FChk files.
 
 -- Text arrays appear in no way to be actual arrays of strings. Nevertheles for Fortran they are, as
 -- the format for those is 5A12 per line (C) or 9A8 (H). In the FChk they appear as a single normal
@@ -354,3 +372,204 @@ array = do
       return . ArrayLogical . Massiv.fromList Par $ bools
     _ -> fail $ "Character \"" <> [typeChar] <> " \" is not a valid type character. Cannot parse."
   return (label, Array values)
+
+{-
+####################################################################################################
+-}
+
+-- $manipulation
+
+-- | This function replaces the element of all link atoms by a different one (one that is not in the
+-- fchk). This is dirty but
+-- FChks cannot contain labels, that would allow to delete
+relabelLinkAtoms ::
+  MonadThrow m =>
+  -- | Element to use as the link atoms in the FChks.
+  Element ->
+  -- | All atoms that are in the FChk from the original structure.
+  -- Atoms that are labels there will be renamed in the FChk.
+  IntMap Atom ->
+  -- | Original FChk
+  FChk ->
+  m FChk
+relabelLinkAtoms newLinkElem atoms fchk = do
+  -- Common bindings.
+  let blocks = fchk ^. #blocks
+      nonDummyAtoms = IntMap.filter (\a -> not $ a ^. #isDummy) atoms
+      atomicNumbersKey = "Atomic numbers"
+      sparse2Dense = getSparse2Dense nonDummyAtoms
+      linkAtomsSparse = IntMap.keysSet . IntMap.filter (isAtomLink . isLink) $ atoms
+      linkAtomsDense = intReplaceSet sparse2Dense linkAtomsSparse
+      newLinkElemNumber = fromEnum newLinkElem + 1
+      nAtomsMol = IntMap.size nonDummyAtoms
+
+  nAtomsFChk <-
+    maybe2MThrow (localExcp "Could not find number of Atoms in the FChk.") $
+      (blocks Map.!? "Number of atoms") >>= (^? _Scalar % _ScalarInt)
+
+  atomicNumbersFChk <-
+    maybe2MThrow (localExcp "Could not find atomic numbers in the FChk.") $
+      (blocks Map.!? atomicNumbersKey) >>= (^? _Array % _ArrayInt)
+
+  -- Sanity checks
+  unless (nAtomsMol == nAtomsFChk) . throwM . localExcp $
+    "Number of atoms in the molecule and FChk do not match."
+
+  -- Construct a new Atomic Numbers block for the FChk.
+  let newAtomicNumbers =
+        Massiv.computeP
+          . Massiv.imap
+            ( \i e ->
+                if i `IntSet.member` linkAtomsDense
+                  then newLinkElemNumber
+                  else e
+            )
+          $ atomicNumbersFChk
+
+  -- Build a new FChk and return it.
+  return $ fchk & #blocks % ix atomicNumbersKey .~ (Array . ArrayInt $ newAtomicNumbers)
+  where
+    localExcp = MolLogicException "relabelLinkAtoms"
+
+    -- Conversion from sparse (IntMap) indices to 0 based dense indices.
+    getSparse2Dense :: IntMap a -> IntMap Int
+    getSparse2Dense origMap =
+      let keys = IntMap.keys origMap
+       in IntMap.fromAscList $ List.zip keys [0 ..]
+
+{-
+####################################################################################################
+-}
+
+-- $writer
+
+-- | A function to construct the FChk as a textual object from its internal representation.
+-- Unfortunately, the order of the content blocks seems to be important and it is not entirely clear
+-- what the correct order is.
+writeFChk :: FChk -> Text
+writeFChk fchk =
+  let --Header line by line
+      titleB = (fA 72 $ fchk ^. #title) <> nL
+
+      infoLineB =
+        (fA 10 . tShow $ fchk ^. #calcType)
+          <> (fA 30 $ fchk ^. #method)
+          <> (fA 30 $ fchk ^. #basis)
+          <> nL
+
+      -- CONTENT BLOCKS
+      cntntBlks = fchk ^. #blocks
+
+      -- Some blocks are expected in a given order apparently. The order of the hardcoded blocks is
+      -- given here.
+      blockOrder :: [Text]
+      blockOrder =
+        [ "Number of atoms",
+          "Charge",
+          "Multiplicity",
+          "Number of electrons",
+          "Number of alpha electrons",
+          "Number of beta electrons",
+          "Number of basis functions",
+          "Number of independent functions",
+          "Atomic numbers",
+          "Nuclear charges",
+          "Current cartesian coordinates",
+          "Integer atomic weights",
+          "Real atomic weights",
+          "Number of primitive shells",
+          "Number of contracted shells",
+          "Pure/Cartesian d shells",
+          "Pure/Cartesian f shells",
+          "Highest angular momentum",
+          "Largest degree of contraction",
+          "Number of primitive shells",
+          "Shell types",
+          "Number of primitives per shell",
+          "Shell to atom map",
+          "Primitive exponents",
+          "Contraction coefficients",
+          "P(S=P) Contraction coefficients",
+          "Total SCF Density",
+          "Total MP2 Density",
+          "Total CI Density",
+          "Total CC Density"
+        ]
+
+      orderedBlocks =
+        let localMap = Map.restrictKeys cntntBlks $ Set.fromList blockOrder
+            keyVec = Massiv.fromList Par blockOrder :: Vector B Text
+         in Massiv.foldMono
+              (\k -> fromMaybe mempty . fmap (blockWriter k) $ localMap Map.!? k)
+              keyVec
+
+      unorderedOtherBlocks =
+        let localMap = Map.withoutKeys cntntBlks $ Set.fromList blockOrder
+         in Map.foldlWithKey' (\acc k v -> acc <> blockWriter k v) mempty localMap
+
+      fchkBuilder =
+        titleB
+          <> infoLineB
+          <> orderedBlocks
+          <> unorderedOtherBlocks
+   in TL.toStrict . TB.toLazyText $ fchkBuilder
+  where
+    nL = TB.singleton '\n'
+
+----------------------------------------------------------------------------------------------------
+
+-- | A writer for FChk content blocks.
+blockWriter :: Text -> Content -> Builder
+blockWriter label value = case value of
+  Scalar a -> scalarWriter label a
+  Array a -> arrayWriter label a
+
+----------------------------------------------------------------------------------------------------
+
+-- | A writer for FChk Scalars.
+scalarWriter :: Text -> ScalarVal -> Builder
+scalarWriter label value = case value of
+  ScalarInt a -> (fA 40 label) <> (fX 3) <> (fA 1 "I") <> (fX 5) <> (fI 12 a) <> "\n"
+  ScalarDouble a -> (fA 40 label) <> (fX 3) <> (fA 1 "R") <> (fX 5) <> (fE 22 15 a) <> "\n"
+  ScalarText a -> (fA 40 label) <> (fX 3) <> (fA 1 "C") <> (fX 5) <> (fA 12 a) <> "\n"
+  ScalarLogical a -> (fA 40 label) <> (fX 3) <> (fA 1 "L") <> (fX 5) <> (fA 12 (if a then "T" else "F")) <> "\n"
+
+----------------------------------------------------------------------------------------------------
+
+-- | A writer for FChk Arrays. Text arrays are always written in @C@ type instead of @H@ type.
+arrayWriter :: Text -> ArrayVal -> Builder
+arrayWriter label value = case value of
+  ArrayInt a ->
+    let nElems = Massiv.elemsCount a
+        elemChunks =
+          Massiv.ifoldMono
+            (\i e -> (fI 12 e) <> if (i + 1) `mod` 6 == 0 || i == nElems - 1 then "\n" else mempty)
+            a
+     in (fA 40 label) <> (fX 3) <> (fA 1 "I") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemChunks
+  ArrayDouble a ->
+    let nElems = Massiv.elemsCount a
+        elemsChunks =
+          Massiv.ifoldMono
+            (\i e -> (fE 16 8 e) <> if (i + 1) `mod` 5 == 0 || i == nElems - 1 then "\n" else mempty)
+            a
+     in (fA 40 label) <> (fX 3) <> (fA 1 "R") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemsChunks
+  ArrayText a ->
+    let vectors :: Vector B Text
+        vectors = Massiv.fromList Par . Text.chunksOf 12 $ a
+        elemsChunks =
+          Massiv.ifoldMono
+            (\i e -> fA 12 e <> if (i + 1) `mod` 5 == 0 || i == nElems - 1 then "\n" else mempty)
+            vectors
+        nElems = Text.length a `div` 12 + 1
+     in (fA 40 label) <> (fX 3) <> (fA 1 "C") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemsChunks
+  ArrayLogical a ->
+    let nElems = Massiv.elemsCount a
+        elemsChunks =
+          Massiv.ifoldMono
+            (\i e -> (fL 1 e) <> if (i + 1) `mod` 72 == 0 || i == nElems - 1 then "\n" else mempty)
+            a
+     in (fA 40 label) <> (fX 3) <> (fA 1 "L") <> (fX 3) <> "N=" <> (fI 12 nElems) <> "\n"
+          <> elemsChunks

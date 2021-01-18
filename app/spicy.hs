@@ -1,6 +1,7 @@
-import RIO
--- import Spicy.Initiator
+module Main (main) where
 
+import RIO
+import Spicy.Initiator
 
 main :: IO ()
-main = undefined
+main = spicyMain

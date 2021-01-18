@@ -14,39 +14,29 @@
 module Spicy.CmdArgs
   ( SpicyArgs (..),
     HasSpicyArgs (..),
-    exec,
-    translate,
-    spicyModes,
+    spicyArgs
   )
 where
 
 import Optics
 import RIO hiding (Lens', lens)
-import Spicy.InputFile
 import System.Console.CmdArgs hiding
   ( Default,
     name,
     program,
   )
-import qualified System.Console.CmdArgs as CmdArgs
 
-data SpicyArgs
-  = Exec
-      { -- | Wether to use verbose loggin or not (will include
-        --   verbose format and debug messages.)
-        verbose :: Bool,
-        -- | Path to the YAML input file for Spicy.
-        input :: FilePath,
-        -- | Path to a log file for Spicy output.
-        logfile :: Maybe FilePath,
-        -- | Alternative path to the pre-startup configuration file.
-        startupconf :: Maybe FilePath
-      }
-  | Translate
-      { verbose :: Bool,
-        input :: FilePath,
-        inputFormat :: FileType
-      }
+data SpicyArgs = SpicyArgs
+  { -- | Wether to use verbose loggin or not (will include
+    --   verbose format and debug messages.)
+    verbose :: Bool,
+    -- | Path to the YAML input file for Spicy.
+    input :: FilePath,
+    -- | Path to a log file for Spicy output.
+    logfile :: Maybe FilePath,
+    -- | Alternative path to the pre-startup configuration file.
+    startupconf :: Maybe FilePath
+  }
   deriving (Data, Typeable, Show, Eq)
 
 -- Lenses
@@ -57,19 +47,10 @@ instance (k ~ A_Lens, a ~ FilePath, b ~ a) => LabelOptic "input" k SpicyArgs Spi
   labelOptic = lens (\s -> input s) $ \s b -> s {input = b}
 
 instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "logfile" k SpicyArgs SpicyArgs a b where
-  labelOptic = lens (\s -> logfile s) $ \s b -> case s of
-    Translate {} -> s
-    Exec {} -> s {logfile = b}
+  labelOptic = lens (\s -> logfile s) $ \s b -> s {logfile = b}
 
 instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "startupconf" k SpicyArgs SpicyArgs a b where
-  labelOptic = lens (\s -> startupconf s) $ \s b -> case s of
-    Translate {} -> s
-    Exec {} -> s {startupconf = b}
-
-instance (k ~ A_Lens, a ~ FileType, b ~ a) => LabelOptic "inputFormat" k SpicyArgs SpicyArgs a b where
-  labelOptic = lens (\s -> inputFormat s) $ \s b -> case s of
-    Translate {} -> s
-    Exec {} -> s {inputFormat = b}
+  labelOptic = lens (\s -> startupconf s) $ \s b -> s {startupconf = b}
 
 -- Reader Class.
 class HasSpicyArgs env where
@@ -81,9 +62,9 @@ instance HasSpicyArgs SpicyArgs where
 ----------------------------------------------------------------------------------------------------
 
 -- | Command line arguments for Spicy for a normal run.
-exec :: SpicyArgs
-exec =
-  Exec
+spicyArgs :: SpicyArgs
+spicyArgs =
+  SpicyArgs
     { verbose = False &= typ "BOOL" &= help "Print debug information and be very chatty.",
       input = def &= typFile &= help "Path to the input file.",
       logfile = Nothing &= typFile &= help "Path to the log file.",
@@ -93,24 +74,3 @@ exec =
             "Path to pre-startup scripts for computational chemistry software."
     }
     &= help "Execute spicy normally."
-
-----------------------------------------------------------------------------------------------------
-translate :: SpicyArgs
-translate =
-  Translate
-    { verbose = False &= typ "BOOL" &= help "Print debug information and be very chatty.",
-      input = def &= typFile &= help "Path to a molecule file to convert.",
-      inputFormat = XYZ &= typ "File type" &= help "Fileformat"
-    }
-    &= help "Convert a molecule to a different format in Spicy style."
-
-----------------------------------------------------------------------------------------------------
-
--- | Setup of CmdArgs for Multimode runs.
-spicyModes :: SpicyArgs
-spicyModes =
-  modes [exec, translate]
-    &= summary "Multilayer and compound methods for chemistry"
-    &= CmdArgs.program "spicy"
-
--- &= help "Compound and multilayer methods for chemistry."

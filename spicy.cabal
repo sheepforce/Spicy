@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.2.
+-- This file has been generated from package.yaml by hpack version 0.34.3.
 --
 -- see: https://github.com/sol/hpack
 
@@ -16,30 +16,10 @@ build-type:     Simple
 extra-source-files:
     README.md
     LICENSE
-    goldentests/input/1hfe.pdb
-    goldentests/input/4ndg.pdb
-    goldentests/input/6cvr.pdb
-    goldentests/input/Ethanal.mol2
-    goldentests/input/FePorphyrine.mol2
-    goldentests/input/FePorphyrine.txyz
-    goldentests/input/FePorphyrine.xyz
-    goldentests/input/Ferrocene.xyz
-    goldentests/input/Ferrocene_WrapperOnly.yaml
-    goldentests/input/HeteroTraj.xyz
-    goldentests/input/N2_bonded.xyz
-    goldentests/input/N2_nonbonded.xyz
-    goldentests/input/Peptid.mol2
-    goldentests/input/Peptid.pdb
-    goldentests/input/Psi4_HF_STO-3G.psi
-    goldentests/input/RuKomplex.txyz
-    goldentests/input/SulfateInSolution.txyz
-    goldentests/input/SulfateInSolution.xyz
-    goldentests/input/TolueneCl2.txyz
-    goldentests/input/TolueneCl2.xyz
-    goldentests/input/TolueneCl2_ONIOM-n.yml
-    goldentests/input/TolueneCl2_ONIOM-n_ChargeTransfer.yml
-    goldentests/input/TolueneCl2_ONIOM-n_RealSystem.yml
-    goldentests/input/TolueneCl2_ONIOM-n_SolvationShell.yml
+    data/Fonts/JobDriver.txt
+    data/Fonts/SpicyLogo.txt
+    goldentests/input/
+    goldentests/goldenfiles/
 
 source-repository head
   type: git
@@ -61,6 +41,7 @@ library
       Spicy.CmdArgs
       Spicy.Common
       Spicy.Data
+      Spicy.Formats.FChk
       Spicy.Initiator
       Spicy.InputFile
       Spicy.JobDriver
@@ -68,6 +49,7 @@ library
       Spicy.Math
       Spicy.Math.SparseArray
       Spicy.Molecule
+      Spicy.Molecule.Internal.Multipoles
       Spicy.Molecule.Internal.Parser
       Spicy.Molecule.Internal.Types
       Spicy.Molecule.Internal.Util
@@ -81,7 +63,6 @@ library
       Spicy.Wrapper.Internal.Generic
       Spicy.Wrapper.Internal.Input.Shallow
       Spicy.Wrapper.Internal.Output
-      Spicy.Wrapper.Internal.Output.FChk
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
   other-modules:
@@ -93,7 +74,6 @@ library
   build-depends:
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
-    , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
@@ -104,10 +84,9 @@ library
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
-    , githash >=0.1.3.3 && <0.2
+    , hmatrix >=0.20.1 && <0.21
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
-    , mtl >=2.2.2 && <2.3
     , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -117,11 +96,12 @@ library
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
+    , vector >=0.12.1.2 && <0.13
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -O2
+    ghc-options: -O2
   if flag(llvm)
     ghc-options: -fllvm
   default-language: Haskell2010
@@ -133,11 +113,10 @@ executable spicy
   hs-source-dirs:
       app
   default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude
-  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N2
   build-depends:
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
-    , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
@@ -148,10 +127,9 @@ executable spicy
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
-    , githash >=0.1.3.3 && <0.2
+    , hmatrix >=0.20.1 && <0.21
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
-    , mtl >=2.2.2 && <2.3
     , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -162,57 +140,12 @@ executable spicy
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
+    , vector >=0.12.1.2 && <0.13
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
-  default-language: Haskell2010
-
-executable unittests-exe
-  main-is: testing.hs
-  other-modules:
-      Paths_spicy
-  hs-source-dirs:
-      app
-  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude
-  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts
-  build-depends:
-      aeson >=1.4.4.0 && <1.6
-    , aeson-pretty >=0.8.7 && <0.9
-    , algebraic-graphs >=0.5 && <0.6
-    , ansi-terminal >=0.10.3 && <0.12
-    , attoparsec >=0.13.1.0 && <0.14
-    , base >=4.7 && <5
-    , bytestring >=0.10.8.2 && <0.12
-    , cmdargs >=0.10.20 && <0.11
-    , containers >=0.6.0.1 && <0.7
-    , data-default >=0.7.1.1 && <0.8
-    , deepseq >=1.4.2.0 && <1.5
-    , file-embed >=0.0.11.1 && <0.1
-    , formatting >=6.3.7 && <8
-    , githash >=0.1.3.3 && <0.2
-    , integer-roots >=1.0 && <2
-    , massiv >=0.5.6.0 && <0.6
-    , mtl >=2.2.2 && <2.3
-    , optics >=0.3 && <0.4
-    , parallel >=3.2.1.0 && <3.3
-    , pathtype >=0.8.1 && <0.9
-    , rio >=0.1.13.0 && <0.2
-    , spicy
-    , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
-    , tasty >=0.11.3
-    , tasty-golden >=2.3.1
-    , tasty-hunit
-    , text >=1.2.3.1 && <1.3
-    , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
+    ghc-options: -O2
   if flag(llvm)
     ghc-options: -fllvm
   default-language: Haskell2010
@@ -228,7 +161,6 @@ test-suite unittests
   build-depends:
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
-    , algebraic-graphs >=0.5 && <0.6
     , ansi-terminal >=0.10.3 && <0.12
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
@@ -239,10 +171,9 @@ test-suite unittests
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
-    , githash >=0.1.3.3 && <0.2
+    , hmatrix >=0.20.1 && <0.21
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
-    , mtl >=2.2.2 && <2.3
     , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -254,11 +185,58 @@ test-suite unittests
     , tasty-golden >=2.3.1 && <2.4
     , tasty-hunit >=0.10.0.2 && <0.11
     , text >=1.2.3.1 && <1.3
+    , vector >=0.12.1.2 && <0.13
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -Werror -O2
+    ghc-options: -O2
+  if flag(llvm)
+    ghc-options: -fllvm
+  default-language: Haskell2010
+
+benchmark bench
+  type: exitcode-stdio-1.0
+  main-is: bench.hs
+  other-modules:
+      Paths_spicy
+  hs-source-dirs:
+      app
+  default-extensions: BangPatterns OverloadedStrings NoImplicitPrelude FlexibleContexts ScopedTypeVariables OverloadedLabels DataKinds FlexibleInstances MultiParamTypeClasses UndecidableInstances TypeFamilies DuplicateRecordFields ScopedTypeVariables DataKinds DeriveAnyClass DeriveDataTypeable DeriveGeneric DeriveTraversable FlexibleInstances GeneralizedNewtypeDeriving TypeApplications RecordWildCards NamedFieldPuns
+  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson >=1.4.4.0 && <1.6
+    , aeson-pretty >=0.8.7 && <0.9
+    , ansi-terminal >=0.10.3 && <0.12
+    , attoparsec >=0.13.1.0 && <0.14
+    , base >=4.7 && <5
+    , bytestring >=0.10.8.2 && <0.12
+    , cmdargs >=0.10.20 && <0.11
+    , containers >=0.6.0.1 && <0.7
+    , criterion >=1.5.9.0 && <1.6
+    , data-default >=0.7.1.1 && <0.8
+    , deepseq >=1.4.2.0 && <1.5
+    , file-embed >=0.0.11.1 && <0.1
+    , formatting >=6.3.7 && <8
+    , hmatrix >=0.20.1 && <0.21
+    , integer-roots >=1.0 && <2
+    , massiv >=0.5.6.0 && <0.6
+    , optics >=0.3 && <0.4
+    , parallel >=3.2.1.0 && <3.3
+    , pathtype >=0.8.1 && <0.9
+    , rio >=0.1.13.0 && <0.2
+    , spicy
+    , split >=0.2.3.3 && <0.3
+    , stache >=2.1.0 && <2.3
+    , tasty >=1.2.3 && <1.4
+    , tasty-golden >=2.3.3 && <2.4
+    , text >=1.2.3.1 && <1.3
+    , vector >=0.12.1.2 && <0.13
+    , yaml >=0.11.2.0 && <0.12
+  if flag(dev)
+    ghc-options: -O0
+  else
+    ghc-options: -O2
   if flag(llvm)
     ghc-options: -fllvm
   default-language: Haskell2010

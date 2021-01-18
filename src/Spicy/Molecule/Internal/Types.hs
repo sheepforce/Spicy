@@ -110,9 +110,8 @@ import Spicy.Common
 -- These types define the molecule and its topology. This includes atom positions, bonds, atom types
 -- and so on.
 
--- |
--- All chemical elements. Have them very clear because force fields and pdb names may interfer and are
--- just arbitrary strings.
+-- | All chemical elements. Have them very clear because force fields and pdb names may interfer and
+-- are just arbitrary strings.
 data Element
   = H
   | He
@@ -226,28 +225,28 @@ data Element
   | Ds
   | Rg
   | Cn
-  | Uut
+  | Nh
   | Fl
-  | Uup
+  | Mc
   | Lv
-  | Uus
-  | Uuo
+  | Ts
+  | Og
   deriving (Show, Eq, Read, Ord, Enum, Generic, NFData)
 
 instance ToJSON Element where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Element
+instance FromJSON Element where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Element where
   prettyP = displayShow
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- An Atom in a 'Molecule'. Atoms are compared by their indices only and they must therefore be unique.
--- The coordinates of the 'Atom' are defined as 'Seq', as this is extremely easy to concatenate when
--- building a coordinate vector.
+-- | An Atom in a 'Molecule'. Atoms are compared by their indices only and they must therefore be
+-- unique. The coordinates of the 'Atom' are defined as 'Seq', as this is extremely easy to
+-- concatenate when building a coordinate vector.
 data Atom = Atom
   { -- | Chemical 'Element' of the atom.
     element :: !Element,
@@ -276,7 +275,8 @@ data Atom = Atom
 instance ToJSON Atom where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Atom
+instance FromJSON Atom where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Element, b ~ a) => LabelOptic "element" k Atom Atom a b where
@@ -302,10 +302,9 @@ instance (k ~ A_Lens, a ~ Multipoles, b ~ a) => LabelOptic "multipoles" k Atom A
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A molecule, which might be the whole system, an ONIOM layer or a fragment of the system, each
--- containing possibly even higher layers for ONIOM or fragments. Stores all associated informations of
--- a layer.
+-- | A molecule, which might be the whole system, an ONIOM layer or a fragment of the system, each
+-- containing possibly even higher layers for ONIOM or fragments. Stores all associated informations
+-- of a layer.
 --
 -- For reference layers will be labeled \([0, \dots, n]\) by their recursion depth, with \(0\) being
 -- the "real" system in ONIOM style calculations. Multiple fragments would be on the same recursion
@@ -313,21 +312,21 @@ instance (k ~ A_Lens, a ~ Multipoles, b ~ a) => LabelOptic "multipoles" k Atom A
 -- the whole/real system, its fragments would be at recursion depth \(1\) and fragment \(f\) at
 -- recursion depth \(1\) would be labeled \(1.f\).
 --
--- Starting from a top level molecule, all atoms and bonds of the system are expected to be in the in
--- this top layer (except linkatoms of deeper layers). Therefore if atoms are in a deeper layers of
--- the recursion, their information is not used to describe a higher lying layer (which is lower with
--- respect to computational cost). Instead, all atoms of deeper layers (except linkatoms) must be
--- also replicated in a higher layer. While the atoms of deeper layers keep the same indices as in the
--- higher layers, it is acceptable, that an index, that was used for an atom in layer \(n\) is used for
--- a link atom in layer \(n + m, m > 0\).
+-- Starting from a top level molecule, all atoms and bonds of the system are expected to be in the
+-- in this top layer (except linkatoms of deeper layers). Therefore if atoms are in a deeper layers
+-- of the recursion, their information is not used to describe a higher lying layer (which is lower
+-- with respect to computational cost). Instead, all atoms of deeper layers (except linkatoms) must
+-- be also replicated in a higher layer. While the atoms of deeper layers keep the same indices as
+-- in the higher layers, it is acceptable, that an index, that was used for an atom in layer \(n\)
+-- is used for a link atom in layer \(n + m, m > 0\).
 --
 -- Link atoms are specific to layers and may be passed down the recursion to deeper layers but not
 -- passed up to higher layers. Therefore, while the counting of non-link-atoms must be consistent
 -- through all layers, the link atoms must be only consitent the recursion downwards but not
 -- necessarily between fragments of the same layer. If a layer \(n\) contains a link atom with index
--- \(p\), for example, and layer \(n + 1\) still contains this link atom, it must still be given index
--- \(p\). If layer \(n + 1\) on the other hand side would be stripped of this link atom, the index
--- \(p\) could be used for another link atom.
+-- \(p\), for example, and layer \(n + 1\) still contains this link atom, it must still be given
+-- index \(p\). If layer \(n + 1\) on the other hand side would be stripped of this link atom, the
+-- index \(p\) could be used for another link atom.
 --
 -- The data structure makes it necessary to construct the 'Molecule' top down, not bottom up.
 data Molecule = Molecule
@@ -350,38 +349,39 @@ data Molecule = Molecule
     -- | A Molecule might contain deeper
     --   ONIOM layers.
     subMol :: !(IntMap Molecule),
-    -- | Fragments definition. They are
-    --   meant to be either empty, or
-    --   contain the whole system, usually
-    --   without bond cuts. The keys of
-    --   the 'IntMap' assign numbers to
-    --   the fragments, while the 'IntSet'
-    --   contains selections of atom
-    --   numbers (and indices of the bond
-    --   matrix, which belong to a
-    --   fragment). Fragments should not
-    --   contain deeper layers.
+    -- | Fragments definition. Every atom must
+    -- be assigned to exactly one fragment. This
+    -- fragment might be the whole system or a
+    -- fragment in the sense of a PDB residue
+    -- for example. Bond cuts through fragments
+    -- are okay.
     fragment :: !(IntMap Fragment),
     -- | The potential energy and its
     --   derivatives.
     energyDerivatives :: !EnergyDerivatives,
     -- | Calculations to perform on
-    --    __this__ layer of the molecule.
-    --   The 'Text' values of the 'Map'
-    --   serve as unique identifiers for a
-    --   calculation on this molecule.
+    -- __this__ layer of the molecule.
+    -- The 'Text' values of the 'Map'
+    -- serve as unique identifiers for a
+    -- calculation on this molecule.
     calcContext :: !(Map CalcK CalcContext),
     -- | The Jacobian matrix for energy
-    --   derivative transformation from
-    --   this system to its parent system.
-    jacobian :: !(Maybe (MatrixS Double))
+    -- derivative transformation from
+    -- this system to its parent system.
+    jacobian :: !(Maybe (MatrixS Double)),
+    -- | Neighbourlists that have possibly been
+    -- calculated together with a given search distance.
+    -- Maps from the search distance to a sparse neighbourlist
+    -- representation. Also see 'Spicy.Molecule.Internal.Util.neighbourList'.
+    neighbourlist :: !(Map Double NeighbourList)
   }
   deriving (Show, Eq, Generic)
 
 instance ToJSON Molecule where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Molecule
+instance FromJSON Molecule where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "comment" k Molecule Molecule a b where
@@ -408,6 +408,9 @@ instance (k ~ A_Lens, a ~ Map CalcK CalcContext, b ~ a) => LabelOptic "calcConte
 instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "jacobian" k Molecule Molecule a b where
   labelOptic = lens (\s -> jacobian s) $ \s b -> s {jacobian = b}
 
+instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighbourlist" k Molecule Molecule a b where
+  labelOptic = lens (\s -> neighbourlist s) $ \s b -> s {neighbourlist = b}
+
 -- Reader Class
 class HasMolecule env where
   moleculeL :: Lens' env Molecule
@@ -417,8 +420,7 @@ instance HasMolecule Molecule where
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Flag if an atom is a link atom. If an atom is a link atom (set 2 atom), then it will contain
+-- | Flag if an atom is a link atom. If an atom is a link atom (set 2 atom), then it will contain
 -- information about the linking. See "[A new ONIOM implementation in Gaussian98. Part I. The
 -- calculation of energies, gradients, vibrational frequencies and electric field
 -- derivatives](https://doi.org/10.1016/S0166-1280(98)00475-8)"
@@ -441,7 +443,8 @@ data LinkInfo
 instance ToJSON LinkInfo where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON LinkInfo
+instance FromJSON LinkInfo where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _NotLink :: Prism' LinkInfo ()
@@ -466,9 +469,8 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "linkGFactor" k LinkInfo 
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- These are labels for molecular mechanics software. The strings are basically arbitrary and depending
--- on the MM software used.
+-- | These are labels for molecular mechanics software. The strings are basically arbitrary and
+-- depend on the MM software used.
 data FFType
   = FFMol2 !Text
   | FFTXYZ !Int
@@ -492,7 +494,8 @@ instance Eq FFType where
 instance ToJSON FFType where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON FFType
+instance FromJSON FFType where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _FFMol2 :: Prism' FFType Text
@@ -522,8 +525,7 @@ _FFBq = prism' (const FFBq) $ \s -> case s of
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Definition of a fragment. The fragments are strictly a subset of a given layer.
+-- | Definition of a fragment. The fragments are strictly a subset of a given layer.
 data Fragment = Fragment
   { -- | The name of a fragment. Doesn't need to be unique.
     label :: !Text,
@@ -539,7 +541,8 @@ data Fragment = Fragment
 instance ToJSON Fragment where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Fragment
+instance FromJSON Fragment where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "label" k Fragment Fragment a b where
@@ -553,14 +556,12 @@ instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atoms" k Fragment Fragme
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Trajectories are simply Sequences of 'Molecule's.
+-- | Trajectories are simply Sequences of 'Molecule's.
 type Trajectory = Seq Molecule
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A data structure to get a layer in the 'Molecule' contructor. Enables to find a specific layer.
+-- | A data structure to get a layer in the 'Molecule' contructor. Enables to find a specific layer.
 -- It works by giving number of lookups stepping down the recursion of the 'Molecule' structure along
 -- the 'subMol' structure. An empty sequency of indices is the top layer. Then each element
 -- will be used as a key for the 'IntMap' structure in 'subMol' structure, to step down to
@@ -581,8 +582,7 @@ type MolID = Seq Int
 --
 -- Furthermore the definition of outputs obtainable from the wrappers are defined here.
 
--- |
--- Find a specific calculation for a specific layer of the molecule. The calculation is defined by the
+-- | Find a specific calculation for a specific layer of the molecule. The calculation is defined by the
 -- 'MolID' and the 'Text' key of the '_molecule_CalcContext' 'Map'.
 data CalcID = CalcID
   { -- | Molecule layer of interest.
@@ -601,8 +601,7 @@ instance (k ~ A_Lens, a ~ CalcK, b ~ a) => LabelOptic "calcKey" k CalcID CalcID 
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Identifier for a calculation context supposed to be used as key in the '_molecule_CalcContext'
+-- | Identifier for a calculation context supposed to be used as key in the '_molecule_CalcContext'
 -- field.
 data CalcK
   = -- | An ONIOM calculation. The 'ONIOMHierarchy' defines if this
@@ -613,7 +612,8 @@ data CalcK
 instance ToJSON CalcK where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcK
+instance FromJSON CalcK where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _ONIOMKey :: Prism' CalcK ONIOMHierarchy
@@ -622,8 +622,7 @@ _ONIOMKey = prism' (\b -> ONIOMKey b) $ \s -> case s of
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- For all except the real system layer in an ONIOM calculation, two calculations on the molecular
+-- | For all except the real system layer in an ONIOM calculation, two calculations on the molecular
 -- structure can be defined. The actual one of interest for this system and the one inherited from the
 -- layer above, which is required for subtraction.
 data ONIOMHierarchy
@@ -636,14 +635,14 @@ data ONIOMHierarchy
 instance ToJSON ONIOMHierarchy where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON ONIOMHierarchy
+instance FromJSON ONIOMHierarchy where
+  parseJSON = genericParseJSON spicyJOption
 
 {-
 ====================================================================================================
 -}
 
--- |
--- Representation of multipoles for expansion of the electrostatic potential.
+-- | Representation of multipoles for expansion of the electrostatic potential.
 data Multipoles = Multipoles
   { monopole :: !(Maybe Monopole),
     dipole :: !(Maybe Dipole),
@@ -656,7 +655,8 @@ data Multipoles = Multipoles
 instance ToJSON Multipoles where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Multipoles
+instance FromJSON Multipoles where
+  parseJSON = genericParseJSON spicyJOption
 
 instance Default Multipoles where
   def =
@@ -689,8 +689,7 @@ instance (k ~ A_Lens, a ~ Maybe Hexadecapole, b ~ a) => LabelOptic "hexadecapole
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A monopole moment.
+-- | A monopole moment.
 data Monopole = Monopole
   { q00 :: Double
   }
@@ -699,7 +698,8 @@ data Monopole = Monopole
 instance ToJSON Monopole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Monopole
+instance FromJSON Monopole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Monopole where
   prettyP = ppMonopole
@@ -712,10 +712,10 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q00" k Monopole Monopole
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical dipole moment.
+-- | A spherical dipole moment.
 data Dipole = Dipole
-  { q11c :: Double,
+  { q10 :: Double,
+    q11c :: Double,
     q11s :: Double
   }
   deriving (Eq, Show, Generic)
@@ -723,7 +723,8 @@ data Dipole = Dipole
 instance ToJSON Dipole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Dipole
+instance FromJSON Dipole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Dipole where
   prettyP = ppDipole
@@ -731,6 +732,9 @@ instance PrettyPrint Dipole where
 type MultipoleR1 = Dipole
 
 -- Lenses
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q10" k Dipole Dipole a b where
+  labelOptic = lens (\s -> q11c s) $ \s b -> s {q10 = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q11c" k Dipole Dipole a b where
   labelOptic = lens (\s -> q11c s) $ \s b -> s {q11c = b}
 
@@ -739,10 +743,11 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q11s" k Dipole Dipole a 
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical quadrupole moment.
+-- | A spherical quadrupole moment.
 data Quadrupole = Quadrupole
   { q20 :: Double,
+    q21c :: Double,
+    q21s :: Double,
     q22c :: Double,
     q22s :: Double
   }
@@ -751,7 +756,8 @@ data Quadrupole = Quadrupole
 instance ToJSON Quadrupole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Quadrupole
+instance FromJSON Quadrupole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Quadrupole where
   prettyP = ppQuadrupole
@@ -762,6 +768,12 @@ type MultipoleR2 = Quadrupole
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q20" k Quadrupole Quadrupole a b where
   labelOptic = lens (\s -> q20 s) $ \s b -> s {q20 = b}
 
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q21c" k Quadrupole Quadrupole a b where
+  labelOptic = lens (\s -> q21c s) $ \s b -> s {q21c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q21s" k Quadrupole Quadrupole a b where
+  labelOptic = lens (\s -> q21s s) $ \s b -> s {q21s = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q22c" k Quadrupole Quadrupole a b where
   labelOptic = lens (\s -> q22c s) $ \s b -> s {q22c = b}
 
@@ -770,11 +782,13 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q22s" k Quadrupole Quadr
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical octopole moment.
+-- | A spherical octopole moment.
 data Octopole = Octopole
-  { q31c :: Double,
+  { q30 :: Double,
+    q31c :: Double,
     q31s :: Double,
+    q32c :: Double,
+    q32s :: Double,
     q33c :: Double,
     q33s :: Double
   }
@@ -783,7 +797,8 @@ data Octopole = Octopole
 instance ToJSON Octopole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Octopole
+instance FromJSON Octopole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Octopole where
   prettyP = ppOctopole
@@ -791,11 +806,20 @@ instance PrettyPrint Octopole where
 type MultipoleR3 = Octopole
 
 -- Lenses
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q30" k Octopole Octopole a b where
+  labelOptic = lens (\s -> q30 s) $ \s b -> s {q30 = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q31c" k Octopole Octopole a b where
   labelOptic = lens (\s -> q31c s) $ \s b -> s {q31c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q31s" k Octopole Octopole a b where
   labelOptic = lens (\s -> q31s s) $ \s b -> s {q31s = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q32c" k Octopole Octopole a b where
+  labelOptic = lens (\s -> q32c s) $ \s b -> s {q32c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q32s" k Octopole Octopole a b where
+  labelOptic = lens (\s -> q32s s) $ \s b -> s {q32s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q33c" k Octopole Octopole a b where
   labelOptic = lens (\s -> q33c s) $ \s b -> s {q33c = b}
@@ -805,12 +829,15 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q33s" k Octopole Octopol
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A spherical octopole moment.
+-- | A spherical octopole moment.
 data Hexadecapole = Hexadecapole
   { q40 :: Double,
+    q41c :: Double,
+    q41s :: Double,
     q42c :: Double,
     q42s :: Double,
+    q43c :: Double,
+    q43s :: Double,
     q44c :: Double,
     q44s :: Double
   }
@@ -819,7 +846,8 @@ data Hexadecapole = Hexadecapole
 instance ToJSON Hexadecapole where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Hexadecapole
+instance FromJSON Hexadecapole where
+  parseJSON = genericParseJSON spicyJOption
 
 instance PrettyPrint Hexadecapole where
   prettyP = ppHexadecapole
@@ -830,11 +858,23 @@ type MultipoleR4 = Hexadecapole
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q40" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q40 s) $ \s b -> s {q40 = b}
 
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q41c" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q41c s) $ \s b -> s {q41c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q41s" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q41s s) $ \s b -> s {q41s = b}
+
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q42c" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q42c s) $ \s b -> s {q42c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q42s" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q42s s) $ \s b -> s {q42s = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q43c" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q43c s) $ \s b -> s {q43c = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q43s" k Hexadecapole Hexadecapole a b where
+  labelOptic = lens (\s -> q43s s) $ \s b -> s {q43s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q44c" k Hexadecapole Hexadecapole a b where
   labelOptic = lens (\s -> q44c s) $ \s b -> s {q44c = b}
@@ -846,8 +886,7 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q44s" k Hexadecapole Hex
 ====================================================================================================
 -}
 
--- |
--- Available embedding methods for layer interaction in ONIOM.
+-- | Available embedding methods for layer interaction in ONIOM.
 data Embedding
   = -- | Mechanical embedding.
     Mechanical
@@ -859,7 +898,8 @@ data Embedding
 instance ToJSON Embedding where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Embedding
+instance FromJSON Embedding where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Prisms
 _Mechanical :: Prism' Embedding ()
@@ -890,7 +930,8 @@ data EnergyDerivatives = EnergyDerivatives
 instance ToJSON EnergyDerivatives where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON EnergyDerivatives
+instance FromJSON EnergyDerivatives where
+  parseJSON = genericParseJSON spicyJOption
 
 instance Default EnergyDerivatives where
   def =
@@ -914,8 +955,7 @@ instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "hessian"
 ====================================================================================================
 -}
 
--- |
--- How efficient a task can be performed. Used for gradient calculations mainly.
+-- | How efficient a task can be performed. Used for gradient calculations mainly.
 data NumericalEfficiency
   = -- | Analytical derivatives are available and will be used.
     Analytical
@@ -926,12 +966,12 @@ data NumericalEfficiency
 instance ToJSON NumericalEfficiency where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON NumericalEfficiency
+instance FromJSON NumericalEfficiency where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A task the wrapper needs to perform.
+-- | A task the wrapper needs to perform.
 data WrapperTask
   = -- | Single point energy calculation.
     WTEnergy
@@ -944,12 +984,12 @@ data WrapperTask
 instance ToJSON WrapperTask where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON WrapperTask
+instance FromJSON WrapperTask where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Context specific to a QM calculation.
+-- | Context specific to a QM calculation.
 data QMContext = QMContext
   { -- | Charge of the (sub)system as transparent to the QM software.
     charge :: !Int,
@@ -961,7 +1001,8 @@ data QMContext = QMContext
 instance ToJSON QMContext where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON QMContext
+instance FromJSON QMContext where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "charge" k QMContext QMContext a b where
@@ -972,20 +1013,19 @@ instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "mult" k QMContext QMContext
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Context specific to a MM calculation.
+-- | Context specific to a MM calculation.
 data MMContext = MMContext
   deriving (Show, Eq, Generic)
 
 instance ToJSON MMContext where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON MMContext
+instance FromJSON MMContext where
+  parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Information needed either by a QM or MM calculation.
+-- | Information needed either by a QM or MM calculation.
 data QMMMSpec
   = -- | Information only needed for QM calculations.
     QM !QMContext
@@ -1011,8 +1051,7 @@ _MM = prism' (\b -> MM b) $ \s -> case s of
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- The context of a calculation is the combination of its input and output values.
+-- | The context of a calculation is the combination of its input and output values.
 data CalcContext = CalcContext
   { -- | Necessary information to define a calculation.
     input :: !CalcInput,
@@ -1025,7 +1064,8 @@ data CalcContext = CalcContext
 instance ToJSON CalcContext where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcContext
+instance FromJSON CalcContext where
+  parseJSON = genericParseJSON spicyJOption
 
 instance (k ~ A_Lens, a ~ CalcInput, b ~ a) => LabelOptic "input" k CalcContext CalcContext a b where
   labelOptic = lens (\s -> input s) $ \s b -> s {input = b}
@@ -1035,8 +1075,7 @@ instance (k ~ A_Lens, a ~ Maybe CalcOutput, b ~ a) => LabelOptic "output" k Calc
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- The context for a wrapper calculation. These are information used by the system call to the wrapper
+-- | The context for a wrapper calculation. These are information used by the system call to the wrapper
 -- and the Mustache template engine for the wrapper input file as well as some Spicy internals on
 data CalcInput = CalcInput
   { -- | A 'Task' the wrapper needs to perform.
@@ -1082,7 +1121,8 @@ data CalcInput = CalcInput
 instance ToJSON CalcInput where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcInput
+instance FromJSON CalcInput where
+  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ WrapperTask, b ~ a) => LabelOptic "task" k CalcInput CalcInput a b where
@@ -1123,8 +1163,7 @@ instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInpu
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Results from a wrapper calculation on the given niveau. If for example multiple computations are
+-- | Results from a wrapper calculation on the given niveau. If for example multiple computations are
 -- performed on the same 'Molecule' layer as in ONIOM (high and low level calculation on the model
 -- system), this type allows to store the intermediate information before combining them and putting
 -- them back to the '_molecule_EnergyDerivatives' field.
@@ -1142,7 +1181,8 @@ data CalcOutput = CalcOutput
 instance ToJSON CalcOutput where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcOutput
+instance FromJSON CalcOutput where
+  parseJSON = genericParseJSON spicyJOption
 
 instance (k ~ A_Lens, a ~ EnergyDerivatives, b ~ a) => LabelOptic "energyDerivatives" k CalcOutput CalcOutput a b where
   labelOptic = lens (\s -> (energyDerivatives :: CalcOutput -> EnergyDerivatives) s) $
@@ -1156,8 +1196,7 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 ====================================================================================================
 -}
 
--- |
--- A known computational chemistry program to use.
+-- | A known computational chemistry program to use.
 data Program
   = Psi4
   | Nwchem
@@ -1166,7 +1205,8 @@ data Program
 instance ToJSON Program where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON Program
+instance FromJSON Program where
+  parseJSON = genericParseJSON spicyJOption
 
 {-
 ####################################################################################################
@@ -1293,8 +1333,7 @@ ppMultipoles mp =
 -- only locally to pass information around, which would otherwise need to be stored in unannotated
 -- tuples or something.
 
--- |
--- Type to pass atomwise information from parsers with atom-fragment associations around.
+-- | Type to pass atomwise information from parsers with atom-fragment associations around.
 data FragmentAtomInfo = FragmentAtomInfo
   { -- | The index of the atom in the whole structure.
     faiAtomIndex :: Int,
@@ -1310,8 +1349,7 @@ data FragmentAtomInfo = FragmentAtomInfo
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Type just to handle the information obtained from parsing a single atom line of a TXYZ file.
+-- | Type just to handle the information obtained from parsing a single atom line of a TXYZ file.
 data TXYZAtomInfo = TXYZAtomInfo
   { -- | Index of this atom in the TXYZ file. First number in a row.
     txyzIndex :: Int,

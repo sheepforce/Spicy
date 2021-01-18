@@ -15,6 +15,7 @@ module Spicy.ONIOM.Collector
     gradientCollector,
     hessianCollector,
     multipoleTransferCollector,
+    multipoleTransfer
   )
 where
 
@@ -28,6 +29,7 @@ import Optics hiding (view)
 import RIO hiding
   ( Vector,
     view,
+    (%~),
     (.~),
     (^.),
     (^?),
@@ -43,7 +45,6 @@ multicentreOniomNCollector atomicTask = do
   mol <- view moleculeL
   _inputFile <- view inputFileL
 
-  -- TODO (phillip|p=100|#Unfinished) - A multipole collector needs to run first to get embedding.
   molEnergy <- energyCollector mol
   molGradient <- case atomicTask of
     WTGradient -> gradientCollector molEnergy
@@ -90,7 +91,6 @@ multicentreOniomNCollector atomicTask = do
 --
 -- where \(c\) refers to the centre.
 
--- TODO (phillip|p=100|#Unfinished) - This takes embedding currently not into consideration.
 energyCollector :: MonadThrow m => Molecule -> m Molecule
 energyCollector mol = do
   let subMols = mol ^. #subMol
@@ -216,7 +216,6 @@ energyCollector mol = do
 --
 -- For the definition of the Jacobian matrix, see 'getJacobian'.
 
--- TODO (phillip|p=100|#Unfinished) - The effect of embedding is not direclty considered here but potentially must.
 gradientCollector :: MonadThrow m => Molecule -> m Molecule
 gradientCollector mol = do
   let subMols = mol ^. #subMol
@@ -535,11 +534,10 @@ hessianCollector mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- This collector does not perform any actual calculation, but rather sets the multipoles of the atoms.
--- In similiar spirit to the other collectors, this happens in a local MC-ONIOM2 recursion. The
--- multipole moments of the current real layer are taken from the local model if this atom was part of
--- the local model system and from this real layers original calculation context otherwise.
+-- | This collector does not perform any actual calculation, but rather sets the multipoles of the
+-- atoms. In similiar spirit to the other collectors, this happens in a local MC-ONIOM2 recursion.
+-- The multipole moments of the current real layer are taken from the local model if this atom was
+-- part of the local model system and from this real layers original calculation context otherwise.
 --
 -- The final toplayer allows to calculate the electrostatic energy from all its atoms directly then.
 multipoleTransferCollector :: MonadThrow m => Molecule -> m Molecule
@@ -573,12 +571,15 @@ multipoleTransferCollector mol = do
               % #output
               % _Just
               % #multipoles
-      let realAtomsNoPoles = mol' ^. #atoms
+      let realAtomsNoPoles =
+            IntMap.filter
+              (\a -> not $ a ^. #isDummy || (isAtomLink $ a ^. #isLink))
+              $ mol' ^. #atoms
 
       -- Check that the wrapper produced outputs for the correct atoms and that the output is
       -- complete.
       unless
-        (IntMap.keysSet maybeOriginalCalcMultipoles == IntMap.keysSet maybeOriginalCalcMultipoles)
+        (IntMap.keysSet maybeOriginalCalcMultipoles == IntMap.keysSet realAtomsNoPoles)
         . throwM
         $ MolLogicException
           "multipoleTransferCollector"
@@ -643,3 +644,40 @@ multipoleTransferCollector mol = do
         realMol
           & (#atoms .~ realAtomsUpdated)
           & (#subMol .~ modelCentresWithTheirRealMultipoles)
+
+----------------------------------------------------------------------------------------------------
+
+-- | Not a collector in the sense of the others. Simply transfers the multipoles from a given CalcID
+-- to the corresponding fields of the molecule.
+multipoleTransfer :: MonadThrow m => CalcID -> Molecule -> m Molecule
+multipoleTransfer calcID mol = do
+  let layerID = calcID ^. #molID
+      calcLens = calcIDLensGen calcID
+      layerLens = molIDLensGen layerID
+
+  -- Obtain the atoms of this layer.
+  atoms <- maybe2MThrow (localExc "The specified layer does not exist.") $ mol ^? layerLens % #atoms
+  let multipolesInAtoms = fmap (^. #multipoles) atoms
+
+  -- Obtain multipoles from the output of the calculation.
+  multiPolesInOutput <-
+    maybe2MThrow (localExc "Requested calculation does not exist or did not produce output.") $
+      mol ^? calcLens % #output % _Just % #multipoles
+
+  -- Check that not too many or mismatching multipoles have been obtained.
+  let atomKeys = IntMap.keysSet multipolesInAtoms
+      atomsWithMPAvailable = IntMap.keysSet multiPolesInOutput
+  unless (atomsWithMPAvailable `IntSet.isSubsetOf` atomKeys) . throwM . localExc $
+    "The calculation seems to have produced multipoles for non existing atoms."
+
+  -- Update the multipoles and rejoin with the atoms.
+  let updatedPoles = IntMap.union multiPolesInOutput multipolesInAtoms
+      updatedAtoms = IntMap.intersectionWith (\atom mp -> atom & #multipoles .~ mp) atoms updatedPoles
+
+  -- Check that we did not loose atoms.
+  unless (IntMap.keysSet updatedAtoms == atomKeys) . throwM . localExc $
+    "Lost atoms during the multipole transfer."
+
+  return $ mol & layerLens % #atoms .~ updatedAtoms
+  where
+    localExc = MolLogicException "multipoleTransfer"

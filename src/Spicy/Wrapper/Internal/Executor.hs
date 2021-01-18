@@ -16,6 +16,8 @@ where
 
 import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy8
 import Data.Foldable
+import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
 import Optics hiding (view)
 import RIO hiding
   ( view,
@@ -23,25 +25,32 @@ import RIO hiding
     (^.),
     (^?),
   )
+import qualified RIO.ByteString.Lazy as BL
+import qualified RIO.List as List
 import qualified RIO.Map as Map
 import RIO.Process
 import Spicy.Common
+import Spicy.Formats.FChk
 import Spicy.Logger
 import Spicy.Molecule
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.Shallow
-import Spicy.Wrapper.Internal.Output.FChk
+import Spicy.Wrapper.Internal.Output.GDMA
 import Spicy.Wrapper.Internal.Output.Generic
 import System.Path
-  ( (<.>),
+  ( (<++>),
+    (<.>),
     (</>),
   )
 import qualified System.Path as Path
 import qualified System.Path.Directory as Dir
 
--- |
--- Run all calculations of a complete molecular system on all layers. Moves top down the leftmost tree
--- first.
+logSource :: LogSource
+logSource = "Wraper Executor"
+
+----------------------------------------------------------------------------------------------------
+-- | Run all calculations of a complete molecular system on all layers. Moves top down the leftmost
+-- tree first.
 runAllCalculations ::
   (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
   RIO env Molecule
@@ -88,7 +97,7 @@ runCalculation ::
   CalcID ->
   RIO env Molecule
 runCalculation calcID = do
-  -- Initial logging.
+  -- LOG
   logInfo $
     "Running calculation with ID \""
       <> displayShow (calcID ^. #calcKey)
@@ -265,12 +274,12 @@ gdmaAnalysis ::
   (HasWrapperConfigs env, HasLogFunc env, HasProcessContext env) =>
   -- | The absolute path to the FChk file, which is the GDMA input.
   Path.AbsFile ->
-  -- | The dense set of link atoms, which shall **not** be expansion centres.
-  IntSet ->
+  -- | The 'Atom's of the current molecule layer, which is being analysed.
+  IntMap Atom ->
   -- | The order of the multipole expansion. >= 0 && <= 10
   Int ->
   RIO env (IntMap Multipoles)
-gdmaAnalysis fchkPath linkAtoms expOrder = do
+gdmaAnalysis fchkPath atoms expOrder = do
   -- Obtain the GDMA wrapper.
   gdmaWrapper <-
     view (wrapperConfigsL % #gdma) >>= \wrapper -> case wrapper of
@@ -286,15 +295,21 @@ gdmaAnalysis fchkPath linkAtoms expOrder = do
   unless fchkExists . throwM $
     WrapperGenericException "executeGDMA" "The formatted checkpoint file does not exist."
 
-  -- TODO - Reconstruct FChk file for suitable link atom names
+  -- Read the FChk and reconstruct it with link atoms replaced by an uncommon element.
+  let linkReplacement = Xe -- Xenon ist the heaviest element supported by GDMA.
+      gdmaFChkPath = Path.takeDirectory fchkPath </> (Path.takeBaseName fchkPath <++> "_gdma" <++> ".fchk")
+  fchkOrig <- readFileUTF8 (Path.toAbsRel fchkPath) >>= parse' fChk
+  fchkLink <- relabelLinkAtoms linkReplacement atoms fchkOrig
+  writeFileUTF8 (Path.toAbsRel gdmaFChkPath) . writeFChk $ fchkLink
 
   -- Construct the GDMA input.
   let gdmaInput =
         ByteStringLazy8.unlines
-          [ "file " <> (ByteStringLazy8.pack . Path.toString $ fchkPath),
+          [ "file " <> (ByteStringLazy8.pack . Path.toString $ gdmaFChkPath),
+            "angstrom",
             "multipoles",
             "limit " <> (ByteStringLazy8.pack . show $ expOrder),
-            "delete L",
+            "delete " <> (ByteStringLazy8.pack . show $ linkReplacement),
             "start"
           ]
 
@@ -305,16 +320,41 @@ gdmaAnalysis fchkPath linkAtoms expOrder = do
       mempty
       (readProcess . setStdin (byteStringInput gdmaInput))
 
-  -- Parse the GDMA output.
-
   unless (exitCode == ExitSuccess) $ do
     logError $ "GDMA execution terminated abnormally. Got exit code: " <> displayShow exitCode
     logError "GDMA error messages:"
     logError . displayShow $ gdmaErr
     logError "GDMA stdout messages:"
     logError . displayShow $ gdmaOut
+    throwM . localExcp $ "GDMA run uncessfull"
 
-  return undefined
+  -- Parse the GDMA output and rejoin them with the model atoms.
+  modelMultipoleList <-
+    getResOrErr
+      . parse' gdmaMultipoles
+      . decodeUtf8Lenient
+      . BL.toStrict
+      $ gdmaOut
+  let modelAtomKeys =
+        IntSet.toAscList
+          . IntMap.keysSet
+          . IntMap.filter (not . isAtomLink . isLink)
+          . IntMap.filter (\a -> not $ a ^. #isDummy)
+          $ atoms
+      multipoleMap = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
+
+  -- LOG
+  logDebug $ "Obtained multipoles from GDMA:\n" <> displayShow modelMultipoleList
+
+  unless (List.length modelMultipoleList == List.length modelAtomKeys) $ do
+    logError
+      "Number of model atoms and number of multipole expansions centres obtained from GDMA\
+      \ do not match."
+    throwM . localExcp $ "Problematic behaviour in GDMA multipole analysis."
+
+  return multipoleMap
+  where
+    localExcp = WrapperGenericException "gdmaAnalysis"
 
 {-
 ####################################################################################################
@@ -328,20 +368,27 @@ gdmaAnalysis fchkPath linkAtoms expOrder = do
 -- information, which must be at @permanentDir </> Path.relFile prefixName <.> ".fchk"@. If a hessian
 -- calculation was requested, also a plain text hessian file (numpy style) is required, which must be
 -- at @permanentDir </> Path.relFile prefixName <.> ".hess"@.
-analysePsi4 :: (HasLogFunc env, HasMolecule env) => CalcID -> RIO env CalcOutput
+--
+-- GDMA multipoles are obtained from this FCHK by an additional call to GDMA.
+analysePsi4 ::
+  (HasLogFunc env, HasMolecule env, HasProcessContext env, HasWrapperConfigs env) =>
+  CalcID ->
+  RIO env CalcOutput
 analysePsi4 calcID = do
-  -- Create the calcID lens.
-  let calcLens = calcIDLensGen calcID
+  -- Create the calcID lens and the mol lens.
+  let molLens = molIDLensGen (calcID ^. #molID)
+      calcLens = calcIDLensGen calcID
 
   -- Gather information about the run which to analyse.
   mol <- view moleculeL
+  localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
   calcContext <- case (mol ^? calcLens) of
     Just x -> return x
     Nothing ->
       throwM $
         MolLogicException
           "runCalculation"
-          "Requested to perform a calculation, which does not exist."
+          "Requested to perform a cdata CalcOutalculation, which does not exist."
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       prefixName = calcContext ^. #input % #prefixName
@@ -364,10 +411,14 @@ analysePsi4 calcID = do
     _ -> return Nothing
 
   -- Perform the GDMA calculation on the FChk file and obtain its results.
-  multipoles <- undefined -- gdmaAnalysis fchkPath linkAtoms
+  multipoles <- gdmaAnalysis fchkPath (localMol ^. #atoms) 4
 
-  -- Combine the Hessian information into the main output from the FChk.
+  -- Combine the Hessian and multipole information into the main output from the FChk.
   let calcOutput =
-        fChkOutput & #energyDerivatives % #hessian .~ hessianOutput
+        fChkOutput
+          & #energyDerivatives % #hessian .~ hessianOutput
+          & #multipoles .~ multipoles
 
   return calcOutput
+  where
+    localExcp = WrapperGenericException "analysePsi4"

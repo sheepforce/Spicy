@@ -6,12 +6,8 @@ Test.hs
 goldentests/output/*.*
 public
 dist-newstyle
-*.fchk
-
 *.local
-
 cabal.project.local~
-
 result
-
 result-2
+Tests/

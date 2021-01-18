@@ -26,6 +26,7 @@ in
 
     # Some you may need to get some other way.
     buildInputs = [
+      pkgs.llvm_9
     ];
 
     # Prevents cabal from choosing alternate plans, so that
