@@ -84,9 +84,9 @@ nixReleaseBuild:
     # Make a snapshot of the nix store
     - nix path-info --all > /tmp/store-path-pre-build;
   script:
-    - nix-build nix/release.nix -A spicy.components.library |& tee ReleaseBuildLib.log
-    - nix-build nix/release.nix -A spicy.components.exes |& tee ReleaseBuildExe.log
-    - nix-build nix/release.nix -A spicy.components.tests |& tee ReleaseBuildTest.log
+    - nix-build nix/release.nix -A spicy.components.library | tee ReleaseBuildLib.log
+    - nix-build nix/release.nix -A spicy.components.exes | tee ReleaseBuildExe.log
+    - nix-build nix/release.nix -A spicy.components.tests | tee ReleaseBuildTest.log
   artifacts:
     when: always
     paths:
@@ -128,9 +128,9 @@ nixDevBuild:
     # Make a snapshot of the nix store
     - nix path-info --all > /tmp/store-path-pre-build;
   script:
-    - nix-build nix/default.nix -A spicy.components.library |& tee DevBuildLib.log
-    - nix-build nix/default.nix -A spicy.components.exes |& tee DevBuildExe.log
-    - nix-build nix/default.nix -A spicy.components.tests |& tee DevBuildTest.log
+    - nix-build nix/default.nix -A spicy.components.library | tee DevBuildLib.log
+    - nix-build nix/default.nix -A spicy.components.exes | tee DevBuildExe.log
+    - nix-build nix/default.nix -A spicy.components.tests | tee DevBuildTest.log
   artifacts:
     when: always
     paths:
