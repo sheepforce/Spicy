@@ -1,4 +1,6 @@
-{ pkgs ? import ./nixpkgs.nix {} }:
+{ pkgs ? import ./nixpkgs.nix {}
+, static ? false
+}:
 
 pkgs.haskell-nix.project {
 
@@ -8,4 +10,11 @@ pkgs.haskell-nix.project {
   };
 
   compiler-nix-name = "ghc8102";
+
+  configureArgs = if static
+    then builtins.toString [
+      "--disable-executable-dynamic"
+      "--disable-shared"
+      "--ghc-option=-optl=-static"
+    ] else "";
 }

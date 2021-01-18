@@ -1,3 +1,5 @@
+{ static ? false }:
+
 let
   chemix = import ./chemix/default.nix;
 
@@ -10,7 +12,7 @@ let
 
   nixpkgsSrc = haskellNix.sources.nixpkgs-2009;
 
-  pkgs = import ./nixpkgs.nix { inherit chemix haskellNix nixpkgsSrc; };
+  pkgs = import ./nixpkgs.nix { inherit chemix haskellNix nixpkgsSrc static ; };
 
 in
-  import ./default.nix { inherit pkgs; }
+  import ./default.nix { inherit pkgs static; }
