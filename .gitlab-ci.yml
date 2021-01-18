@@ -75,7 +75,7 @@ nixReleaseBuild:
     - echo 'trusted-substituters = https://chemix.cachix.org https://hydra.iohk.io https://spicy.cachix.org' >> /etc/nix/nix.conf
     - echo 'trusted-public-keys = chemix.cachix.org-1:fsf9IweV024l7WnScInCSqrSS5N1T9hmOCbSrzOWIZM= spicy.cachix.org-1:f30r4wtVBZ3jMmmx6BZTVbFC3CgOq03HwJiB98U9QyY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=' >> /etc/nix/nix.conf
     # Install dependencies
-    - nix-env -iA nixos.cachix nixos.bash;
+    - nix-env -iA nixos.cachix nixos.bash nixos.git;
     - cachix authtoken $CACHIX_AUTHTOKEN;
     - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY;
     - cachix use spicy;
@@ -84,9 +84,9 @@ nixReleaseBuild:
     # Make a snapshot of the nix store
     - nix path-info --all > /tmp/store-path-pre-build;
   script:
-    - nix-build nix/release.nix -A spicy.components.library | tee ReleaseBuildLib.log
-    - nix-build nix/release.nix -A spicy.components.exes | tee ReleaseBuildExe.log
-    - nix-build nix/release.nix -A spicy.components.tests | tee ReleaseBuildTest.log
+    - nix-build nix/release.nix -A spicy.components.library 2>&1 | tee ReleaseBuildLib.log
+    - nix-build nix/release.nix -A spicy.components.exes 2>&1 | tee ReleaseBuildExe.log
+    - nix-build nix/release.nix -A spicy.components.tests 2>&1 | tee ReleaseBuildTest.log
   artifacts:
     when: always
     paths:
@@ -119,7 +119,7 @@ nixDevBuild:
     - echo 'trusted-substituters = https://chemix.cachix.org https://hydra.iohk.io https://spicy.cachix.org' >> /etc/nix/nix.conf
     - echo 'trusted-public-keys = chemix.cachix.org-1:fsf9IweV024l7WnScInCSqrSS5N1T9hmOCbSrzOWIZM= spicy.cachix.org-1:f30r4wtVBZ3jMmmx6BZTVbFC3CgOq03HwJiB98U9QyY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=' >> /etc/nix/nix.conf
     # Install dependencies
-    - nix-env -iA nixos.cachix nixos.bash;
+    - nix-env -iA nixos.cachix nixos.bash nixos.git;
     - cachix authtoken $CACHIX_AUTHTOKEN;
     - export CACHIX_SIGNING_KEY=$CACHIX_SIGNING_KEY;
     - cachix use spicy;
@@ -128,9 +128,9 @@ nixDevBuild:
     # Make a snapshot of the nix store
     - nix path-info --all > /tmp/store-path-pre-build;
   script:
-    - nix-build nix/default.nix -A spicy.components.library | tee DevBuildLib.log
-    - nix-build nix/default.nix -A spicy.components.exes | tee DevBuildExe.log
-    - nix-build nix/default.nix -A spicy.components.tests | tee DevBuildTest.log
+    - nix-build nix/default.nix -A spicy.components.library 2>&1 | tee DevBuildLib.log
+    - nix-build nix/default.nix -A spicy.components.exes 2>&1 | tee DevBuildExe.log
+    - nix-build nix/default.nix -A spicy.components.tests 2>&1 | tee DevBuildTest.log
   artifacts:
     when: always
     paths:
