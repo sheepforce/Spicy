@@ -64,7 +64,6 @@ dependencies:
   - massiv >= 0.5.6.0 && < 0.6
   - tasty >= 1.2.3 && < 1.4
   - tasty-golden >= 2.3.3 && < 2.4
-  - hmatrix >= 0.20.1 && < 0.21
   - vector >= 0.12.1.2 && < 0.13
   - rio >= 0.1.13.0 && < 0.2
 ghc-options:
