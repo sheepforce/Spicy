@@ -313,9 +313,6 @@ gdmaAnalysis fchkPath atoms expOrder = do
             "start"
           ]
 
-  -- LOG
-  logDebug $ "Running GDMA with input:\n" <> displayShow gdmaInput
-
   -- Execute GDMA on the input file now and pipe the input file into it.
   (exitCode, gdmaOut, gdmaErr) <-
     proc
@@ -330,9 +327,6 @@ gdmaAnalysis fchkPath atoms expOrder = do
     logError "GDMA stdout messages:"
     logError . displayShow $ gdmaOut
     throwM . localExcp $ "GDMA run uncessfull"
-
-  -- LOG
-  logDebug $ "GDMA output:\n" <> displayShow gdmaOut
 
   -- Parse the GDMA output and rejoin them with the model atoms.
   modelMultipoleList <-
