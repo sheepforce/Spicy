@@ -895,8 +895,6 @@ createLinkAtom gScaleOption linkElementOption label' fftype (cappedKey, cappedAt
 -- - \( \mathbf{r}^\mathrm{LAH} \): the coordinates of the atom that has been removed by creating the
 --   new layer
 -- - \( \mathbf{r}^\mathrm{LAC} \): the coordinates of the atom, that will be capped by the link atom
-
--- TODO(phillip|p=40|#Unfinished) - Check if the scaling factor is correct. Results look spurious.
 calcLinkCoords ::
   (Load r Ix1 a, MonadThrow m, Numeric r a) =>
   -- | Coordinates of the atom being capped.
@@ -1065,11 +1063,7 @@ addAtomWithKeyLocal mol key fragID atom = do
 
 -- | Removes an 'Atom' specified by its index key from the 'Molecule' and all deeper layers. If the
 -- atom specified was a link atom in the highest layer, it will remove link atoms in the deeper
--- layers, that have the same key. If the atom to remove was not a link atom in the highest layer,
--- but a link atom with the same index is found in deeper layers, the link atom will not be touched.
--- Bonds will be cleaned from references to this atom, if the atom is removed.
-
--- TODO (phillip|p=100|#Wrong) - Change the behaviour regarding link atoms. The new creation of atoms is more safe.
+-- layers, that have the same key.
 removeAtom :: MonadThrow m => Molecule -> Int -> m Molecule
 removeAtom mol atomInd = do
   -- Before doing anything check if the molecule is sane.
@@ -1082,7 +1076,7 @@ removeAtom mol atomInd = do
         Just a -> isAtomLink $ a ^. #isLink
         Nothing -> False
 
-  when atomExists
+  unless atomExists
     . throwM
     . MolLogicException "removeAtom"
     $ "Cannot remove atom with key "

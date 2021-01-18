@@ -45,7 +45,6 @@ multicentreOniomNCollector atomicTask = do
   mol <- view moleculeL
   _inputFile <- view inputFileL
 
-  -- TODO (phillip|p=100|#Unfinished) - A multipole collector needs to run first to get embedding.
   molEnergy <- energyCollector mol
   molGradient <- case atomicTask of
     WTGradient -> gradientCollector molEnergy
@@ -92,7 +91,6 @@ multicentreOniomNCollector atomicTask = do
 --
 -- where \(c\) refers to the centre.
 
--- TODO (phillip|p=100|#Unfinished) - This takes embedding currently not into consideration.
 energyCollector :: MonadThrow m => Molecule -> m Molecule
 energyCollector mol = do
   let subMols = mol ^. #subMol
@@ -218,7 +216,6 @@ energyCollector mol = do
 --
 -- For the definition of the Jacobian matrix, see 'getJacobian'.
 
--- TODO (phillip|p=100|#Unfinished) - The effect of embedding is not direclty considered here but potentially must.
 gradientCollector :: MonadThrow m => Molecule -> m Molecule
 gradientCollector mol = do
   let subMols = mol ^. #subMol
