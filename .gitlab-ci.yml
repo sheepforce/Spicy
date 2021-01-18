@@ -33,6 +33,7 @@ cabalReleaseBuild:
       - develop
       - master
       - release
+      - merge_requests
 
 # Build fully with Cabal without nix stuff.
 cabalDevBuild:
@@ -97,6 +98,7 @@ nixReleaseBuild:
     refs:
       - master
       - release
+      - merge_requests
   after_script:
     # Push everything that has been build since initialisation to the Cache.
     - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push spicy"
@@ -141,6 +143,7 @@ nixDevBuild:
       - develop
       - master
       - release
+      - merge_requests
   after_script:
     # Push everything that has been build since initialisation to the Cache.
     - bash -c "comm -13 <(sort /tmp/store-path-pre-build | grep -v '\.drv$') <(nix path-info --all | grep -v '\.drv$' | sort) | cachix push spicy"
