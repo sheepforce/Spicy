@@ -7,9 +7,6 @@
   # A Nixpkgs channel. Defaults to a rebuild version channel of nixos-20.09 from Haskell.nix,
   # but also <nixos>, ... are possible.
 , nixpkgsSrc ? haskellNix.sources.nixpkgs-2009
-
-  # Build everything with static linking for fully static executables.
-, static ? false
 }:
 
 let
@@ -27,5 +24,4 @@ let
   # MUSL64 fully static linking stuff.
   musl64 = pkgs.pkgsCross.musl64;
 
-in
-  if static then musl64 else pkgs
+in pkgs

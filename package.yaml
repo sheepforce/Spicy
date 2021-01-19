@@ -83,7 +83,7 @@ when:
         - -O0
     else:
       ghc-options:
-        # - -Werror
+        - -Werror
         - -O2
   - condition: flag(llvm)
     ghc-options:

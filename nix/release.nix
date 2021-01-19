@@ -12,7 +12,7 @@ let
 
   nixpkgsSrc = haskellNix.sources.nixpkgs-2009;
 
-  pkgs = import ./nixpkgs.nix { inherit chemix haskellNix nixpkgsSrc static ; };
+  pkgs = import ./nixpkgs.nix { inherit chemix haskellNix nixpkgsSrc; };
 
 in
   import ./default.nix { inherit pkgs static; }
