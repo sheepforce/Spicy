@@ -24,5 +24,4 @@ let
   # MUSL64 fully static linking stuff.
   musl64 = pkgs.pkgsCross.musl64;
 
-in
-  pkgs
+in pkgs

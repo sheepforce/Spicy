@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.3.
+-- This file has been generated from package.yaml by hpack version 0.34.2.
 --
 -- see: https://github.com/sol/hpack
 
@@ -84,7 +84,6 @@ library
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
-    , hmatrix >=0.20.1 && <0.21
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
     , optics >=0.3 && <0.4
@@ -101,7 +100,7 @@ library
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -O2
+    ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
   default-language: Haskell2010
@@ -127,7 +126,6 @@ executable spicy
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
-    , hmatrix >=0.20.1 && <0.21
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
     , optics >=0.3 && <0.4
@@ -145,7 +143,7 @@ executable spicy
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -O2
+    ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
   default-language: Haskell2010
@@ -171,7 +169,6 @@ test-suite unittests
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
-    , hmatrix >=0.20.1 && <0.21
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
     , optics >=0.3 && <0.4
@@ -190,7 +187,7 @@ test-suite unittests
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -O2
+    ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
   default-language: Haskell2010
@@ -218,7 +215,6 @@ benchmark bench
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
-    , hmatrix >=0.20.1 && <0.21
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
     , optics >=0.3 && <0.4
@@ -236,7 +232,7 @@ benchmark bench
   if flag(dev)
     ghc-options: -O0
   else
-    ghc-options: -O2
+    ghc-options: -Werror -O2
   if flag(llvm)
     ghc-options: -fllvm
   default-language: Haskell2010

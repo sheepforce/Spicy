@@ -24,27 +24,29 @@ module Spicy.Math
     magnitude,
     angle,
     cross3,
-    lu,
+    -- lu,
 
     -- * Conversion
 
+    {-
     -- ** Massiv-HMatrix
     vecM2H,
     vecH2M,
     matM2H,
     matH2M,
+    -}
 
     -- ** Matrix-Vector
     ltMat2Square,
   )
 where
 
+-- import Data.Massiv.Array.Manifest.Vector (ARepr, VRepr, fromVector', toVector)
+-- import qualified Data.Vector.Generic as GenericVec
+-- import qualified Numeric.LinearAlgebra as LA
 import Data.Massiv.Array as Massiv
-import Data.Massiv.Array.Manifest.Vector (ARepr, VRepr, fromVector', toVector)
 import Data.Massiv.Core.Operations ()
-import qualified Data.Vector.Generic as GenericVec
 import Math.NumberTheory.Roots
-import qualified Numeric.LinearAlgebra as LA
 import RIO hiding (Vector, (%~))
 import Spicy.Common
 
@@ -122,7 +124,7 @@ cross3 a b = do
   return . Massiv.fromList Seq $ [c1, c2, c3]
 
 ----------------------------------------------------------------------------------------------------
-
+{-
 -- | LUP decomposition backed up by LAPACK.
 lu :: (Mutable r Ix2 e, Mutable r Ix1 e, LA.Field e) => Matrix r e -> (Matrix r e, Matrix r e, Matrix r e, e)
 lu mat = (\(l, u, p, s) -> (matH2M l, matH2M u, matH2M p, s)) . LA.lu . matM2H $ mat
@@ -174,6 +176,7 @@ matH2M mat =
       nCols = LA.cols mat
    in resize' (Sz $ nRows :. nCols) . fromVector' Par (Sz $ nRows * nCols) . LA.flatten $ mat
 
+-}
 {-
 ====================================================================================================
 -}
