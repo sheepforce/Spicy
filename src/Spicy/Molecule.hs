@@ -89,6 +89,8 @@ module Spicy.Molecule
     isAtomLink,
     removeRealLinkTagsFromModel,
     molToPointCharges,
+    getAllCalcIDsHierarchically,
+    getAllMolIDsHierarchically,
 
     -- * Writer
     writeXYZ,

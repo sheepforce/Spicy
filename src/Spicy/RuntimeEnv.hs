@@ -14,7 +14,9 @@
 -- implementation of RIO's @Has*@ typeclasses more consistent, than scattering type definitions across
 -- modules.
 module Spicy.RuntimeEnv
-  ( SpicyEnv (..),
+  ( HasPysis (..),
+    HasIPI (..),
+    SpicyEnv (..),
     WrapperConfigs (..),
     HasWrapperConfigs (..),
     Motion (..),
@@ -24,6 +26,7 @@ module Spicy.RuntimeEnv
 where
 
 import Data.Aeson
+import Network.Socket
 import Optics
 import RIO hiding (Lens', lens)
 import RIO.Process (HasProcessContext (..), ProcessContext)
@@ -31,12 +34,24 @@ import Spicy.Aeson
 import Spicy.InputFile hiding (MD, molecule)
 import Spicy.Molecule
 
+-- | A reader class, that is aware of connection details to pysisyphus.
+class HasPysis env where
+  pysisL :: Lens' env Socket
+
+----------------------------------------------------------------------------------------------------
+
+-- | A reader class, that is aware of connection details to i-PI.
+class HasIPI env where
+  ipiL :: Lens' env Socket
+
+----------------------------------------------------------------------------------------------------
+
 -- | Definition of the current 'State' in the execution of Spicy.
 data SpicyEnv = SpicyEnv
   { -- | The current state of the molecule with all information
     --   up to date. This also includes the 'Seq' of
     --   calculations to perform on each layer.import Spicy.Aeson
-    molecule :: !Molecule,
+    molecule :: !(TVar Molecule),
     -- | This is the input file and contains the definition of
     --   which kind of calculation to do. This should be set in
     --   the beginning and never change.
@@ -49,12 +64,16 @@ data SpicyEnv = SpicyEnv
     -- | A logging function for RIO.
     logFunc :: LogFunc,
     -- | A process context for RIO.
-    procCntxt :: ProcessContext
+    procCntxt :: ProcessContext,
+    -- | Connection settings for pysisyphus i-PI server.
+    pysis :: Socket,
+    -- | Connection settings for the i-PI i-PI server.
+    ipi :: Socket
   }
   deriving (Generic)
 
 -- Lenses
-instance (k ~ A_Lens, a ~ Molecule, b ~ a) => LabelOptic "molecule" k SpicyEnv SpicyEnv a b where
+instance (k ~ A_Lens, a ~ TVar Molecule, b ~ a) => LabelOptic "molecule" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> molecule s) $ \s b -> s {molecule = b}
 
 instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "calculation" k SpicyEnv SpicyEnv a b where
@@ -72,6 +91,12 @@ instance (k ~ A_Lens, a ~ LogFunc, b ~ a) => LabelOptic "logFunc" k SpicyEnv Spi
 instance (k ~ A_Lens, a ~ ProcessContext, b ~ a) => LabelOptic "procCntxt" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> procCntxt s) $ \s b -> s {procCntxt = b}
 
+instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "pysis" k SpicyEnv SpicyEnv a b where
+  labelOptic = lens (\s -> pysis s) $ \s b -> s {pysis = b}
+
+instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "ipi" k SpicyEnv SpicyEnv a b where
+  labelOptic = lens (\s -> (ipi :: SpicyEnv -> Socket) s) $ \s b -> (s {ipi = b} :: SpicyEnv)
+
 -- Reader Classes
 instance HasInputFile SpicyEnv where
   inputFileL = #calculation
@@ -88,6 +113,12 @@ instance HasLogFunc SpicyEnv where
 instance HasProcessContext SpicyEnv where
   processContextL = toLensVL #procCntxt
 
+instance HasPysis SpicyEnv where
+  pysisL = #pysis
+
+instance HasIPI SpicyEnv where
+  ipiL = #ipi
+
 ----------------------------------------------------------------------------------------------------
 
 -- | The command to use for launching the wrapped programs. Alls arguments are meant to be passed to
@@ -95,7 +126,9 @@ instance HasProcessContext SpicyEnv where
 data WrapperConfigs = WrapperConfigs
   { psi4 :: Maybe FilePath,
     nwchem :: Maybe FilePath,
-    gdma :: Maybe FilePath
+    gdma :: Maybe FilePath,
+    ipi :: Maybe FilePath,
+    pysisyphus :: Maybe FilePath
   }
   deriving (Show, Generic)
 
@@ -113,6 +146,12 @@ instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "nwchem" k Wrappe
 
 instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "gdma" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens (\s -> gdma s) $ \s b -> s {gdma = b}
+
+instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "ipi" k WrapperConfigs WrapperConfigs a b where
+  labelOptic = lens (\s -> (ipi :: WrapperConfigs -> Maybe FilePath) s) $ \s b -> (s {ipi = b} :: WrapperConfigs)
+
+instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "pysisyphus" k WrapperConfigs WrapperConfigs a b where
+  labelOptic = lens (\s -> pysisyphus s) $ \s b -> s {pysisyphus = b}
 
 -- Reader Classes
 class HasWrapperConfigs env where
@@ -151,3 +190,5 @@ instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "outerCycle" k Motion Motion
 
 instance (k ~ A_Lens, a ~ Map MolID Int, b ~ a) => LabelOptic "innerCycles" k Motion Motion a b where
   labelOptic = lens (\s -> innerCycles s) $ \s b -> s {innerCycles = b}
+
+----------------------------------------------------------------------------------------------------

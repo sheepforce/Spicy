@@ -413,10 +413,8 @@ instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighb
 
 -- Reader Class
 class HasMolecule env where
-  moleculeL :: Lens' env Molecule
+  moleculeL :: Lens' env (TVar Molecule)
 
-instance HasMolecule Molecule where
-  moleculeL = castOptic simple
 
 ----------------------------------------------------------------------------------------------------
 

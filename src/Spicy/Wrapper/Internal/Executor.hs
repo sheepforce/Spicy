@@ -49,44 +49,21 @@ logSource :: LogSource
 logSource = "Wraper Executor"
 
 ----------------------------------------------------------------------------------------------------
+
 -- | Run all calculations of a complete molecular system on all layers. Moves top down the leftmost
 -- tree first.
 runAllCalculations ::
   (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
-  RIO env Molecule
+  RIO env ()
 runAllCalculations = do
   -- Get the molecule to process.
-  mol <- view moleculeL
+  mol <- view moleculeL >>= atomically . readTVar
 
   -- Obtain all CalcIDs of this molecule.
-  let allCalcIDs =
-        molFoldlWithMolID
-          ( \idAcc currentMolID currentMol ->
-              let calcIDsOfCurrentMol = getCalcIDsOfMolLayer currentMolID currentMol
-               in idAcc <> calcIDsOfCurrentMol
-          )
-          Empty
-          mol
+  let allCalcIDs = getAllCalcIDsHierarchically mol
 
   -- Fold over all CalcIDs of the molecule to resolve all calculations of the molecule.
-  molCalculated <-
-    foldl
-      ( \molCalcAcc' calcID -> do
-          molCalcAcc <- molCalcAcc'
-          molWithThisIdUpdated <- local (& moleculeL .~ molCalcAcc) $ runCalculation calcID
-          return molWithThisIdUpdated
-      )
-      (return mol)
-      allCalcIDs
-
-  return molCalculated
-  where
-    getCalcIDsOfMolLayer :: MolID -> Molecule -> Seq CalcID
-    getCalcIDsOfMolLayer molID molLayer =
-      Map.foldlWithKey'
-        (\idsAcc calcKey _ -> idsAcc |> CalcID {molID = molID, calcKey = calcKey})
-        Empty
-        (molLayer ^. #calcContext)
+  mapM_ runCalculation allCalcIDs
 
 ----------------------------------------------------------------------------------------------------
 
@@ -95,7 +72,7 @@ runAllCalculations = do
 runCalculation ::
   (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
   CalcID ->
-  RIO env Molecule
+  RIO env ()
 runCalculation calcID = do
   -- LOG
   logInfo $
@@ -109,31 +86,14 @@ runCalculation calcID = do
   let calcLens = calcIDLensGen calcID
 
   -- Gather the information for this calculation.
-  mol <- view moleculeL
-  let calcContextM = mol ^? calcLens
-  calcContext <- case calcContextM of
-    Nothing ->
-      throwM $
-        MolLogicException
-          "runCalculation"
-          "Requested to perform a calculation, which does not exist."
-    Just cntxt ->
-      if isJust (cntxt ^. #output)
-        then
-          throwM $
-            MolLogicException
-              " runCalculation"
-              " Requested to perform a calculation, which has already been performed."
-        else return cntxt
+  molT <- view moleculeL
+  mol <- atomically . readTVar $ molT
+  calcContext <- maybe2MThrow (localExc "Requested to perform a cauclation, which does not exist") $ mol ^? calcLens
+  unless (isNothing $ calcContext ^. #output) . throwM . localExc $ "Requested to perform a calculation, which has already been performed."
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
-      inputFilePrefix =
-        Path.relFile
-          . replaceProblematicChars
-          $ calcContext
-            ^. #input
-              % #prefixName
+      inputFilePrefix = Path.relFile . replaceProblematicChars $ calcContext ^. #input % #prefixName
       inputFileName = inputFilePrefix <.> ".inp"
       inputFilePath = permanentDir </> inputFileName
       software = calcContext ^. #input % #software
@@ -166,7 +126,10 @@ runCalculation calcID = do
   -- Insert the output, that has been obtained for this calculation into the corresponding CalcID.
   let molUpdated = mol & calcContextL % #output ?~ calcOutput
 
-  return molUpdated
+  -- Write the updated molecule to the shared variable.
+  atomically . writeTVar molT $ molUpdated
+  where
+    localExc = WrapperGenericException "runCalculation"
 
 {-
 ####################################################################################################
@@ -202,7 +165,7 @@ executePsi4 calcID inputFilePath = do
   let calcLens = calcIDLensGen calcID
 
   -- Gather information for the execution of Psi4
-  mol <- view moleculeL
+  mol <- view moleculeL >>= atomically . readTVar
   let calcContextM = mol ^? calcLens
   calcContext <- case calcContextM of
     Nothing ->
@@ -380,7 +343,7 @@ analysePsi4 calcID = do
       calcLens = calcIDLensGen calcID
 
   -- Gather information about the run which to analyse.
-  mol <- view moleculeL
+  mol <- view moleculeL >>= atomically . readTVar
   localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
   calcContext <- case (mol ^? calcLens) of
     Just x -> return x

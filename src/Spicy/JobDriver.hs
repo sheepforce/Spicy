@@ -62,25 +62,21 @@ spicyExecMain = do
   -- LOG
   logInfo "Applying changes to the input topology ..."
   -- Apply topology updates as given in the input file to the molecule.
-  molTopologyAdaptions <- changeTopologyOfMolecule
+  changeTopologyOfMolecule
 
   -- LOG
   logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
-  molLayouted <- local (& moleculeL .~ molTopologyAdaptions) layoutMoleculeForCalc
-  logInfo $
-    "Layouting done. Writing layout to "
-      <> (path2Utf8Builder . getDirPath $ inputFile ^. #permanent)
-      <> "."
-  -- local (& moleculeL .~ molLayouted) $ writeLayout writeXYZ
+  layoutMoleculeForCalc
 
   -- Perform the specified tasks on the input file.
   -- TODO (phillip|p=100|#Unfinished) - This is here for testing purposes. The real implementation should use a more abstract driver, that composes atomic tasks.
-  _molProcessed <- local (& moleculeL .~ molLayouted) (multicentreOniomNDriver WTGradient)
-  logDebug . display . writeSpicy $ _molProcessed
+  multicentreOniomNDriver WTGradient
 
   -- LOG
+  finalMol <- view moleculeL >>= atomically . readTVar
+  logDebug . display . writeSpicy $ finalMol
   logInfo "Spicy execution finished. Wup Wup!"
 
 ----------------------------------------------------------------------------------------------------
@@ -92,16 +88,17 @@ spicyExecMain = do
 --   2. Remove bonds between pairs of atoms.
 --   3. Add bonds between pairs of atoms.
 changeTopologyOfMolecule ::
-  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
+  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env ()
 changeTopologyOfMolecule = do
   -- Get the molecule to manipulate
-  mol <- view moleculeL
+  molT <- view moleculeL
+  mol <- atomically . readTVar $ molT
 
   -- Get the input file information.
   inputFile <- view inputFileL
 
   case inputFile ^. #topology of
-    Nothing -> return mol
+    Nothing -> return ()
     Just topoChanges -> do
       -- Resolve the defaults to final values.
       let covScalingFactor = fromMaybe defCovScaling $ topoChanges ^. #radiusScaling
@@ -157,14 +154,14 @@ changeTopologyOfMolecule = do
           additionPairs
 
       -- The molecule after all changes to the topology have been applied.
-      return molNewBondsAdded
+      atomically . writeTVar molT $ molNewBondsAdded
 
 ----------------------------------------------------------------------------------------------------
 
 -- | Perform transformation of the molecule data structure as obtained from the input to match the
 -- requirements for the requested calculation type.
 layoutMoleculeForCalc ::
-  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
+  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env ()
 layoutMoleculeForCalc = do
   inputFile <- view inputFileL
   case inputFile ^. #model of

@@ -54,6 +54,8 @@ module Spicy.Molecule.Internal.Util
     getJacobian,
     redistributeLinkMoments,
     removeRealLinkTagsFromModel,
+    getAllCalcIDsHierarchically,
+    getAllMolIDsHierarchically
   )
 where
 
@@ -1186,8 +1188,9 @@ changeBond operation mol (at1, at2) = do
               else thisLayerBonds
 
           -- Update bonds data and invalidate the ones, that make no sense after bond updates.
-          molUpdated = mol' & #bonds .~ thisLayerBondsUpdated
-                            & #jacobian .~ Nothing
+          molUpdated =
+            mol' & #bonds .~ thisLayerBondsUpdated
+              & #jacobian .~ Nothing
 
           -- Lazily update the submolecules recursively.
           subMols = molUpdated ^. #subMol
@@ -2424,3 +2427,35 @@ removeRealLinkTagsFromModel realMol modelCentre =
                 modelAtoms
          in modelCentre & #atoms .~ modelAtomsClean
    in newModel
+
+----------------------------------------------------------------------------------------------------
+
+-- | Obtain all calculations that need to be performed on a molecule in hierarchical order
+-- (top to down and left to right)
+getAllCalcIDsHierarchically :: Molecule -> Seq CalcID
+getAllCalcIDsHierarchically mol =
+  molFoldlWithMolID
+    ( \idAcc currentMolID currentMol ->
+        let calcIDsOfCurrentMol = getCalcIDsOfMolLayer currentMolID currentMol
+         in idAcc <> calcIDsOfCurrentMol
+    )
+    Empty
+    mol
+  where
+    getCalcIDsOfMolLayer :: MolID -> Molecule -> Seq CalcID
+    getCalcIDsOfMolLayer molID molLayer =
+      Map.foldlWithKey'
+        (\idsAcc calcKey _ -> idsAcc |> CalcID {molID = molID, calcKey = calcKey})
+        Empty
+        (molLayer ^. #calcContext)
+
+----------------------------------------------------------------------------------------------------
+
+-- | Get all layer IDs of a molecule in ONIOM hierarchical order (top to bottom, left to right).
+getAllMolIDsHierarchically :: Molecule -> Seq MolID
+getAllMolIDsHierarchically mol =
+  molFoldlWithMolID
+    ( \idAcc currentMolID _ -> idAcc |> currentMolID
+    )
+    Empty
+    mol

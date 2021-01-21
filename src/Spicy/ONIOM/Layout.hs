@@ -35,16 +35,17 @@ import Spicy.Molecule
 import Spicy.Wrapper.Internal.Generic
 import System.Path as Path
 
--- |
--- Prepare the layout for an ONIOM-n calculation, potentially with multi-centre layout at each level.
+-- | Prepare the layout for an ONIOM-n calculation, potentially with multi-centre layout at each level.
 -- The top level (real system) is the one obtained from the uppermost theorylayer, not necessarily the
 -- complete system as read from file.
-oniomNLayout :: (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
+oniomNLayout :: (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env ()
 oniomNLayout = do
   logInfo "Preparing ONIOM layout of input molecule."
 
   inputFile <- view inputFileL
-  originalMolecule <- view moleculeL
+  -- originalMolecule <- view moleculeL
+  molT <- view moleculeL
+  originalMolecule <- atomically . readTVar $ molT
 
   -- Step through the theorylayers of the input file and create new layers accordingly. Fail if no
   -- ONIOMn method is specified.
@@ -130,9 +131,10 @@ oniomNLayout = do
   let deeperLayers = theoryLayers ^. #deeperLayer
   maxKeyOniomReal <- getMaxAtomIndex molRealSystem
   case deeperLayers of
-    Empty -> return molRealSystem
-    moreLayers ->
-      (^. _1) <$> createNextLayers maxKeyOniomReal Empty molRealSystem calcContextTop moreLayers
+    Empty -> atomically . writeTVar molT $ molRealSystem
+    moreLayers -> do
+      finalMol <- (^. _1) <$> createNextLayers maxKeyOniomReal Empty molRealSystem calcContextTop moreLayers
+      atomically . writeTVar molT $ finalMol
   where
     createNextLayers ::
       (HasInputFile env, HasLogFunc env) =>

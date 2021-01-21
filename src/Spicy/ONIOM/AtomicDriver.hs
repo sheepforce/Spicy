@@ -60,9 +60,10 @@ multicentreOniomNDriver ::
     HasInputFile env
   ) =>
   WrapperTask ->
-  RIO env Molecule
+  RIO env ()
 multicentreOniomNDriver atomicTask = do
-  mol <- view moleculeL
+  molT <- view moleculeL
+  mol <- atomically . readTVar $ molT
   inputFile <- view inputFileL
 
   let modelOK = case inputFile ^. #model of
@@ -79,101 +80,98 @@ multicentreOniomNDriver atomicTask = do
       "This driver assumes a multicentre ONIOM-n layout,\
       \ but the input file specifies a different layout type."
 
-  -- Clean all calculation outputs from old results and set the tasks for all wrappers.
-  let molWithEmptyOutputs = molMap (& #calcContext % each % #output .~ def) mol
-      molWithTasks =
-        molMap
-          (& #calcContext % each % #input % #task .~ atomicTask)
-          molWithEmptyOutputs
-
   -- LOG
   logInfo "Performing wrapper calculations on molecule ..."
 
-  -- Apply the calculations top down. The results from the layer above can be used to polarise.
-  molWithOutputs <-
-    molFoldlWithMolID
-      ( \molAcc' layerID layerMol -> do
-          -- Unwrap the molecule accumulator.
-          molAcc <- molAcc'
+  -- Obtain all calculations IDs.
+  let allMolIDs = getAllMolIDsHierarchically mol
 
-          -- Generate a lens for the current layer.
-          let layerLens = molIDLensGen layerID
+  -- Prepares the molecule for a new call of the atomic driver.
+  atomically $ do
+    cleanOutputs molT
+    assignTasks molT atomicTask
 
-          -- LOG
-          logInfo $ "ONIOM " <> (display . molID2OniomHumandID $ layerID)
+  -- Traverse the current molecule: perform all calculations and collect the results.
+  forM_ allMolIDs $ \layerID -> do
+    -- Obtain information specific for this iteration.
+    let layerLens = molIDLensGen layerID
+    currMol <- atomically . readTVar $ molT
+    layerMol <- maybe2MThrow (localExc "Layer cannot be found.") $ currMol ^? layerLens
+    let calcKeys = Map.keys $ layerMol ^. #calcContext
 
-          -- Polarise the layer if applicable and requested by electronic embedding
-          thisLayerMaybeWithPolarisation <-
-            if layerID == Empty
-              then return layerMol
-              else do
-                -- TODO (phillip|p=5|#Improvement) - https://aip.scitation.org/doi/10.1063/1.4972000 contains a version applicable to small systems, which does not need scaling factors.
-                let embeddingOfThisOrignalLayer =
-                      layerMol ^? #calcContext % ix (ONIOMKey Original) % #input % #embedding
-                case embeddingOfThisOrignalLayer of
-                  Just (Electronic scalingFactors) -> do
-                    let eeScalingFactors = fromMaybe defElectronicScalingFactors scalingFactors
+    -- LOG
+    logInfo $ "Layer " <> molID2OniomHumandID layerID
 
-                    -- LOG
-                    logInfo $ "Using electronic with scaling factors = " <> displayShow eeScalingFactors
+    -- If electronic embedding is active for this layer, polarise it. Updates this layer in the full
+    -- system.
+    molPolarised <- maybePolariseLayer currMol layerID
+    atomically . writeTVar molT $ molPolarised
 
-                    -- Construct the polarised molecule.
-                    getPolarisationCloudFromAbove molAcc layerID eeScalingFactors
-                  Just Mechanical -> do
-                    -- LOG
-                    logInfo "Using mechanical embedding"
-                    return layerMol
-                  Nothing ->
-                    throwM . localExc $
-                      "The calculation input does not contain any embedding information\n\
-                      \ for a high level calculation on a model system\n\
-                      \ or this no ONIOM calculation was specified."
+    -- Run original and inherited calculation.
+    flip traverse_ calcKeys $ \calcK -> do
+      -- LOG
+      logInfo $ case calcK of
+        ONIOMKey Original -> "High level calculation ..."
+        ONIOMKey Inherited -> "Low level calculation ..."
 
-          -- After the current layer has been potentially polarised, re-insert this layer in the
-          -- full ONIOM structure.
-          let molWithPolarisation = molAcc & layerLens .~ thisLayerMaybeWithPolarisation
+      -- Run the calculation.
+      let calcID = CalcID {molID = layerID, calcKey = calcK}
+      runCalculation calcID
 
-          -- The calculation is performed on the current layer. The runCalculation function updates
-          -- the outputs of the calculation layer on the fly.
-          let calcCntxts = layerMol ^. #calcContext
-          molWithLayerOutputsAndPoles <-
-            Map.foldlWithKey
-              ( \localAccMol' calcK _ -> do
-                  -- Unwrap the molecule accumulator, which will subsequently be updated.
-                  localAccMol <- localAccMol'
+    -- Transfer the multipoles of the just executed calculation immediately to the data of this
+    -- layer.
+    let calcID = CalcID {molID = layerID, calcKey = ONIOMKey Original}
+    currMolAfterCalc <- atomically . readTVar $ molT
+    molWithPolesTransfered <- multipoleTransfer calcID currMolAfterCalc
 
-                  -- Construct the local calcID
-                  let localCalcID = CalcID {molID = layerID, calcKey = calcK}
-
-                  -- LOG
-                  logInfo $ case calcK of
-                    ONIOMKey Original -> "High level calculation ..."
-                    ONIOMKey Inherited -> "Low level calculation ..."
-
-                  -- Run the calculation for this context.
-                  thisMolWithCntxt <- local (& moleculeL .~ localAccMol) $ runCalculation localCalcID
-
-                  -- Transfer the multipoles from the calculation output to the atom data.
-                  thisMolWithCntxtAndAtoms <- multipoleTransfer localCalcID thisMolWithCntxt
-
-                  -- Use the context obtained from this calculation for the next iteration,
-                  -- accumulating more and more results.
-                  return thisMolWithCntxtAndAtoms
-              )
-              (pure molWithPolarisation)
-              calcCntxts
-
-          return molWithLayerOutputsAndPoles
-      )
-      (pure molWithTasks)
-      molWithTasks
-
-  -- Collect all the results from the calculation outputs and combine bottom up all the results.
-  logInfo "Collecting the results from individual calculations ..."
-  molCollectedResult <-
-    local (& moleculeL .~ molWithOutputs) $
-      multicentreOniomNCollector atomicTask
-
-  return molCollectedResult
+    -- Update the molecule after the calculations on the current layer have been finished and
+    -- the multipoles have been collected.
+    atomically . writeTVar molT $ molWithPolesTransfered
   where
     localExc = MolLogicException "multicentreOniomNDriver"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Cleans all outputs from the molecule.
+cleanOutputs :: TVar Molecule -> STM ()
+cleanOutputs molT = do
+  mol <- readTVar molT
+  let molWithEmptyOutputs = molMap (& #calcContext % each % #output .~ def) mol
+  writeTVar molT molWithEmptyOutputs
+
+----------------------------------------------------------------------------------------------------
+
+-- | Assigns the given task to each calculation in the molecule.
+assignTasks :: TVar Molecule -> WrapperTask -> STM ()
+assignTasks molT task = do
+  mol <- readTVar molT
+  let molWithTasks =
+        molMap
+          (& #calcContext % each % #input % #task .~ task)
+          mol
+  writeTVar molT molWithTasks
+
+----------------------------------------------------------------------------------------------------
+
+-- | Polarises the current layer with all layers hierarchically above. The resulting molecule will
+-- just be the layer specified by the 'MolID'. The function assumes, that all layers above already
+-- have been properly polarised.
+maybePolariseLayer :: MonadThrow m => Molecule -> MolID -> m Molecule
+maybePolariseLayer molFull molID
+  | molID == Empty = return molFull
+  | otherwise = do
+    let layerLens = molIDLensGen molID
+    molLayer <- maybe2MThrow (localExc "Layer cannot be found") $ molFull ^? layerLens
+    embedding <-
+      maybe2MThrow (localExc "Original calculation cannot be found") $
+        molLayer ^? #calcContext % ix (ONIOMKey Original) % #input % #embedding
+
+    polarisedLayer <- case embedding of
+      Mechanical -> return molLayer
+      Electronic scalingFactors -> do
+        let eeScalings = fromMaybe defElectronicScalingFactors scalingFactors
+        getPolarisationCloudFromAbove molFull molID eeScalings
+
+    return $ molFull & layerLens .~ polarisedLayer
+  where
+    localExc = MolLogicException "polariseLayer"

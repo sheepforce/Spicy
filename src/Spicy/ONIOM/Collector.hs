@@ -40,9 +40,10 @@ import Spicy.Molecule hiding (S)
 
 -- |
 -- Collector for multicentre ONIOM-N calculations.
-multicentreOniomNCollector :: (HasMolecule env, HasInputFile env) => WrapperTask -> RIO env Molecule
+multicentreOniomNCollector :: (HasMolecule env, HasInputFile env) => WrapperTask -> RIO env ()
 multicentreOniomNCollector atomicTask = do
-  mol <- view moleculeL
+  molT <- view moleculeL
+  mol <- atomically . readTVar $ molT
   _inputFile <- view inputFileL
 
   molEnergy <- energyCollector mol
@@ -53,7 +54,7 @@ multicentreOniomNCollector atomicTask = do
     WTHessian -> hessianCollector molGradient
     _ -> return molGradient
 
-  return molHessian
+  atomically . writeTVar molT $ molHessian
 
 ----------------------------------------------------------------------------------------------------
 

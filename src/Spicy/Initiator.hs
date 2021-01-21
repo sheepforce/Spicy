@@ -103,6 +103,7 @@ inputToEnvAndRun = do
 
   -- Read the input molecule.
   molecule' <- loadInputMolecule $ inputFile ^. #molecule
+  moleculeT <- newTVarIO molecule'
 
   -- Construct the process context
   procCntxt' <- mkDefaultProcessContext
@@ -120,12 +121,14 @@ inputToEnvAndRun = do
   withLogFunc logOptions $ \lf -> do
     let spicyEnv =
           SpicyEnv
-            { molecule = molecule',
+            { molecule = moleculeT,
               calculation = inputFile,
               wrapperConfigs = wrapperConfigs',
               motion = Nothing,
               procCntxt = procCntxt',
-              logFunc = lf
+              logFunc = lf,
+              pysis = undefined,
+              ipi = undefined
             }
     runRIO spicyEnv spicyExecMain
 

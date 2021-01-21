@@ -62,7 +62,7 @@ formatPadFoldable padSize formatter delimiter values =
 -- |
 -- Translation of a 'MolID' to a more human readable text. Valid in the context of ONIOM calculations.
 molID2OniomHumandID :: MolID -> Utf8Builder
-molID2OniomHumandID Seq.Empty = "Layer 0 (real system)"
+molID2OniomHumandID Seq.Empty = "0"
 molID2OniomHumandID molID =
   let depth = Seq.length molID
       idTree =
@@ -72,7 +72,7 @@ molID2OniomHumandID molID =
                   idLetter = RIO'.toEnum $ currentID + offSet
                in textAcc `Text.snoc` idLetter
           )
-          ("Layer " <> tShow depth <> " ")
+          (tShow depth)
           molID
    in display idTree
 
