@@ -65,6 +65,7 @@ library
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
+      Spicy.Wrapper.IPI
   other-modules:
       Paths_spicy
   hs-source-dirs:
@@ -75,6 +76,7 @@ library
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
+    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -86,12 +88,14 @@ library
     , formatting >=6.3.7 && <8
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
+    , network >=3.1.2.1 && <3.2
     , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
+    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
@@ -117,6 +121,7 @@ executable spicy
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
+    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -128,6 +133,7 @@ executable spicy
     , formatting >=6.3.7 && <8
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
+    , network >=3.1.2.1 && <3.2
     , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -135,6 +141,7 @@ executable spicy
     , spicy
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
+    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
@@ -160,6 +167,7 @@ test-suite unittests
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
+    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -171,6 +179,7 @@ test-suite unittests
     , formatting >=6.3.7 && <8
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
+    , network >=3.1.2.1 && <3.2
     , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -178,6 +187,7 @@ test-suite unittests
     , spicy
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
+    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.3
     , tasty-golden >=2.3.1 && <2.4
     , tasty-hunit >=0.10.0.2 && <0.11
@@ -205,6 +215,7 @@ benchmark bench
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
+    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
     , bytestring >=0.10.8.2 && <0.12
@@ -217,6 +228,7 @@ benchmark bench
     , formatting >=6.3.7 && <8
     , integer-roots >=1.0 && <2
     , massiv >=0.5.6.0 && <0.6
+    , network >=3.1.2.1 && <3.2
     , optics >=0.3 && <0.4
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
@@ -224,6 +236,7 @@ benchmark bench
     , spicy
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
+    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
