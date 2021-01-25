@@ -23,6 +23,7 @@ module Spicy.RuntimeEnv
     HasMotion (..),
     CalcSlot (..),
     HasCalcSlot (..),
+    IPI (..),
   )
 where
 
@@ -204,9 +205,7 @@ instance (k ~ A_Lens, a ~ Map MolID Int, b ~ a) => LabelOptic "innerCycles" k Mo
 -- | Configuration settings for the calculation slot, that executes the wrapper calculations. It has
 -- an input and an output variable.
 data CalcSlot = CalcSlot
-  { -- | The async thread handler of this slot.
-    thread :: Async (),
-    -- | The calculation ID that shall be processed. Must be emptied at the **end** of the
+  { -- | The calculation ID that shall be processed. Must be emptied at the **end** of the
     -- calculation, not already after the calculation has started.
     input :: TMVar CalcID,
     -- | The finished result. Should be taken and emptied by the consumer.
@@ -221,9 +220,6 @@ instance HasCalcSlot CalcSlot where
   calcSlotL = castOptic simple
 
 -- Lenses
-instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "thread" k CalcSlot CalcSlot a b where
-  labelOptic = lens (\s -> (thread :: CalcSlot -> Async ()) s) $ \s b -> (s {thread = b} :: CalcSlot)
-
 instance (k ~ A_Lens, a ~ TMVar CalcID, b ~ a) => LabelOptic "input" k CalcSlot CalcSlot a b where
   labelOptic = lens (\s -> (input :: CalcSlot -> TMVar CalcID) s) $ \s b -> (s {input = b} :: CalcSlot)
 
@@ -234,10 +230,10 @@ instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSl
 
 -- | i-PI communication settings and variables. Generic over i-PI implementations.
 data IPI = IPI
-  { -- | The thread in which the i-PI sever is running.
-    thread :: Async (),
-    -- | The network socket used for communication with the server.
+  { -- | The network socket used for communication with the server.
     socket :: Socket,
+    -- | The address of the socket in use.
+    socketAddr :: SockAddr,
     -- | Input channel. When this variable is filled the i-PI server starts its calculation of
     -- new positions.
     input :: TMVar ForceData,
@@ -247,11 +243,11 @@ data IPI = IPI
   }
 
 -- Lenses
-instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "thread" k IPI IPI a b where
-  labelOptic = lens (\s -> (thread :: IPI -> Async ()) s) $ \s b -> (s {thread = b} :: IPI)
-
 instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "socket" k IPI IPI a b where
   labelOptic = lens (\s -> (socket :: IPI -> Socket) s) $ \s b -> s {socket = b}
+
+instance (k ~ A_Lens, a ~ SockAddr, b ~ a) => LabelOptic "socketAddr" k IPI IPI a b where
+  labelOptic = lens (\s -> socketAddr s) $ \s b -> s {socketAddr = b}
 
 instance (k ~ A_Lens, a ~ TMVar ForceData, b ~ a) => LabelOptic "input" k IPI IPI a b where
   labelOptic = lens (\s -> (input :: IPI -> TMVar ForceData) s) $ \s b -> (s {input = b} :: IPI)

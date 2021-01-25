@@ -14,7 +14,8 @@
 -- - Call wrappers to perform the calculations specified, get their output and update all 'CalcOutput's
 -- - Combine all data from 'CalcOutput' to a final ONIOM result, according to the task.
 module Spicy.ONIOM.AtomicDriver
-  ( multicentreOniomNDriver,
+  ( oniomCalcDriver,
+    multicentreOniomNDriver,
   )
 where
 
@@ -28,7 +29,6 @@ import RIO hiding
     (^?),
   )
 import qualified RIO.Map as Map
-import RIO.Process
 import RIO.Seq (Seq (..))
 import Spicy.Common
 import Spicy.Data
@@ -37,7 +37,48 @@ import Spicy.Logger
 import Spicy.Molecule
 import Spicy.ONIOM.Collector
 import Spicy.RuntimeEnv
-import Spicy.Wrapper
+
+-- | A primitive driver, that executes a given calculation on a given layer. No results will be
+-- transered from the calculation output to the actual fields of the molecule.
+oniomCalcDriver ::
+  ( HasMolecule env,
+    HasLogFunc env,
+    HasCalcSlot env
+  ) =>
+  CalcID ->
+  WrapperTask ->
+  RIO env ()
+oniomCalcDriver calcID wTask = do
+  -- Obtain infos from the environment.
+  molT <- view moleculeL
+  mol <- atomically . readTVar $ molT
+  calcSlotT <- view calcSlotL
+
+  let layerID = calcID ^. #molID
+      calcK = calcID ^. #calcKey
+
+  -- LOG
+  logInfo $
+    "Layer " <> molID2OniomHumandID layerID <> ", " <> case calcK of
+      ONIOMKey Original -> "high level calculation"
+      ONIOMKey Inherited -> "low level calculation"
+
+  -- Cleanup the calculation data on this layer and set the task to perform.
+  atomically $ do
+    cleanOutputOfCalc molT calcID
+    assignTaskToCalc molT calcID wTask
+
+  -- Polarise the layer with all information that is available above.
+  molWithPol <- maybePolariseLayer mol layerID
+  atomically . writeTVar molT $ molWithPol
+
+  -- Run the specified calculation in the calculation slot. Then wait for its results.
+  atomically $ putTMVar (calcSlotT ^. #input) calcID
+  atomically $ do
+    molWithResults <- takeTMVar (calcSlotT ^. #output)
+    writeTVar molT molWithResults
+
+----------------------------------------------------------------------------------------------------
 
 -- | A driver function for an atomic step in Multicentre-ONIOM-n methods. Performs a single point energy
 -- calculation, a gradient calculation or a hessian calculation on a given layout and builds the ONIOM
@@ -55,13 +96,13 @@ import Spicy.Wrapper
 multicentreOniomNDriver ::
   ( HasMolecule env,
     HasLogFunc env,
-    HasWrapperConfigs env,
-    HasProcessContext env,
-    HasInputFile env
+    HasInputFile env,
+    HasCalcSlot env
   ) =>
   WrapperTask ->
   RIO env ()
 multicentreOniomNDriver atomicTask = do
+  -- Obtain environment information
   molT <- view moleculeL
   mol <- atomically . readTVar $ molT
   inputFile <- view inputFileL
@@ -69,64 +110,40 @@ multicentreOniomNDriver atomicTask = do
   let modelOK = case inputFile ^. #model of
         ONIOMn {} -> True
 
-  logInfo "************************************"
-  logInfo "* Multicentre ONIOM-N AtomicDriver *"
-  logInfo "************************************"
-
   -- Check if this driver is suitable for the layout.
-  unless modelOK . throwM $
-    MolLogicException
-      "multicentreOniomNDriver"
-      "This driver assumes a multicentre ONIOM-n layout,\
-      \ but the input file specifies a different layout type."
-
-  -- LOG
-  logInfo "Performing wrapper calculations on molecule ..."
+  unless modelOK . throwM . localExc $
+    "This driver assumes a multicentre ONIOM-n layout,\
+    \ but the input file specifies a different layout type."
 
   -- Obtain all calculations IDs.
   let allMolIDs = getAllMolIDsHierarchically mol
 
-  -- Prepares the molecule for a new call of the atomic driver.
-  atomically $ do
-    cleanOutputs molT
-    assignTasks molT atomicTask
-
-  -- Traverse the current molecule: perform all calculations and collect the results.
+  -- Iterate over all layers and calculate all of them. After each high level calculation the
+  -- multipoles will be collected and transfered from the high level calculation output to the
+  -- actual multipole fields of the atoms, to allow for electronic embedding in deeper layers.
   forM_ allMolIDs $ \layerID -> do
-    -- Obtain information specific for this iteration.
+    -- Iteration dependent iterations.
+    molCurr <- atomically . readTVar $ molT
     let layerLens = molIDLensGen layerID
-    currMol <- atomically . readTVar $ molT
-    layerMol <- maybe2MThrow (localExc "Layer cannot be found.") $ currMol ^? layerLens
-    let calcKeys = Map.keys $ layerMol ^. #calcContext
+    calcKeys <-
+      maybe2MThrow (localExc "Invalid layer specified") $
+        Map.keys <$> molCurr ^? layerLens % #calcContext
 
-    -- LOG
-    logInfo $ "Layer " <> molID2OniomHumandID layerID
-
-    -- If electronic embedding is active for this layer, polarise it. Updates this layer in the full
-    -- system.
-    molPolarised <- maybePolariseLayer currMol layerID
-    atomically . writeTVar molT $ molPolarised
-
-    -- Run original and inherited calculation.
-    flip traverse_ calcKeys $ \calcK -> do
-      -- LOG
-      logInfo $ case calcK of
-        ONIOMKey Original -> "High level calculation ..."
-        ONIOMKey Inherited -> "Low level calculation ..."
-
-      -- Run the calculation.
+    -- Run the original and the inherited calculation on this layer. For the original high level
+    -- calculation transfer the multipoles from the calculation otuput to the corresponding fields
+    -- of the atoms.
+    forM_ calcKeys $ \calcK -> do
+      -- Construct the current CalcID.
       let calcID = CalcID {molID = layerID, calcKey = calcK}
-      runCalculation calcID
 
-    -- Transfer the multipoles of the just executed calculation immediately to the data of this
-    -- layer.
-    let calcID = CalcID {molID = layerID, calcKey = ONIOMKey Original}
-    currMolAfterCalc <- atomically . readTVar $ molT
-    molWithPolesTransfered <- multipoleTransfer calcID currMolAfterCalc
+      -- Perform the current calculation on the current calculation of the molecule.
+      oniomCalcDriver calcID atomicTask
 
-    -- Update the molecule after the calculations on the current layer have been finished and
-    -- the multipoles have been collected.
-    atomically . writeTVar molT $ molWithPolesTransfered
+      -- If this was a high level original calculation transfer the multipoles to the atoms.
+      when (calcK == ONIOMKey Original) $ do
+        molWithPolOutput <- atomically . readTVar $ molT
+        molWithPolTrans <- multipoleTransfer calcID molWithPolOutput
+        atomically . writeTVar molT $ molWithPolTrans
   where
     localExc = MolLogicException "multicentreOniomNDriver"
 
@@ -138,6 +155,17 @@ cleanOutputs molT = do
   mol <- readTVar molT
   let molWithEmptyOutputs = molMap (& #calcContext % each % #output .~ def) mol
   writeTVar molT molWithEmptyOutputs
+
+----------------------------------------------------------------------------------------------------
+
+-- | Cleans all outputs from the molecule.
+cleanOutputOfCalc :: TVar Molecule -> CalcID -> STM ()
+cleanOutputOfCalc molT calcID = do
+  mol <- readTVar molT
+  let molWithEmptyOutputs = molMap (& calcLens % #output .~ def) mol
+  writeTVar molT molWithEmptyOutputs
+  where
+    calcLens = calcIDLensGen calcID
 
 ----------------------------------------------------------------------------------------------------
 
@@ -153,9 +181,23 @@ assignTasks molT task = do
 
 ----------------------------------------------------------------------------------------------------
 
--- | Polarises the current layer with all layers hierarchically above. The resulting molecule will
--- just be the layer specified by the 'MolID'. The function assumes, that all layers above already
--- have been properly polarised.
+-- | Assigns the given task to the given calculation id.
+assignTaskToCalc :: TVar Molecule -> CalcID -> WrapperTask -> STM ()
+assignTaskToCalc molT calcID task = do
+  mol <- readTVar molT
+  let molWithTasks =
+        molMap
+          (& calcLens % #input % #task .~ task)
+          mol
+  writeTVar molT molWithTasks
+  where
+    calcLens = calcIDLensGen calcID
+
+----------------------------------------------------------------------------------------------------
+
+-- | Polarises a layer specified by its 'MolID' with all layers hierarchically above. The resulting
+-- molecule will just be the layer specified by the 'MolID'. The function assumes, that all layers
+-- above already have been properly polarised.
 maybePolariseLayer :: MonadThrow m => Molecule -> MolID -> m Molecule
 maybePolariseLayer molFull molID
   | molID == Empty = return molFull

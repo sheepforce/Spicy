@@ -33,12 +33,14 @@ import Spicy.Molecule
 import Spicy.ONIOM.AtomicDriver
 import Spicy.ONIOM.Layout
 import Spicy.RuntimeEnv
+import Spicy.Wrapper
 import qualified System.Path as Path
 
 logSource :: LogSource
 logSource = "JobDriver"
 
 ----------------------------------------------------------------------------------------------------
+
 -- | The Spicy Logo as ASCII art.
 jobDriverText :: Text
 jobDriverText =
@@ -50,11 +52,15 @@ spicyExecMain ::
     HasInputFile env,
     HasLogFunc env,
     HasWrapperConfigs env,
-    HasProcessContext env
+    HasProcessContext env,
+    HasCalcSlot env
   ) =>
   RIO env ()
 spicyExecMain = do
-  inputFile <- view inputFileL
+  -- Start the companion threads for i-PI, Pysis and the calculations.
+  calcSlotThread <- async provideCalcSlot
+  pysisThread <- async undefined -- providePysis
+  ipiThread <- async undefined -- provideIPI
 
   -- Open the log file by starting with the job driver headline.
   mapM_ (logInfo . text2Utf8Builder) $ Text.lines jobDriverText
@@ -77,6 +83,13 @@ spicyExecMain = do
   -- LOG
   finalMol <- view moleculeL >>= atomically . readTVar
   logDebug . display . writeSpicy $ finalMol
+
+  -- Kill the companion threads after we are done.
+  cancel calcSlotThread
+  cancel pysisThread
+  cancel ipiThread
+
+  -- LOG
   logInfo "Spicy execution finished. Wup Wup!"
 
 ----------------------------------------------------------------------------------------------------

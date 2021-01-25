@@ -17,8 +17,11 @@ where
 
 import Data.Char
 import Data.FileEmbed
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Version (showVersion)
+import Network.Socket hiding (socket)
+import qualified Network.Socket as Net
 import Optics hiding (view)
 import Paths_spicy (version)
 import RIO hiding
@@ -27,6 +30,7 @@ import RIO hiding
     (.~),
     (^.),
   )
+import RIO.List (repeat)
 import RIO.Process
 import Spicy.CmdArgs
 import Spicy.Common
@@ -42,6 +46,7 @@ import qualified System.Path.Directory as Dir
 
 logSource :: LogSource
 logSource = "Initiator"
+
 ----------------------------------------------------------------------------------------------------
 
 -- | The Spicy Logo as ASCII art.
@@ -84,7 +89,7 @@ spicyMain =
 -- - The molecule will be read from a file as specified in the input file. It will be used directly as
 --   obtained from the parser. Layouting for subsequent calculations is subject to the main call of
 --   spicy.
-inputToEnvAndRun   :: (HasLogFunc env) => RIO env ()
+inputToEnvAndRun :: (HasLogFunc env) => RIO env ()
 inputToEnvAndRun = do
   inputArgs <- liftIO $ cmdArgs spicyArgs
 
@@ -105,8 +110,50 @@ inputToEnvAndRun = do
   molecule' <- loadInputMolecule $ inputFile ^. #molecule
   moleculeT <- newTVarIO molecule'
 
-  -- Construct the process context
+  -- Construct the process context.
   procCntxt' <- mkDefaultProcessContext
+
+  -- Construct the motion state.
+  let allMolIDs = toList $ getAllMolIDsHierarchically molecule'
+      motion' =
+        Motion
+          { ready = False,
+            outerCycle = 0,
+            innerCycles = Map.fromList $ zip allMolIDs (repeat 0)
+          }
+  motionT <- newTVarIO motion'
+
+  -- Create the input and output slots of the companion threads.
+  -- The calculation slot, running the QC wrappers.
+  calcSlotIn <- newEmptyTMVarIO
+  calcSlotOut <- newEmptyTMVarIO
+  let calcSlot' = CalcSlot {input = calcSlotIn, output = calcSlotOut}
+
+  -- The i-PI connection and slots.
+  iPiIn <- newEmptyTMVarIO
+  iPiOut <- newEmptyTMVarIO
+  iPiSocket <- liftIO $ Net.socket AF_UNIX Datagram defaultProtocol
+  let iPiAddr = SockAddrUnix "./ipi.sock"
+      ipi' =
+        IPI
+          { socket = iPiSocket,
+            socketAddr = iPiAddr,
+            input = iPiIn,
+            output = iPiOut
+          }
+
+  -- The Pysisyphus connection and slots.
+  pysisIn <- newEmptyTMVarIO
+  pysisOut <- newEmptyTMVarIO
+  pysisSocket <- liftIO $ Net.socket AF_UNIX Datagram defaultProtocol
+  let pysisAddr = SockAddrUnix "./pysis.sock"
+      pysis' =
+        IPI
+          { socket = pysisSocket,
+            socketAddr = pysisAddr,
+            input = pysisIn,
+            output = pysisOut
+          }
 
   -- LOG
   logDebugS logSource $ "Home directory: " <> displayShow homeDir
@@ -124,12 +171,21 @@ inputToEnvAndRun = do
             { molecule = moleculeT,
               calculation = inputFile,
               wrapperConfigs = wrapperConfigs',
-              motion = Nothing,
+              motion = motionT,
               procCntxt = procCntxt',
               logFunc = lf,
-              pysis = undefined,
-              ipi = undefined
+              pysis = pysis',
+              ipi = ipi',
+              calcSlot = calcSlot'
             }
+
+    -- Start the Pysisyphus thread.
+
+    -- Start the i-PI thread.
+
+    -- Start the caculation thread.
+
+    -- The spicy main thread.
     runRIO spicyEnv spicyExecMain
 
 ----------------------------------------------------------------------------------------------------

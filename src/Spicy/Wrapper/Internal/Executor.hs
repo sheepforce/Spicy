@@ -9,8 +9,7 @@
 --
 -- Provides the callers to quantum chemistry software.
 module Spicy.Wrapper.Internal.Executor
-  ( runAllCalculations,
-    runCalculation,
+  ( runCalculation,
   )
 where
 
@@ -27,7 +26,6 @@ import RIO hiding
   )
 import qualified RIO.ByteString.Lazy as BL
 import qualified RIO.List as List
-import qualified RIO.Map as Map
 import RIO.Process
 import Spicy.Common
 import Spicy.Formats.FChk
@@ -50,29 +48,16 @@ logSource = "Wraper Executor"
 
 ----------------------------------------------------------------------------------------------------
 
--- | Run all calculations of a complete molecular system on all layers. Moves top down the leftmost
--- tree first.
-runAllCalculations ::
-  (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
-  RIO env ()
-runAllCalculations = do
-  -- Get the molecule to process.
-  mol <- view moleculeL >>= atomically . readTVar
-
-  -- Obtain all CalcIDs of this molecule.
-  let allCalcIDs = getAllCalcIDsHierarchically mol
-
-  -- Fold over all CalcIDs of the molecule to resolve all calculations of the molecule.
-  mapM_ runCalculation allCalcIDs
-
-----------------------------------------------------------------------------------------------------
-
 -- | Run a given calculation of a molecule, given by a 'CalcID'. This updates the 'CalcOutput' of
 -- this 'CalcID'.
 runCalculation ::
-  (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
+  ( HasWrapperConfigs env,
+    HasLogFunc env,
+    HasMolecule env,
+    HasProcessContext env
+  ) =>
   CalcID ->
-  RIO env ()
+  RIO env Molecule
 runCalculation calcID = do
   -- LOG
   logInfo $
@@ -127,7 +112,7 @@ runCalculation calcID = do
   let molUpdated = mol & calcContextL % #output ?~ calcOutput
 
   -- Write the updated molecule to the shared variable.
-  atomically . writeTVar molT $ molUpdated
+  return molUpdated
   where
     localExc = WrapperGenericException "runCalculation"
 
