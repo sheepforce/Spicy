@@ -65,7 +65,8 @@ library
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
-      Spicy.Wrapper.IPI
+      Spicy.Wrapper.IPI.Pysisyphus
+      Spicy.Wrapper.IPI.Types
   other-modules:
       Paths_spicy
   hs-source-dirs:
@@ -76,9 +77,9 @@ library
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
-    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
+    , binary >=0.8.8.0 && <0.11
     , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
@@ -95,11 +96,11 @@ library
     , rio >=0.1.13.0 && <0.2
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
-    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
+    , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
@@ -121,9 +122,9 @@ executable spicy
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
-    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
+    , binary >=0.8.8.0 && <0.11
     , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
@@ -141,11 +142,11 @@ executable spicy
     , spicy
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
-    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
+    , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
@@ -167,9 +168,9 @@ test-suite unittests
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
-    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
+    , binary >=0.8.8.0 && <0.11
     , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
@@ -187,12 +188,12 @@ test-suite unittests
     , spicy
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
-    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.3
     , tasty-golden >=2.3.1 && <2.4
     , tasty-hunit >=0.10.0.2 && <0.11
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
+    , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
@@ -215,9 +216,9 @@ benchmark bench
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
     , ansi-terminal >=0.10.3 && <0.12
-    , async >=2.2.2 && <2.3
     , attoparsec >=0.13.1.0 && <0.14
     , base >=4.7 && <5
+    , binary >=0.8.8.0 && <0.11
     , bytestring >=0.10.8.2 && <0.12
     , cmdargs >=0.10.20 && <0.11
     , containers >=0.6.0.1 && <0.7
@@ -236,11 +237,11 @@ benchmark bench
     , spicy
     , split >=0.2.3.3 && <0.3
     , stache >=2.1.0 && <2.3
-    , stm >=2.5.0.0 && <2.6
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
+    , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0

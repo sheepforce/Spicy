@@ -20,29 +20,21 @@ module Spicy.RuntimeEnv
     WrapperConfigs (..),
     HasWrapperConfigs (..),
     Motion (..),
-    _Optimisation,
-    _MD,
+    HasMotion (..),
+    CalcSlot (..),
+    HasCalcSlot (..),
   )
 where
 
 import Data.Aeson
-import Network.Socket
+import Network.Socket hiding (socket)
 import Optics
-import RIO hiding (Lens', lens)
+import RIO hiding (Lens', Vector, lens)
 import RIO.Process (HasProcessContext (..), ProcessContext)
 import Spicy.Aeson
 import Spicy.InputFile hiding (MD, molecule)
 import Spicy.Molecule
-
--- | A reader class, that is aware of connection details to pysisyphus.
-class HasPysis env where
-  pysisL :: Lens' env Socket
-
-----------------------------------------------------------------------------------------------------
-
--- | A reader class, that is aware of connection details to i-PI.
-class HasIPI env where
-  ipiL :: Lens' env Socket
+import Spicy.Wrapper.IPI.Types
 
 ----------------------------------------------------------------------------------------------------
 
@@ -60,15 +52,17 @@ data SpicyEnv = SpicyEnv
     --   to set before launching a program.
     wrapperConfigs :: !WrapperConfigs,
     -- | Contains optimisation counters, MD counters and so on.
-    motion :: !(Maybe Motion),
+    motion :: !(TVar Motion),
     -- | A logging function for RIO.
-    logFunc :: LogFunc,
+    logFunc :: !LogFunc,
     -- | A process context for RIO.
-    procCntxt :: ProcessContext,
+    procCntxt :: !ProcessContext,
+    -- | The current calculation to be performed by the calculator thread.
+    calcSlot :: !CalcSlot,
     -- | Connection settings for pysisyphus i-PI server.
-    pysis :: Socket,
+    pysis :: !IPI,
     -- | Connection settings for the i-PI i-PI server.
-    ipi :: Socket
+    ipi :: !IPI
   }
   deriving (Generic)
 
@@ -82,7 +76,7 @@ instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "calculation" k SpicyE
 instance (k ~ A_Lens, a ~ WrapperConfigs, b ~ a) => LabelOptic "wrapperConfigs" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> wrapperConfigs s) $ \s b -> s {wrapperConfigs = b}
 
-instance (k ~ A_Lens, a ~ Maybe Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
+instance (k ~ A_Lens, a ~ TVar Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> motion s) $ \s b -> s {motion = b}
 
 instance (k ~ A_Lens, a ~ LogFunc, b ~ a) => LabelOptic "logFunc" k SpicyEnv SpicyEnv a b where
@@ -91,13 +85,28 @@ instance (k ~ A_Lens, a ~ LogFunc, b ~ a) => LabelOptic "logFunc" k SpicyEnv Spi
 instance (k ~ A_Lens, a ~ ProcessContext, b ~ a) => LabelOptic "procCntxt" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> procCntxt s) $ \s b -> s {procCntxt = b}
 
-instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "pysis" k SpicyEnv SpicyEnv a b where
+instance (k ~ A_Lens, a ~ CalcSlot, b ~ a) => LabelOptic "calcSlot" k SpicyEnv SpicyEnv a b where
+  labelOptic = lens (\s -> calcSlot s) $ \s b -> s {calcSlot = b}
+
+instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysis" k SpicyEnv SpicyEnv a b where
   labelOptic = lens (\s -> pysis s) $ \s b -> s {pysis = b}
 
-instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "ipi" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> (ipi :: SpicyEnv -> Socket) s) $ \s b -> (s {ipi = b} :: SpicyEnv)
+instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "ipi" k SpicyEnv SpicyEnv a b where
+  labelOptic = lens (\s -> (ipi :: SpicyEnv -> IPI) s) $ \s b -> (s {ipi = b} :: SpicyEnv)
 
 -- Reader Classes
+
+-- | A reader class, that is aware of connection details to pysisyphus.
+class HasPysis env where
+  pysisL :: Lens' env IPI
+
+-- | A reader class, that is aware of connection details to i-PI.
+class HasIPI env where
+  ipiL :: Lens' env IPI
+
+instance HasMotion SpicyEnv where
+  motionL = #motion
+
 instance HasInputFile SpicyEnv where
   inputFileL = #calculation
 
@@ -112,6 +121,9 @@ instance HasLogFunc SpicyEnv where
 
 instance HasProcessContext SpicyEnv where
   processContextL = toLensVL #procCntxt
+
+instance HasCalcSlot SpicyEnv where
+  calcSlotL = #calcSlot
 
 instance HasPysis SpicyEnv where
   pysisL = #pysis
@@ -163,28 +175,24 @@ instance HasWrapperConfigs WrapperConfigs where
 ----------------------------------------------------------------------------------------------------
 
 -- | Defining the curent state of Motion in either an Optimisation or MD run.
-data Motion
-  = Optimisation
-      { -- | The counter of outer optimisation steps (whole system as one with transformed gradients).
-        outerCycle :: Int,
-        -- | The counter for inner optimisation cycles on each 'MolID' of the 'Molecule' separately.
-        innerCycles :: Map MolID Int
-      }
-  | MD Int
+data Motion = Motion
+  { -- | Flag of the molecule is ready to be moved (an iteration has passed completely.)
+    ready :: Bool,
+    -- | The counter of outer optimisation steps (whole system as one with transformed gradients).
+    outerCycle :: Int,
+    -- | The counter for inner optimisation cycles on each 'MolID' of the 'Molecule' separately.
+    innerCycles :: Map MolID Int
+  }
   deriving (Show, Generic)
 
--- Prisms
-_Optimisation :: Prism' Motion (Int, Map MolID Int)
-_Optimisation = prism' (\(a, b) -> Optimisation a b) $ \s -> case s of
-  Optimisation oC iC -> Just (oC, iC)
-  _ -> Nothing
-
-_MD :: Prism' Motion Int
-_MD = prism' (\b -> MD b) $ \s -> case s of
-  MD c -> Just c
-  _ -> Nothing
+-- Reader classes.
+class HasMotion env where
+  motionL :: Lens' env (TVar Motion)
 
 -- Lenses
+instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "ready" k Motion Motion a b where
+  labelOptic = lens (\s -> ready s) $ \s b -> s {ready = b}
+
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "outerCycle" k Motion Motion a b where
   labelOptic = lens (\s -> outerCycle s) $ \s b -> s {outerCycle = b}
 
@@ -192,3 +200,61 @@ instance (k ~ A_Lens, a ~ Map MolID Int, b ~ a) => LabelOptic "innerCycles" k Mo
   labelOptic = lens (\s -> innerCycles s) $ \s b -> s {innerCycles = b}
 
 ----------------------------------------------------------------------------------------------------
+
+-- | Configuration settings for the calculation slot, that executes the wrapper calculations. It has
+-- an input and an output variable.
+data CalcSlot = CalcSlot
+  { -- | The async thread handler of this slot.
+    thread :: Async (),
+    -- | The calculation ID that shall be processed. Must be emptied at the **end** of the
+    -- calculation, not already after the calculation has started.
+    input :: TMVar CalcID,
+    -- | The finished result. Should be taken and emptied by the consumer.
+    output :: TMVar Molecule
+  }
+
+-- Reader Classes
+class HasCalcSlot env where
+  calcSlotL :: Lens' env CalcSlot
+
+instance HasCalcSlot CalcSlot where
+  calcSlotL = castOptic simple
+
+-- Lenses
+instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "thread" k CalcSlot CalcSlot a b where
+  labelOptic = lens (\s -> (thread :: CalcSlot -> Async ()) s) $ \s b -> (s {thread = b} :: CalcSlot)
+
+instance (k ~ A_Lens, a ~ TMVar CalcID, b ~ a) => LabelOptic "input" k CalcSlot CalcSlot a b where
+  labelOptic = lens (\s -> (input :: CalcSlot -> TMVar CalcID) s) $ \s b -> (s {input = b} :: CalcSlot)
+
+instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSlot CalcSlot a b where
+  labelOptic = lens (\s -> (output :: CalcSlot -> TMVar Molecule) s) $ \s b -> (s {output = b} :: CalcSlot)
+
+----------------------------------------------------------------------------------------------------
+
+-- | i-PI communication settings and variables. Generic over i-PI implementations.
+data IPI = IPI
+  { -- | The thread in which the i-PI sever is running.
+    thread :: Async (),
+    -- | The network socket used for communication with the server.
+    socket :: Socket,
+    -- | Input channel. When this variable is filled the i-PI server starts its calculation of
+    -- new positions.
+    input :: TMVar ForceData,
+    -- | Output channel. When the i-PI server has finished its calculation, these values will be
+    -- filled and are ready to be consumed by Spicy.
+    output :: TMVar PosData
+  }
+
+-- Lenses
+instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "thread" k IPI IPI a b where
+  labelOptic = lens (\s -> (thread :: IPI -> Async ()) s) $ \s b -> (s {thread = b} :: IPI)
+
+instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "socket" k IPI IPI a b where
+  labelOptic = lens (\s -> (socket :: IPI -> Socket) s) $ \s b -> s {socket = b}
+
+instance (k ~ A_Lens, a ~ TMVar ForceData, b ~ a) => LabelOptic "input" k IPI IPI a b where
+  labelOptic = lens (\s -> (input :: IPI -> TMVar ForceData) s) $ \s b -> (s {input = b} :: IPI)
+
+instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI a b where
+  labelOptic = lens (\s -> (output :: IPI -> TMVar PosData) s) $ \s b -> (s {output = b} :: IPI)
