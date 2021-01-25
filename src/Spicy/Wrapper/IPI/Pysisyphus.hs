@@ -1,5 +1,5 @@
 -- |
--- Module      : Spicy.Wrapper.Pysisyphus
+-- Module      : Spicy.Wrapper.IPI.Pysisyphus
 -- Description : Interactions with Pysisyphus
 -- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
@@ -8,7 +8,7 @@
 -- Portability : POSIX, Windows
 --
 -- Interaction with Pysisyphus.
-module Spicy.Wrapper.Pysisyphus
+module Spicy.Wrapper.IPI.Pysisyphus
   ( launchPysisServer,
   )
 where
