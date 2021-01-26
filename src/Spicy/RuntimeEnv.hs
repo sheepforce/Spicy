@@ -263,6 +263,6 @@ instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI
 
 instance (k ~ A_Lens, a ~ Path.AbsRelDir, b ~ a) => LabelOptic "workDir" k IPI IPI a b where
   labelOptic = lens (\s -> workDir s) $ \s b -> s {workDir = b}
-  
+
 instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
   labelOptic = lens (\s -> initCoords s) $ \s b -> s {initCoords = b}

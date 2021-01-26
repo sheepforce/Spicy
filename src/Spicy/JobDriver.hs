@@ -34,6 +34,7 @@ import Spicy.ONIOM.AtomicDriver
 import Spicy.ONIOM.Layout
 import Spicy.RuntimeEnv
 import Spicy.Wrapper
+import Spicy.Wrapper.IPI.Pysisyphus
 import qualified System.Path as Path
 
 logSource :: LogSource
@@ -53,13 +54,14 @@ spicyExecMain ::
     HasLogFunc env,
     HasWrapperConfigs env,
     HasProcessContext env,
-    HasCalcSlot env
+    HasCalcSlot env,
+    HasPysis env
   ) =>
   RIO env ()
 spicyExecMain = do
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
-  pysisThread <- async undefined -- providePysis
+  pysisProviderThread <- async providePysis
   ipiThread <- async undefined -- provideIPI
 
   -- Open the log file by starting with the job driver headline.
@@ -86,7 +88,9 @@ spicyExecMain = do
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread
-  cancel pysisThread
+  pysisServerThread <- wait pysisProviderThread
+  threadDelay 5000000
+  cancel pysisServerThread
   cancel ipiThread
 
   -- LOG
