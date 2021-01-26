@@ -27,6 +27,15 @@ import RIO hiding (lens)
 import qualified RIO.ByteString as ByteString
 import qualified RIO.Vector.Storable as VectorS
 
+-- | Vectors as transfered over the network.
+newtype NetVec = NetVec (VectorS.Vector Double)
+
+instance Binary NetVec where
+  put (NetVec v) = genericPutVectorWith (putInt32host . fromIntegral) putDoublehost v
+  get = NetVec <$> genericGetVectorWith (fromIntegral <$> getInt32host) getDoublehost
+
+----------------------------------------------------------------------------------------------------
+
 -- | Possible status messages from the i-PI server.
 data Status
   = NeedInit
@@ -94,7 +103,7 @@ instance Binary CellVecs where
 data PosData = PosData
   { cell :: CellVecs,
     inverseCell :: CellVecs,
-    coords :: VectorS.Vector Double
+    coords :: NetVec
   }
 
 -- Serialisation
@@ -102,12 +111,12 @@ instance Binary PosData where
   put (PosData {cell, inverseCell, coords}) = do
     put cell
     put inverseCell
-    genericPutVectorWith (putInt32host . fromIntegral) putDoublehost coords
+    put coords
 
   get = do
     cell <- get
     inverseCell <- get
-    coords <- genericGetVectorWith (fromIntegral <$> getInt32host) getDoublehost
+    coords <- get
     return $ PosData {cell = cell, inverseCell = inverseCell, coords = coords}
 
 -- Lenses
@@ -117,7 +126,7 @@ instance (k ~ A_Lens, a ~ CellVecs, b ~ a) => LabelOptic "cell" k PosData PosDat
 instance (k ~ A_Lens, a ~ CellVecs, b ~ a) => LabelOptic "inverseCell" k PosData PosData a b where
   labelOptic = lens (\s -> inverseCell s) $ \s b -> s {inverseCell = b}
 
-instance (k ~ A_Lens, a ~ VectorS.Vector Double, b ~ a) => LabelOptic "coords" k PosData PosData a b where
+instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "coords" k PosData PosData a b where
   labelOptic = lens (\s -> coords s) $ \s b -> s {coords = b}
 
 ----------------------------------------------------------------------------------------------------
@@ -126,7 +135,7 @@ instance (k ~ A_Lens, a ~ VectorS.Vector Double, b ~ a) => LabelOptic "coords" k
 -- positions from the implicitly existend coordinates. This is the information sent by Spicy.
 data ForceData = ForceData
   { potentialEnergy :: Double,
-    forces :: VectorS.Vector Double,
+    forces :: NetVec,
     virial :: CellVecs,
     optionalData :: ByteString
   }
@@ -135,7 +144,7 @@ data ForceData = ForceData
 instance Binary ForceData where
   put (ForceData {potentialEnergy, forces, virial, optionalData}) = do
     putDoublehost potentialEnergy
-    genericPutVectorWith (putInt32host . fromIntegral) putDoublehost forces
+    put forces
     put virial
     let optionalLength = fromIntegral . ByteString.length $ optionalData
     putInt32host optionalLength
@@ -143,7 +152,7 @@ instance Binary ForceData where
 
   get = do
     potentialEnergy <- getDoublehost
-    forces <- genericGetVectorWith (fromIntegral <$> getInt32host) getDoublehost
+    forces <- get
     virial <- get
     optionalLength <- fromIntegral <$> getInt32host
     optionalData <- getByteString optionalLength
@@ -159,7 +168,7 @@ instance Binary ForceData where
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "potentialEnergy" k ForceData ForceData a b where
   labelOptic = lens (\s -> potentialEnergy s) $ \s b -> s {potentialEnergy = b}
 
-instance (k ~ A_Lens, a ~ VectorS.Vector Double, b ~ a) => LabelOptic "forces" k ForceData ForceData a b where
+instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "forces" k ForceData ForceData a b where
   labelOptic = lens (\s -> forces s) $ \s b -> s {forces = b}
 
 instance (k ~ A_Lens, a ~ CellVecs, b ~ a) => LabelOptic "virial" k ForceData ForceData a b where

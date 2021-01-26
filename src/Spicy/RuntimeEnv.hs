@@ -33,9 +33,11 @@ import Optics
 import RIO hiding (Lens', Vector, lens)
 import RIO.Process (HasProcessContext (..), ProcessContext)
 import Spicy.Aeson
+import Spicy.Common
 import Spicy.InputFile hiding (MD, molecule)
 import Spicy.Molecule
 import Spicy.Wrapper.IPI.Types
+import System.Path as Path
 
 ----------------------------------------------------------------------------------------------------
 
@@ -137,11 +139,11 @@ instance HasIPI SpicyEnv where
 -- | The command to use for launching the wrapped programs. Alls arguments are meant to be passed to
 -- those wrappers.
 data WrapperConfigs = WrapperConfigs
-  { psi4 :: Maybe FilePath,
-    nwchem :: Maybe FilePath,
-    gdma :: Maybe FilePath,
-    ipi :: Maybe FilePath,
-    pysisyphus :: Maybe FilePath
+  { psi4 :: Maybe JFilePath,
+    nwchem :: Maybe JFilePath,
+    gdma :: Maybe JFilePath,
+    ipi :: Maybe JFilePath,
+    pysisyphus :: Maybe JFilePath
   }
   deriving (Show, Generic)
 
@@ -151,19 +153,19 @@ instance ToJSON WrapperConfigs where
 instance FromJSON WrapperConfigs
 
 -- Lenses
-instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "psi4" k WrapperConfigs WrapperConfigs a b where
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "psi4" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens (\s -> psi4 s) $ \s b -> s {psi4 = b}
 
-instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "nwchem" k WrapperConfigs WrapperConfigs a b where
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "nwchem" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens (\s -> nwchem s) $ \s b -> s {nwchem = b}
 
-instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "gdma" k WrapperConfigs WrapperConfigs a b where
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "gdma" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens (\s -> gdma s) $ \s b -> s {gdma = b}
 
-instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "ipi" k WrapperConfigs WrapperConfigs a b where
-  labelOptic = lens (\s -> (ipi :: WrapperConfigs -> Maybe FilePath) s) $ \s b -> (s {ipi = b} :: WrapperConfigs)
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "ipi" k WrapperConfigs WrapperConfigs a b where
+  labelOptic = lens (\s -> (ipi :: WrapperConfigs -> Maybe JFilePath) s) $ \s b -> (s {ipi = b} :: WrapperConfigs)
 
-instance (k ~ A_Lens, a ~ Maybe FilePath, b ~ a) => LabelOptic "pysisyphus" k WrapperConfigs WrapperConfigs a b where
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens (\s -> pysisyphus s) $ \s b -> s {pysisyphus = b}
 
 -- Reader Classes
@@ -239,7 +241,11 @@ data IPI = IPI
     input :: TMVar ForceData,
     -- | Output channel. When the i-PI server has finished its calculation, these values will be
     -- filled and are ready to be consumed by Spicy.
-    output :: TMVar PosData
+    output :: TMVar PosData,
+    -- | Working directory of the process.
+    workDir :: Path.AbsRelDir,
+    -- | The path to a coordinate file, used to initialise the i-PI server with coordinates.
+    initCoords :: Path.AbsRelFile
   }
 
 -- Lenses
@@ -254,3 +260,9 @@ instance (k ~ A_Lens, a ~ TMVar ForceData, b ~ a) => LabelOptic "input" k IPI IP
 
 instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI a b where
   labelOptic = lens (\s -> (output :: IPI -> TMVar PosData) s) $ \s b -> (s {output = b} :: IPI)
+
+instance (k ~ A_Lens, a ~ Path.AbsRelDir, b ~ a) => LabelOptic "workDir" k IPI IPI a b where
+  labelOptic = lens (\s -> workDir s) $ \s b -> s {workDir = b}
+  
+instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
+  labelOptic = lens (\s -> initCoords s) $ \s b -> s {initCoords = b}

@@ -143,7 +143,7 @@ executePsi4 calcID inputFilePath = do
   -- Obtain the Psi4 wrapper.
   psi4Wrapper <-
     view (wrapperConfigsL % #psi4) >>= \wrapper -> case wrapper of
-      Just w -> return w
+      Just w -> return . getFilePath $ w
       Nothing -> throwM $ WrapperGenericException "executePsi4" "Psi4 wrapper is not configured. Cannot execute."
 
   -- Create the calculation context lens.
@@ -195,7 +195,7 @@ executePsi4 calcID inputFilePath = do
   (exitCode, psi4Out, psi4Err) <-
     withWorkingDir (Path.toString permanentDir) $
       proc
-        psi4Wrapper
+        (Path.toString psi4Wrapper)
         psi4CmdArgs
         readProcess
 
@@ -231,7 +231,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
   -- Obtain the GDMA wrapper.
   gdmaWrapper <-
     view (wrapperConfigsL % #gdma) >>= \wrapper -> case wrapper of
-      Just w -> return w
+      Just w -> return . getFilePath $ w
       Nothing -> throwM $ WrapperGenericException "executeGDMA" "The GDMA wrapper is not configured."
 
   -- Sanity Checks.
@@ -264,7 +264,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
   -- Execute GDMA on the input file now and pipe the input file into it.
   (exitCode, gdmaOut, gdmaErr) <-
     proc
-      gdmaWrapper
+      (Path.toString gdmaWrapper)
       mempty
       (readProcess . setStdin (byteStringInput gdmaInput))
 

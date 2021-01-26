@@ -16,6 +16,8 @@ module Spicy.Common
     MolLogicException (..),
     WrapperGenericException (..),
     SpicyIndirectionException (..),
+    PysisException (..),
+    IPIException (..),
 
     -- * Abstract and Generic Classes
     -- $class
@@ -265,8 +267,7 @@ instance Exception WrapperGenericException
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- An exception when the program control flow did a wrong turn and the information present are
+-- | An exception when the program control flow did a wrong turn and the information present are
 -- inadequate to describe the program flow.
 data SpicyIndirectionException = SpicyIndirectionException
   { functionName :: !String,
@@ -278,6 +279,28 @@ instance Show SpicyIndirectionException where
     "SpicyIndirectionException in function \"" <> f <> "\": " <> e
 
 instance Exception SpicyIndirectionException
+
+----------------------------------------------------------------------------------------------------
+
+-- | Pysisyphus optimiser exceptions.
+data PysisException = PysisException String
+  deriving (Eq, Show)
+
+instance Exception PysisException
+
+----------------------------------------------------------------------------------------------------
+
+-- | Problems in the communication with i-PI servers.
+data IPIException = IPIException
+  { functionName :: !String,
+    description :: !String
+  }
+
+instance Show IPIException where
+  show (IPIException f e) =
+    "IPIException in function \"" <> f <> "\": " <> e
+
+instance Exception IPIException
 
 {-
 ####################################################################################################

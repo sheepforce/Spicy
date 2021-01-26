@@ -133,13 +133,18 @@ inputToEnvAndRun = do
   iPiIn <- newEmptyTMVarIO
   iPiOut <- newEmptyTMVarIO
   iPiSocket <- liftIO $ Net.socket AF_UNIX Datagram defaultProtocol
-  let iPiAddr = SockAddrUnix "./ipi.sock"
+  let permaDir = getDirPath $ inputFile ^. #permanent
+      socketFile = Path.relFile "pysis.socket"
+  let iPiAddr = SockAddrUnix . Path.toString $ permaDir </> socketFile
+      ipiWorkingDir = permaDir </> Path.relDir "i-PI"
       ipi' =
         IPI
           { socket = iPiSocket,
             socketAddr = iPiAddr,
             input = iPiIn,
-            output = iPiOut
+            output = iPiOut,
+            workDir = ipiWorkingDir,
+            initCoords = ipiWorkingDir </> Path.relFile "InitialCoords.xyz"
           }
 
   -- The Pysisyphus connection and slots.
@@ -147,12 +152,15 @@ inputToEnvAndRun = do
   pysisOut <- newEmptyTMVarIO
   pysisSocket <- liftIO $ Net.socket AF_UNIX Datagram defaultProtocol
   let pysisAddr = SockAddrUnix "./pysis.sock"
+      pysisWorkDir = permaDir </> Path.relDir "pysisyphus"
       pysis' =
         IPI
           { socket = pysisSocket,
             socketAddr = pysisAddr,
             input = pysisIn,
-            output = pysisOut
+            output = pysisOut,
+            workDir = pysisWorkDir,
+            initCoords = pysisWorkDir </> Path.relFile "InitialCoords.xyz"
           }
 
   -- LOG

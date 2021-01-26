@@ -65,6 +65,7 @@ library
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
+      Spicy.Wrapper.IPI.Protocol
       Spicy.Wrapper.IPI.Pysisyphus
       Spicy.Wrapper.IPI.Types
   other-modules:
