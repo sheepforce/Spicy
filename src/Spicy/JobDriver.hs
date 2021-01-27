@@ -62,7 +62,7 @@ spicyExecMain = do
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
   pysisProviderThread <- async providePysis
-  ipiThread <- async undefined -- provideIPI
+  -- ipiThread <- async undefined -- provideIPI
 
   -- Open the log file by starting with the job driver headline.
   mapM_ (logInfo . text2Utf8Builder) $ Text.lines jobDriverText
@@ -91,7 +91,7 @@ spicyExecMain = do
   pysisServerThread <- wait pysisProviderThread
   threadDelay 5000000
   cancel pysisServerThread
-  cancel ipiThread
+  -- cancel ipiThread
 
   -- LOG
   logInfo "Spicy execution finished. Wup Wup!"
