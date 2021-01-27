@@ -418,109 +418,85 @@ parseJSONFile jsonPath = do
 -- $pathOperations
 -- Newtype wrappers around typed paths with JSON serialisation enabled and operations on them.
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JFilePath = JFilePath {getFilePath :: Path.AbsRelFile}
-  deriving (Generic, Show, Eq)
+  deriving (Show, Eq)
 
 instance ToJSON JFilePath where
-  toJSON path = let plainPath = getFilePath path in object ["filepath" .= Path.toString plainPath]
+  toJSON (JFilePath path) = toJSON . Path.toString $ path
 
 instance FromJSON JFilePath where
-  parseJSON = withObject "JFilePath" $ \path -> do
-    plainPath <- path .: "filepath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JFilePath $ res
+  parseJSON (String v) = return . JFilePath . Path.file . Text.unpack $ v
+  parseJSON (Object v) = fail $ "encountered Object field: " <> show v
+  parseJSON (Number _) = fail "encountered Number field"
+  parseJSON (Bool _) = fail "encountered Bool field"
+  parseJSON (Null) = fail "encountered Null field"
+  parseJSON (_) = fail "encountered Array field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
 newtype JFilePathAbs = JFilePathAbs {getFilePathAbs :: Path.AbsFile}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JFilePathAbs where
-  toJSON path =
-    let plainPath = getFilePathAbs path in object ["filepath" .= Path.toString plainPath]
+  toJSON (JFilePathAbs path) = toJSON . Path.toString $ path
 
 instance FromJSON JFilePathAbs where
-  parseJSON = withObject "JFilePath" $ \path -> do
-    plainPath <- path .: "filepath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JFilePathAbs $ res
+  parseJSON (String v) = return . JFilePathAbs . Path.absFile . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
 newtype JFilePathRel = JFilePathRel {getFilePathRel :: Path.RelFile}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JFilePathRel where
-  toJSON path =
-    let plainPath = getFilePathRel path in object ["filepath" .= Path.toString plainPath]
+  toJSON (JFilePathRel path) = toJSON . Path.toString $ path
 
 instance FromJSON JFilePathRel where
-  parseJSON = withObject "JFilePath" $ \path -> do
-    plainPath <- path .: "filepath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JFilePathRel $ res
+  parseJSON (String v) = return . JFilePathRel . Path.relFile . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JDirPath = JDirPath {getDirPath :: Path.AbsRelDir}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JDirPath where
-  toJSON path = let plainPath = getDirPath path in object ["dirpath" .= Path.toString plainPath]
+  toJSON (JDirPath path) = toJSON . Path.toString $ path
 
 instance FromJSON JDirPath where
-  parseJSON = withObject "JDirPath" $ \path -> do
-    plainPath <- path .: "dirpath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JDirPath $ res
+  parseJSON (String v) = return . JDirPath . Path.dir . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JDirPathAbs = JDirPathAbs {getDirPathAbs :: Path.AbsDir}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JDirPathAbs where
-  toJSON path =
-    let plainPath = getDirPathAbs path in object ["dirpath" .= Path.toString plainPath]
+  toJSON (JDirPathAbs path) = toJSON . Path.toString $ path
 
 instance FromJSON JDirPathAbs where
-  parseJSON = withObject "JDirPath" $ \path -> do
-    plainPath <- path .: "dirpath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JDirPathAbs $ res
+  parseJSON (String v) = return . JDirPathAbs . Path.absDir . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JDirPathRel = JDirPathRel {getDirPathRel :: Path.RelDir}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JDirPathRel where
-  toJSON path =
-    let plainPath = getDirPathRel path in object ["dirpath" .= Path.toString plainPath]
+  toJSON (JDirPathRel path) = toJSON . Path.toString $ path
 
 instance FromJSON JDirPathRel where
-  parseJSON = withObject "JDirPath" $ \path -> do
-    plainPath <- path .: "dirpath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JDirPathRel $ res
+  parseJSON (String v) = return . JDirPathRel . Path.relDir . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
