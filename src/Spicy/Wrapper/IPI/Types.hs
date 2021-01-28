@@ -10,7 +10,8 @@
 -- i-PI type definitions and serialisation to binary network communication. See
 -- <<http://ipi-code.org/assets/pdf/manual.pdf i-PI>> protocol (section 3.3.1).
 module Spicy.Wrapper.IPI.Types
-  ( Status (..),
+  ( NetVec(..),
+    Status (..),
     T (..),
     CellVecs (..),
     PosData (..),

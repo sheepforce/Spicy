@@ -10,16 +10,21 @@
 -- Interaction with Pysisyphus.
 module Spicy.Wrapper.IPI.Protocol
   ( ipiClient,
+    molToForceData,
   )
 where
 
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
+import Data.Massiv.Array as Massiv
+import Data.Massiv.Array.Manifest.Vector as Massiv
 import Network.Socket.ByteString.Lazy
 import Optics hiding (view)
 import RIO hiding (view, (^.))
 import Spicy.Common
+import Spicy.Data
+import Spicy.Molecule
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.IPI.Types
 
@@ -122,3 +127,34 @@ ipiClient ipi = do
       logErrorS logSource $ "Unexpected message from i-PI server: " <> displayShow m
       throwM . localExc $ "expected STATUS message but got: " <> show m
     localExc = IPIException "ipiClient"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Builds a 'ForceData' structure from a collected 'Molecule'. Conversion from Angstrom to Bohr
+-- happens here.
+molToForceData :: MonadThrow m => Molecule -> m ForceData
+molToForceData mol = do
+  -- Obtain the potential energy.
+  potentialEnergy <-
+    maybe2MThrow (localExc "Energy is missing from the molecule") $
+      mol ^. #energyDerivatives % #energy
+
+  -- Obtain the forces in Hartree/Angstrom
+  forcesAngstrom :: Massiv.Vector S Double <-
+    maybe2MThrow (localExc "Gradient is missing from the molecule") $
+      getVectorS <$> (mol ^. #energyDerivatives % #gradient)
+
+  -- Construct the virial matrix and convert from Hartree/Angstrom to Bohr/Angstrom.
+  let virial = CellVecs (T 0 0 0) (T 0 0 0) (T 0 0 0)
+      forcesBohr = compute @S . Massiv.map convertA2B $ forcesAngstrom
+
+  return
+    ForceData
+      { potentialEnergy = potentialEnergy,
+        forces = NetVec . Massiv.toVector $ forcesBohr,
+        virial = virial,
+        optionalData = mempty
+      }
+  where
+    convertA2B v = v / (angstrom2Bohr 1)
+    localExc = SpicyIndirectionException "molToForceData"
