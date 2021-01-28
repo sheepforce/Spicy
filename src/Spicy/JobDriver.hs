@@ -200,10 +200,3 @@ layoutMoleculeForCalc = do
   inputFile <- view inputFileL
   case inputFile ^. #model of
     ONIOMn {} -> oniomNLayout
-
-----------------------------------------------------------------------------------------------------
-
--- | Supposed to run all tasks, that were specified in the input file in a stateful fashion. (Result of
--- the last task will be used as start for the next task.)
-runTasks :: RIO env Molecule
-runTasks = undefined
