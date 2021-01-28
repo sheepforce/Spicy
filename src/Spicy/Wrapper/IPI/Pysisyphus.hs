@@ -18,7 +18,6 @@ import Data.Yaml.Pretty
 import Network.Socket
 import Optics hiding (view)
 import RIO hiding (lens, view, (^.))
-import qualified RIO.Char as Char
 import RIO.Process
 import Spicy.Common
 import Spicy.Molecule
@@ -34,12 +33,6 @@ logSource = "pysisyphus"
 
 ----------------------------------------------------------------------------------------------------
 
--- | Options for JSON/YAML in Pysis.
-jsonOpts :: Options
-jsonOpts = defaultOptions {constructorTagModifier = fmap Char.toLower . filter (/= '\'')}
-
-----------------------------------------------------------------------------------------------------
-
 -- | Provides a companion thread, that starts a pysisyphus server with the necessary input in the
 -- background and then listens for data to send to this pysisyphus server with the i-PI protocol.
 -- Returns the 'Async' value of the background thread, that runs the Pysisyphus server. When this
@@ -52,21 +45,23 @@ providePysis ::
     HasPysis env,
     HasMolecule env
   ) =>
-  RIO env (Async ())
+  RIO env (Async (), Async ())
 providePysis = do
+  logDebugS logSource "Starting pysisyphus companion threads ..."
+
   -- Obtain initial information.
   pysisIPI <- view pysisL
 
   -- Start another thread in the backgroud, that runs Pysisyphus.
+  logDebugS logSource "Starting pysisyphus i-PI server ..."
   pysisServerThread <- async runPysisServer
 
-  -- Now start the i-PI client loop.
-  ipiClient pysisIPI
+  -- Start another thread that runs the client
+  logDebugS logSource "Starting i-PI client loop ..."
+  pysisClientThread <- async $ ipiClient pysisIPI
 
-  -- The i-PI client should terminate and return as soon as it receives an "EXIT" message.
-  -- Potentially the pysis server continues to run. Its thread will be returned and should be
-  -- cancelled after some waiting time (5 s maybe?).
-  return pysisServerThread
+  -- Return the two handles of the threads that need to be killed after an optimisation.
+  return (pysisServerThread, pysisClientThread)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -99,38 +94,53 @@ runPysisServer = do
       logErrorS logSource "Pysisyphus is not configured. Cannot run optimisations. Quiting ..."
       throwM . PysisException $ "pysisyphus not found."
 
+  -- Make the pysisyphus working directory.
+  pysisDir <- view $ pysisL % #workDir
+  liftIO $ Path.createDirectoryIfMissing True pysisDir
+
+  -- LOG
+  logDebugS logSource $
+    "Pysisyphus-server companion thread. Preparing to start pysisyphus:\n"
+      <> ("  UNIX socket      : " <> displayShow socketPath <> "\n")
+      <> ("  Pysisphus wrapper: " <> displayShow pysisWrapper <> "\n")
+      <> ("  Working directory: " <> path2Utf8Builder pysisDir)
+
   -- Write initial coordinates for Pysisyphus to a file at the given location.
   initCoordFile <- view $ pysisL % #initCoords
   initCoordFileAbs <- liftIO . Path.genericMakeAbsoluteFromCwd $ initCoordFile
   writeXYZ mol >>= writeFileUTF8 (Path.toAbsRel initCoordFile)
+
+  logDebugS logSource $
+    "Wrote initial coordinates for Pysisyphus to " <> path2Utf8Builder initCoordFileAbs
 
   -- Construct a pysisyphus input file.
   let pysisInput =
         PysisInput
           { geom =
               Geom -- TODO (phillip|p=50|#Unfinished) - The coordinate type should be obtained from the CalcInput from the molecule.
-                { gtype = Cart,
+                { type_ = Cart,
                   fn = JFilePathAbs initCoordFileAbs
                 },
             opt =
               Opt -- TODO (phillip|p=50|#Unfinished) - The optimisation type should be obtained from the CalcInput from the molecule.
-                { type' = RFO,
+                { type_ = RFO,
                   align = False,
                   max_cycles = 100
                 },
             calc =
               Calc
-                { type' = IPISever,
+                { type_ = IPISever,
                   address = Just socketPath
                 }
           }
 
   -- Make a working directory for Pysisyphus and write the input file to it.
-  pysisDir <- view $ pysisL % #workDir
   let pysisYamlPath = pysisDir </> Path.relFile "pysis_servers_spicy.yml"
       pysisYaml = decodeUtf8Lenient . encodePretty defConfig $ pysisInput
-  liftIO $ Path.createDirectoryIfMissing True pysisDir
   writeFileUTF8 pysisYamlPath pysisYaml
+
+  -- LOG
+  logDebugS logSource $ "Worte Pysisyphus YAML input to " <> path2Utf8Builder pysisYamlPath
 
   -- Make the pysisDir the working directory of Pysis and run it on the input. This should also
   -- start the i-PI server of pysisyphus.
@@ -156,6 +166,8 @@ runPysisServer = do
 {-
 ####################################################################################################
 -}
+-- The JSON instances need to be written by hand unfortunately. The type keyword causes too many
+-- problems.
 
 -- | Pysisyphus input file data structure.
 data PysisInput = PysisInput
@@ -163,13 +175,21 @@ data PysisInput = PysisInput
     opt :: Opt,
     calc :: Calc
   }
-  deriving (Generic)
 
 instance FromJSON PysisInput where
-  parseJSON = genericParseJSON jsonOpts
+  parseJSON = withObject "pysisinput" $ \v -> do
+    geom <- v .: "geom"
+    opt <- v .: "opt"
+    calc <- v .: "calc"
+    return PysisInput {geom = geom, opt = opt, calc = calc}
 
 instance ToJSON PysisInput where
-  toEncoding = genericToEncoding jsonOpts
+  toJSON (PysisInput {geom, opt, calc}) =
+    object
+      [ "geom" .= geom,
+        "opt" .= opt,
+        "calc" .= calc
+      ]
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Geom, b ~ a) => LabelOptic "geom" k PysisInput PysisInput a b where
@@ -187,20 +207,26 @@ instance (k ~ A_Lens, a ~ Calc, b ~ a) => LabelOptic "calc" k PysisInput PysisIn
 
 -- | Settings for the input geometry.
 data Geom = Geom
-  { gtype :: GType,
+  { type_ :: GType,
     fn :: JFilePathAbs
   }
-  deriving (Generic)
 
 instance FromJSON Geom where
-  parseJSON = genericParseJSON jsonOpts
+  parseJSON = withObject "geom" $ \v -> do
+    type_ <- v .: "type"
+    fn <- v .: "fn"
+    return Geom {type_ = type_, fn = fn}
 
 instance ToJSON Geom where
-  toEncoding = genericToEncoding jsonOpts
+  toJSON (Geom {type_, fn}) =
+    object
+      [ "type" .= type_,
+        "fn" .= fn
+      ]
 
 -- Lenses
 instance (k ~ A_Lens, a ~ GType, b ~ a) => LabelOptic "gtype" k Geom Geom a b where
-  labelOptic = lens (\s -> gtype s) $ \s b -> s {gtype = b}
+  labelOptic = lens (\s -> (type_ :: Geom -> GType) s) $ \s b -> (s {type_ = b} :: Geom)
 
 instance (k ~ A_Lens, a ~ JFilePathAbs, b ~ a) => LabelOptic "fn" k Geom Geom a b where
   labelOptic = lens (\s -> fn s) $ \s b -> s {fn = b}
@@ -215,34 +241,49 @@ data GType
     Cart
   | -- | Redundant internal coordinates
     Redund
-  deriving (Generic)
 
 instance FromJSON GType where
-  parseJSON = genericParseJSON jsonOpts
+  parseJSON v = case v of
+    String "dlc" -> pure DLC
+    String "cart" -> pure Cart
+    String "redund" -> pure Redund
+    _ -> fail "encountered unknown field for GType"
 
 instance ToJSON GType where
-  toEncoding = genericToEncoding jsonOpts
+  toJSON v = case v of
+    DLC -> toJSON @Text "dlc"
+    Cart -> toJSON @Text "cart"
+    Redund -> toJSON @Text "redund"
 
 {-
 ====================================================================================================
 -}
 
 data Opt = Opt
-  { type' :: OType,
+  { type_ :: OType,
     align :: Bool,
     max_cycles :: Int
   }
   deriving (Generic)
 
 instance FromJSON Opt where
-  parseJSON = genericParseJSON jsonOpts
+  parseJSON = withObject "opt" $ \v -> do
+    type_ <- v .: "type"
+    align <- v .: "align"
+    max_cycles <- v .: "max_cycles"
+    return Opt {type_ = type_, align = align, max_cycles = max_cycles}
 
 instance ToJSON Opt where
-  toEncoding = genericToEncoding jsonOpts
+  toJSON (Opt {type_, align, max_cycles}) =
+    object
+      [ "type" .= type_,
+        "align" .= align,
+        "max_cycles" .= max_cycles
+      ]
 
 -- Lenses
-instance (k ~ A_Lens, a ~ OType, b ~ a) => LabelOptic "type'" k Opt Opt a b where
-  labelOptic = lens (\s -> (type' :: Opt -> OType) s) $ \s b -> (s {type' = b} :: Opt)
+instance (k ~ A_Lens, a ~ OType, b ~ a) => LabelOptic "type_" k Opt Opt a b where
+  labelOptic = lens (\s -> (type_ :: Opt -> OType) s) $ \s b -> (s {type_ = b} :: Opt)
 
 instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "align'" k Opt Opt a b where
   labelOptic = lens (\s -> align s) $ \s b -> s {align = b}
@@ -258,30 +299,39 @@ data OType
   deriving (Generic)
 
 instance FromJSON OType where
-  parseJSON = genericParseJSON jsonOpts
+  parseJSON v = case v of
+    String "rfo" -> pure RFO
+    _ -> fail "encountered unknown field for OType"
 
 instance ToJSON OType where
-  toEncoding = genericToEncoding jsonOpts
+  toJSON v = case v of
+    RFO -> toJSON @Text "rfo"
 
 {-
 ====================================================================================================
 -}
 
 data Calc = Calc
-  { type' :: CType,
+  { type_ :: CType,
     address :: Maybe String
   }
-  deriving (Generic)
 
 instance FromJSON Calc where
-  parseJSON = genericParseJSON jsonOpts
+  parseJSON = withObject "calc" $ \v -> do
+    type_ <- v .: "type"
+    address <- v .: "address"
+    return Calc {type_ = type_, address = address}
 
 instance ToJSON Calc where
-  toEncoding = genericToEncoding jsonOpts
+  toJSON (Calc {type_, address}) =
+    object
+      [ "type" .= type_,
+        "address" .= address
+      ]
 
 -- Lenses
-instance (k ~ A_Lens, a ~ CType, b ~ a) => LabelOptic "type''" k Calc Calc a b where
-  labelOptic = lens (\s -> (type' :: Calc -> CType) s) $ \s b -> (s {type' = b} :: Calc)
+instance (k ~ A_Lens, a ~ CType, b ~ a) => LabelOptic "type_" k Calc Calc a b where
+  labelOptic = lens (\s -> (type_ :: Calc -> CType) s) $ \s b -> (s {type_ = b} :: Calc)
 
 instance (k ~ A_Lens, a ~ Maybe String, b ~ a) => LabelOptic "address''" k Calc Calc a b where
   labelOptic = lens (\s -> address s) $ \s b -> s {address = b}
@@ -292,10 +342,18 @@ instance (k ~ A_Lens, a ~ Maybe String, b ~ a) => LabelOptic "address''" k Calc 
 data CType
   = -- | Generic calculations, which provide their input by means of a network socket.
     IPISever
-  deriving (Generic)
+
+-- deriving (Generic)
 
 instance FromJSON CType where
-  parseJSON = genericParseJSON jsonOpts
+  parseJSON v = case v of
+    String "ipiserver" -> pure IPISever
+    _ -> fail $ "encountered unknown field for CType"
 
 instance ToJSON CType where
-  toEncoding = genericToEncoding jsonOpts
+  toJSON v = case v of
+    IPISever -> toJSON @Text "ipiserver"
+
+{-
+toJSON IPISever = toJSON @Text "ipiserver"
+-}

@@ -25,7 +25,6 @@ import RIO hiding
   )
 import qualified RIO.HashMap as HashMap
 import RIO.Process
-import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Data
 import Spicy.InputFile
@@ -61,11 +60,8 @@ spicyExecMain ::
 spicyExecMain = do
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
-  pysisProviderThread <- async providePysis
+  (pysisServerThread, pysisClientThread) <- providePysis
   -- ipiThread <- async undefined -- provideIPI
-
-  -- Open the log file by starting with the job driver headline.
-  mapM_ (logInfo . text2Utf8Builder) $ Text.lines jobDriverText
 
   -- LOG
   logInfo "Applying changes to the input topology ..."
@@ -88,8 +84,8 @@ spicyExecMain = do
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread
-  pysisServerThread <- wait pysisProviderThread
   threadDelay 5000000
+  cancel pysisClientThread
   cancel pysisServerThread
   -- cancel ipiThread
 
