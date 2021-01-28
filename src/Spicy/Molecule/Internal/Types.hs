@@ -91,10 +91,8 @@ module Spicy.Molecule.Internal.Types
 where
 
 import Data.Aeson
+import Data.Default
 import Data.List.Split (chunksOf)
-import Data.Massiv.Array as Massiv hiding
-  ( toList,
-  )
 import Formatting
 import Optics hiding (element)
 import RIO hiding (Lens', lens, view, (^.))
@@ -414,7 +412,6 @@ instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighb
 -- Reader Class
 class HasMolecule env where
   moleculeL :: Lens' env (TVar Molecule)
-
 
 ----------------------------------------------------------------------------------------------------
 

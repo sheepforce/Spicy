@@ -55,7 +55,7 @@ module Spicy.Molecule.Internal.Util
     redistributeLinkMoments,
     removeRealLinkTagsFromModel,
     getAllCalcIDsHierarchically,
-    getAllMolIDsHierarchically
+    getAllMolIDsHierarchically,
   )
 where
 
@@ -1410,14 +1410,14 @@ neighbourList maxNeighbourDist mol = do
       {-# INLINE neighbourCollectionStencil #-}
       neighbourCollectionStencil :: Stencil Ix3 IntSet IntSet
       neighbourCollectionStencil =
-        Massiv.makeStencilDef IntSet.empty (Sz (3 :> 3 :. 3)) (1 :> 1 :. 1) $ \get ->
+        Massiv.makeStencil (Sz (3 :> 3 :. 3)) (1 :> 1 :. 1) $ \get ->
           let validIndRange = [-1, 0, 1]
               allStencilIndices =
                 fmap
                   toIx3
                   [(x, y, z) | x <- validIndRange, y <- validIndRange, z <- validIndRange]
               allStencilGetters = fmap get allStencilIndices
-           in foldl' (<>) (pure IntSet.empty) allStencilGetters
+           in foldl' (<>) IntSet.empty allStencilGetters
 
       -- Apply the stencil to the bins and collect in each bin all the atoms, that need to be checked
       -- against each other.
