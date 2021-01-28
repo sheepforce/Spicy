@@ -91,6 +91,7 @@ module Spicy.Molecule
     molToPointCharges,
     getAllCalcIDsHierarchically,
     getAllMolIDsHierarchically,
+    updateMolWithPosVec,
 
     -- * Writer
     writeXYZ,
