@@ -16,10 +16,13 @@
 module Spicy.ONIOM.AtomicDriver
   ( oniomCalcDriver,
     multicentreOniomNDriver,
+    geomMacroDriver,
   )
 where
 
 import Data.Default
+import Data.Massiv.Array as Massiv hiding (forM_)
+import Data.Massiv.Array.Manifest.Vector as Massiv
 import Optics hiding (Empty, view)
 import RIO hiding
   ( view,
@@ -30,6 +33,7 @@ import RIO hiding
   )
 import qualified RIO.Map as Map
 import RIO.Seq (Seq (..))
+import qualified RIO.Vector.Storable as VectorS
 import Spicy.Common
 import Spicy.Data
 import Spicy.InputFile
@@ -37,6 +41,8 @@ import Spicy.Logger
 import Spicy.Molecule
 import Spicy.ONIOM.Collector
 import Spicy.RuntimeEnv
+import Spicy.Wrapper.IPI.Protocol
+import Spicy.Wrapper.IPI.Types
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
 -- transered from the calculation output to the actual fields of the molecule.
@@ -146,6 +152,60 @@ multicentreOniomNDriver atomicTask = do
         atomically . writeTVar molT $ molWithPolTrans
   where
     localExc = MolLogicException "multicentreOniomNDriver"
+
+----------------------------------------------------------------------------------------------------
+
+-- | A driver for geometry optimisations without microiteration. Does one full traversal of the
+-- ONIOM molecule before a geometry displacement step.  Updates can happen by an arbitrary i-PI
+-- server
+geomMacroDriver ::
+  ( HasMolecule env,
+    HasLogFunc env,
+    HasInputFile env,
+    HasCalcSlot env
+  ) =>
+  -- | The 'Async' handler for the i-PI **client** thread.
+  Async () ->
+  -- | The i-PI settings that correspond to the i-PI client and server, that shall do the updates.
+  IPI ->
+  RIO env ()
+geomMacroDriver ipiClientThread ipi = do
+  -- Check if the client is still runnning and expects us to provide new data.
+  isRunning <-
+    poll ipiClientThread >>= \status -> case status of
+      Nothing -> return True
+      Just _ -> return False
+
+  when isRunning $ do
+    -- Get communication vars with the server.
+    let ipiForceIn = ipi ^. #input
+        ipiPosOut = ipi ^. #output
+
+    -- Get the current molecule and position data from the i-PI server.
+    molT <- view moleculeL
+    molOld <- atomically . readTVar $ molT
+
+    -- Get a new Position data from the server and update the molecule.
+    posData <- atomically . takeTMVar $ ipiPosOut
+    posVec <- case posData ^. #coords of
+      NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
+    molNewStruct <- updateMolWithPosVec posVec molOld
+    atomically . writeTVar molT $ molNewStruct
+
+    -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
+    multicentreOniomNDriver WTGradient
+
+    -- Process the results and collect the gradients for a geometry optimisation step.
+    multicentreOniomNCollector WTGradient
+
+    -- Place the coordinates in the Pysis input variable to trigger a geometry optimisation step by
+    -- Pysisyphus.
+    molWithForces <- atomically . readTVar $ molT
+    forceData <- molToForceData molWithForces
+    atomically . putTMVar ipiForceIn $ forceData
+
+    -- Reiterate for the next geometry.
+    geomMacroDriver ipiClientThread ipi
 
 ----------------------------------------------------------------------------------------------------
 
