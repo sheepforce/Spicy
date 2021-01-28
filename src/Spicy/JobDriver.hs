@@ -17,6 +17,7 @@ where
 
 import Data.FileEmbed
 import Data.List.Split
+import qualified Data.Map as Map
 import Optics hiding (view)
 import RIO hiding
   ( view,
@@ -30,6 +31,7 @@ import Spicy.Data
 import Spicy.InputFile
 import Spicy.Molecule
 import Spicy.ONIOM.AtomicDriver
+import Spicy.ONIOM.Collector
 import Spicy.ONIOM.Layout
 import Spicy.RuntimeEnv
 import Spicy.Wrapper
@@ -61,22 +63,30 @@ spicyExecMain = do
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
   (pysisServerThread, pysisClientThread) <- providePysis
-  -- ipiThread <- async undefined -- provideIPI
 
-  -- LOG
-  logInfo "Applying changes to the input topology ..."
+  -- Building an inital neighbourlist for large distances.
+  logInfo "Constructing initial neighbour list for molecule ..."
+  initNeighbourList
+
   -- Apply topology updates as given in the input file to the molecule.
+  logInfo "Applying changes to the input topology ..."
   changeTopologyOfMolecule
 
-  -- LOG
-  logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
+  logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
   layoutMoleculeForCalc
 
   -- Perform the specified tasks on the input file.
-  -- TODO (phillip|p=100|#Unfinished) - This is here for testing purposes. The real implementation should use a more abstract driver, that composes atomic tasks.
-  multicentreOniomNDriver WTGradient
+  tasks <- view $ inputFileL % #task
+  forM_ tasks $ \t -> do
+    case t of
+      Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+      Optimise -> view pysisL >>= geomMacroDriver pysisClientThread
+      Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+      MD -> do
+        logError "A MD run was requested but MD is not implemented yet."
+        throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
 
   -- LOG
   finalMol <- view moleculeL >>= atomically . readTVar
@@ -91,6 +101,17 @@ spicyExecMain = do
 
   -- LOG
   logInfo "Spicy execution finished. Wup Wup!"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Construct an initial neighbour list with large distances for all atoms. Can be reduced to
+-- smaller values efficiently.
+initNeighbourList :: (HasMolecule env) => RIO env ()
+initNeighbourList = do
+  molT <- view moleculeL
+  mol <- atomically . readTVar $ molT
+  nL <- neighbourList 15 mol
+  atomically . writeTVar molT $ mol & #neighbourlist .~ Map.singleton 15 nL
 
 ----------------------------------------------------------------------------------------------------
 
