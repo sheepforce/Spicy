@@ -56,7 +56,8 @@ module Spicy.Molecule.Internal.Util
     removeRealLinkTagsFromModel,
     getAllCalcIDsHierarchically,
     getAllMolIDsHierarchically,
-    updateMolWithPosVec
+    updateMolWithPosVec,
+    shrinkNeighbourList,
   )
 where
 
@@ -2528,3 +2529,55 @@ updateMolWithPosVec pos mol = do
       subMolsUpdated <- traverse (go newCoordsUpdated) subMols
 
       return $ thisLayerUpdated & #subMol .~ subMolsUpdated
+
+----------------------------------------------------------------------------------------------------
+shrinkNeighbourList ::
+  MonadThrow m =>
+  IntMap Atom ->
+  Map Double NeighbourList ->
+  Double ->
+  m (Map Double NeighbourList)
+shrinkNeighbourList atoms oldNLs newDist
+  | isNothing maxDist = throwM . localExc $ "No neighbourlists available."
+  | maxDist < Just newDist = throwM . localExc $ "New distance of the neighbour list must be smaller than the old one"
+  | otherwise = do
+    -- Obtain the neighbourlist which has a larger search distance but is closest to the new one.
+    -- This saves time in computing distances.
+    bestMatchNL <-
+      maybe2MThrow
+        ( localExc
+            "no matching neighbourlist with a distance larger\
+            \ than the new search distance could be found"
+        )
+        . fmap fst
+        . Map.minView
+        . Map.filterWithKey (\k _ -> k > newDist)
+        $ oldNLs
+
+    -- Check all distances and remove those atoms, which have a higher distance than the search
+    -- distance
+    newNL <- IntMap.traverseWithKey (\oA tA -> filterNeigbours atoms newDist oA tA) bestMatchNL
+
+    -- Return the old neighbourlists together with the new shrinked one.
+    return $ oldNLs <> Map.singleton newDist newNL
+  where
+    localExc = MolLogicException "shrinkNeighbourList"
+    maxDist = fmap (fst . fst) . Map.maxViewWithKey $ oldNLs
+    filterNeigbours :: MonadThrow m => IntMap Atom -> Double -> Int -> IntSet -> m IntSet
+    filterNeigbours atoms' dist origin targets = do
+      originCoord <-
+        maybe2MThrow (localExc "Origin atom does not exist in the set of atoms.")
+          . fmap getVectorS
+          $ (atoms' IntMap.!? origin ^? _Just % #coordinates)
+      let filteredTargets =
+            IntSet.filter
+              ( \t ->
+                  let targetCoord = getVectorS <$> (atoms' IntMap.!? t ^? _Just % #coordinates)
+                   in case targetCoord of
+                        Nothing -> False
+                        Just coord -> case distance originCoord coord of
+                          Nothing -> False
+                          Just d -> d <= dist
+              )
+              targets
+      return filteredTargets

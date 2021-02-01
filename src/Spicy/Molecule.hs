@@ -92,6 +92,7 @@ module Spicy.Molecule
     getAllCalcIDsHierarchically,
     getAllMolIDsHierarchically,
     updateMolWithPosVec,
+    shrinkNeighbourList,
 
     -- * Writer
     writeXYZ,
