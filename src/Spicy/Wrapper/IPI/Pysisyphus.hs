@@ -10,6 +10,8 @@
 -- Interaction with Pysisyphus.
 module Spicy.Wrapper.IPI.Pysisyphus
   ( providePysis,
+    runPysisServer,
+
   )
 where
 
@@ -30,6 +32,11 @@ import qualified System.Path.Directory as Path
 -- | The log source for RIO logger.
 logSource :: LogSource
 logSource = "pysisyphus"
+
+-- | Exceptions thrown by Pysisphus callers.
+data PysisyphusExc = PysisyphusExc String deriving (Eq, Show)
+
+instance Exception PysisyphusExc
 
 ----------------------------------------------------------------------------------------------------
 
@@ -94,9 +101,18 @@ runPysisServer = do
       logErrorS logSource "Pysisyphus is not configured. Cannot run optimisations. Quiting ..."
       throwM . PysisException $ "pysisyphus not found."
 
-  -- Make the pysisyphus working directory.
+  -- Make the permanent pysisyphus working directory.
   pysisDir <- view $ pysisL % #workDir
   liftIO $ Path.createDirectoryIfMissing True pysisDir
+
+  -- Make the scratch directory, where the socket lives.
+  socketAddr <-
+    (view $ pysisL % #socket) >>= liftIO . getSocketName >>= \scktAddr -> case scktAddr of
+      SockAddrUnix path -> return . Path.absFile $ path
+      _ ->
+        throwM . localExc $ "Expecting a UNIX socket to be used for Pysisyphus communication."
+  let scratchDir = Path.takeDirectory socketAddr
+  liftIO $ Path.createDirectoryIfMissing True scratchDir
 
   -- LOG
   logDebugS logSource $
@@ -162,6 +178,8 @@ runPysisServer = do
       "Pysisyphus terminated abnormally with error messages:\n"
         <> (displayBytesUtf8 . toStrictBytes $ pysisErr)
     throwM . PysisException $ "Pysisyphus terminated abnormally with errors."
+  where
+    localExc = PysisyphusExc
 
 {-
 ####################################################################################################

@@ -132,10 +132,11 @@ inputToEnvAndRun = do
   -- The i-PI connection and slots.
   iPiIn <- newEmptyTMVarIO
   iPiOut <- newEmptyTMVarIO
-  iPiSocket <- liftIO $ Net.socket AF_UNIX Datagram defaultProtocol
+  iPiSocket <- liftIO $ Net.socket AF_UNIX Stream defaultProtocol
   let permaDir = getDirPath $ inputFile ^. #permanent
-      socketFile = Path.relFile "pysis.socket"
-  let iPiAddr = SockAddrUnix . Path.toString $ permaDir </> socketFile
+      scratchDir = getDirPath $ inputFile ^. #scratch
+  scratchDirAbs <- liftIO $ Path.genericMakeAbsoluteFromCwd scratchDir
+  let iPiAddr = SockAddrUnix . Path.toString $ scratchDirAbs </> Path.relFile "ipi.socket"
       ipiWorkingDir = permaDir </> Path.relDir "i-PI"
       ipi' =
         IPI
@@ -150,9 +151,9 @@ inputToEnvAndRun = do
   -- The Pysisyphus connection and slots.
   pysisIn <- newEmptyTMVarIO
   pysisOut <- newEmptyTMVarIO
-  pysisSocket <- liftIO $ Net.socket AF_UNIX Datagram defaultProtocol
-  let pysisAddr = SockAddrUnix "./pysis.sock"
-      pysisWorkDir = permaDir </> Path.relDir "pysisyphus"
+  pysisSocket <- liftIO $ Net.socket AF_UNIX Stream defaultProtocol
+  let pysisWorkDir = permaDir </> Path.relDir "pysisyphus"
+      pysisAddr = SockAddrUnix . Path.toString $ scratchDirAbs </>  Path.relFile "pysis.socket"
       pysis' =
         IPI
           { socket = pysisSocket,
