@@ -1,3 +1,2 @@
-#! /usr/bin/env nix-shell
-#! nix-shell -i bash -p pysisyphus --pure
-pysis $@
+#! /usr/bin/env bash
+nix-shell /scratch/Git/pysisyphus/nix/shell.nix --pure --run "pysis $@"
