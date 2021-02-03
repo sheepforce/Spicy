@@ -206,7 +206,7 @@ geomMacroDriver ipi = do
 
     -- Reiterate for the next geometry.
     geomMacroDriver ipi
-  -}
+    -}
 
 ----------------------------------------------------------------------------------------------------
 

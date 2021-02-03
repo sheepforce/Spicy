@@ -10,7 +10,7 @@
 -- i-PI type definitions and serialisation to binary network communication. See
 -- <<http://ipi-code.org/assets/pdf/manual.pdf i-PI>> protocol (section 3.3.1).
 module Spicy.Wrapper.IPI.Types
-  ( NetVec(..),
+  ( NetVec (..),
     Status (..),
     T (..),
     CellVecs (..),
@@ -30,6 +30,7 @@ import qualified RIO.Vector.Storable as VectorS
 
 -- | Vectors as transfered over the network.
 newtype NetVec = NetVec (VectorS.Vector Double)
+  deriving (Eq, Show)
 
 instance Binary NetVec where
   put (NetVec v) = genericPutVectorWith (putInt32host . fromIntegral) putDoublehost v
@@ -60,7 +61,7 @@ instance Binary Status where
 ----------------------------------------------------------------------------------------------------
 
 -- | A triple of values, e.g. a vector in \(R^3\).
-data T a = T a a a
+data T a = T a a a deriving (Eq, Show)
 
 -- Serialisation
 instance Binary (T Double) where
@@ -83,6 +84,7 @@ data CellVecs = CellVecs
     b :: T Double,
     c :: T Double
   }
+  deriving (Eq, Show)
 
 -- Serialisation
 instance Binary CellVecs where

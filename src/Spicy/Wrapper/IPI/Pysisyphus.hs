@@ -60,14 +60,15 @@ providePysis = do
 
   -- Start another thread in the backgroud, that runs Pysisyphus.
   -- logDebugS logSource "Starting pysisyphus i-PI server ..."
-  pysisServerThread <- async runPysisServer
+  serverThread <- async runPysisServer
+  link serverThread
 
   -- Start another thread that runs the client
   -- logDebugS logSource "Starting i-PI client loop ..."
-  pysisClientThread <- async $ ipiClient pysisIPI
+  clientThread <- async (ipiClient pysisIPI)
+  link clientThread
 
-  -- Return the two handles of the threads that need to be killed after an optimisation.
-  return (pysisServerThread, pysisClientThread)
+  return (serverThread, clientThread)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -158,11 +159,9 @@ runPysisServer = do
 
   -- Mark the Pysis server as ready immediately before starting it.
   logDebugS logSource "Pysisyphus server starts and becomes ready ..."
-  atomically . putTMVar (ipi ^. #status) $ MoreData
   (exitCode, pysisOut, pysisErr) <-
     withWorkingDir (Path.toString pysisDir) $ proc pysisWrapper pysisCmdArgs readProcess
   logDebugS logSource "Pysisyphus sever terminated."
-  void . atomically . tryPutTMVar (ipi ^. #status) $ Done
 
   -- Pysisyphus output.
   writeFileBinary

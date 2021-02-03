@@ -15,7 +15,7 @@ module Spicy.Wrapper.IPI.Protocol
 where
 
 import Data.Binary
-import Data.Binary.Get
+import Data.Binary.Get hiding (Done)
 import Data.Binary.Put
 import Data.Massiv.Array as Massiv hiding (loop)
 import Data.Massiv.Array.Manifest.Vector as Massiv
@@ -23,6 +23,7 @@ import Network.Socket
 import Network.Socket.ByteString.Lazy
 import Optics hiding (view)
 import RIO hiding (view, (^.))
+import qualified RIO.ByteString.Lazy as BL
 import Spicy.Common
 import Spicy.Data
 import Spicy.Molecule
@@ -57,11 +58,15 @@ ipiClient ipi = do
 
   -- Connect to the server socket.
   logDebugS logSource $ "Connecting the socket at " <> displayShow (ipi ^. #socketAddr) <> " ..."
-  liftIO $ connect (ipi ^. #socket) (ipi ^. #socketAddr)
+  let connectToSocket = connect (ipi ^. #socket) (ipi ^. #socketAddr)
+  catchIO (liftIO connectToSocket) $ \e -> do
+    logWarnS logSource $ "Could not connect to the socket. Got exception: " <> displayShow e
+    threadDelay 2000000
+    ipiClient ipi
   logDebugS logSource "Connected!"
 
   -- Start the loops.
-  logDebugS logSource "Starting the communication loop ..."
+  logDebugS logSource "Starting the communication loops ..."
   loop
   logDebugS logSource "Finished communication loop."
 
@@ -74,7 +79,7 @@ ipiClient ipi = do
     loop = do
       logDebugS logSource "Starting a new communication loop."
       -- Start the communication with the server. The server initiates with a string "STATUS".
-      fstStatus <- liftIO $ recv sckt (6 * charBytes)
+      fstStatus <- getMsg
       logDebugS logSource $ "Response from sever: " <> showMsg fstStatus
       unless (fstStatus == "STATUS") . statusExc $ fstStatus
       logDebugS logSource "Server status OK."
@@ -86,66 +91,74 @@ ipiClient ipi = do
       -- The server sends again a status. If the server is Pysisyphus and the status is "EXIT", the
       -- optimisation has converged and we are done.
       logDebugS logSource "Waiting for server status response."
-      sndStatus <- liftIO $ recv sckt (6 * charBytes)
+      sndStatus <- getMsg
       logDebugS logSource $ "Response from server: " <> showMsg sndStatus
-      when (sndStatus == "EXIT") . logDebugS logSource $
-        "Got EXIT from server. Shutting down the client."
-      unless (sndStatus == "STATUS" || sndStatus == "EXIT") . statusExc $ sndStatus
-      unless (sndStatus == "EXIT") $ do
-        -- EXIT is a Pysisyphus extension.
-        -- We send "READY" again. Not documented.
-        logDebugS logSource "Sending READY to server."
-        liftIO . sendAll sckt . encode $ Ready
+      case sndStatus of
+        -- Done with motion of atoms.
+        "EXIT" -> do
+          logDebugS logSource "Got EXIT from the server. Stoppin i-PI client."
+          atomically . putTMVar (ipi ^. #status) $ Done
+        -- Continue to process data.
+        "STATUS" -> do
+          logDebugS logSource "Server status OK."
+          atomically . putTMVar (ipi ^. #status) $ MoreData
 
-        -- The server now responds with "POSDATA" and then PosData type.
-        posDataMsg <- liftIO $ recv sckt (7 * charBytes)
-        logDebugS logSource $ "Got POSDATA message from sever: " <> showMsg posDataMsg
-        cell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
-        logDebugS logSource $ "Got simulation cell from server."
-        iCell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
-        logDebugS logSource $ "Got inverse simulation cell from server."
-        nAtoms' <- liftIO $ recv sckt intBytes
-        let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
-        logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
-        coords <- decode <$> (liftIO $ recv sckt (nAtoms * floatBytes))
-        logDebugS logSource $ "Got position data from server."
-        let cell = decode cell'
-            iCell = decode iCell'
-            posData =
-              PosData
-                { cell = cell,
-                  inverseCell = iCell,
-                  coords = coords
-                }
+          -- We send "READY" again and expect another status message. Not documented.
+          logDebugS logSource "Sending READY to server."
+          liftIO . sendAll sckt . encode $ Ready
 
-        -- The posdata are given back to the ONIOM main loop in the shared variable.
-        logDebugS logSource $ "Providing Spicy with Position data from server."
-        atomically . putTMVar out $ posData
-        logDebugS logSource $ "Waiting for energies and forces from Spicy."
+          -- The server now responds with "POSDATA" and then PosData type.
+          posDataMsg <- getMsg
+          logDebugS logSource $ "Got POSDATA message from sever: " <> showMsg posDataMsg
+          cell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
+          iCell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
+          nAtoms' <- liftIO $ recv sckt intBytes
+          let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
+          logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
+          coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
+          let cell = decode cell'
+              iCell = decode iCell'
+              posData =
+                PosData
+                  { cell = cell,
+                    inverseCell = iCell,
+                    coords = decode $ nAtoms' <> coords'
+                  }
+          logDebugS logSource $ "Cell:\n" <> displayShow cell
+          logDebugS logSource $ "Inverse Cell:\n" <> displayShow iCell
+          logDebugS logSource $ "Coordinate vector:\n" <> displayShow (coords posData)
 
-        -- We wait for the ONIOM driver to provide new force data. The server should now send another
-        -- status request.
-        forceData <- atomically . takeTMVar $ inp
-        logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
-        thrdStatus <- liftIO $ recv sckt (6 * charBytes)
-        logDebugS logSource $ "Response from server: " <> showMsg thrdStatus
-        unless (thrdStatus == "STATUS") . statusExc $ thrdStatus
-        logDebugS logSource "Telling server that we have new data."
-        liftIO $ sendAll sckt "HAVEDATA"
-        getforce <- liftIO $ recv sckt (8 * charBytes)
-        logDebugS logSource $ "Got response from server: " <> showMsg getforce
-        unless (getforce == "GETFORCE") . statusExc $ getforce
-        logDebugS logSource "Server wants force data. Sending to server."
-        liftIO $ sendAll sckt "FORCEREADY"
-        liftIO . sendAll sckt . encode $ forceData
-        logDebugS logSource "Sent energies and forces to server."
+          -- The posdata are given back to the ONIOM main loop in the shared variable.
+          logDebugS logSource $ "Providing Spicy with Position data from server."
+          atomically . putTMVar out $ posData
+          logDebugS logSource $ "Waiting for energies and forces from Spicy."
 
-        -- iPI can now wait for additional bytes. We don't need additional information, so we send a 0.
-        liftIO $ sendAll sckt . runPut . putInt32host . fromIntegral $ (0 :: Int)
+          -- Wait for Oniom driver to provide force data. Also Clears the client status.
+          forceData <- atomically $ do
+            void $ tryTakeTMVar (ipi ^. #status)
+            takeTMVar inp
+          logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
+          thrdStatus <- getMsg
+          logDebugS logSource $ "Response from server: " <> showMsg thrdStatus
+          unless (thrdStatus == "STATUS") . statusExc $ thrdStatus
+          logDebugS logSource "Telling server that we have new data."
+          liftIO $ sendAll sckt "HAVEDATA"
+          getforce <- getMsg
+          logDebugS logSource $ "Got response from server: " <> showMsg getforce
+          unless (getforce == "GETFORCE") . statusExc $ getforce
+          logDebugS logSource "Server wants force data. Sending to server."
+          liftIO $ sendAll sckt "FORCEREADY"
+          liftIO . sendAll sckt . encode $ forceData
+          logDebugS logSource "Sent energies and forces to server."
 
-        -- Next communication loop begins.
-        logDebugS logSource "Finished i-PI client loop. Reiterating ..."
-        loop
+          -- iPI can now wait for additional bytes. We don't need additional information, so we send a 0.
+          liftIO $ sendAll sckt . runPut . putInt32host $ (0 :: Int32)
+
+          -- Next communication loop begins.
+          logDebugS logSource "Finished i-PI client loop. Reiterating ..."
+          loop
+        -- Invalid messages
+        msg -> statusExc msg
 
     -- Function to poll if the given socket is available.
     waitForSocket :: MonadIO m => Path.AbsFile -> m ()
@@ -155,11 +168,11 @@ ipiClient ipi = do
         threadDelay 500000
         waitForSocket scktPath
 
-
     -- Convenience binds and functions.
+    msgSize = 12
+    getMsg = fmap (BL.filter (/= 32)) . liftIO $ recv sckt msgSize
     intBytes = 4
     floatBytes = 8
-    charBytes = 1
     sckt = ipi ^. #socket
     inp = ipi ^. #input
     out = ipi ^. #output

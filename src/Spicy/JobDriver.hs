@@ -62,7 +62,8 @@ spicyExecMain ::
 spicyExecMain = do
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
-  (pysisServerThread, pysisClientThread) <- providePysis
+  link calcSlotThread
+  (pysisServer, pysisClient) <- providePysis
 
   -- Building an inital neighbourlist for large distances.
   logInfo "Constructing initial neighbour list for molecule ..."
@@ -94,10 +95,8 @@ spicyExecMain = do
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread
-  threadDelay 5000000
-  wait pysisClientThread
-  wait pysisServerThread
-  -- cancel ipiThread
+  wait pysisClient
+  wait pysisServer
 
   -- LOG
   logInfo "Spicy execution finished. Wup Wup!"
