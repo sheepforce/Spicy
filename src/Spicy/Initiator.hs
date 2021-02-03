@@ -132,6 +132,7 @@ inputToEnvAndRun = do
   -- The i-PI connection and slots.
   iPiIn <- newEmptyTMVarIO
   iPiOut <- newEmptyTMVarIO
+  iPiStatus <- newEmptyTMVarIO
   iPiSocket <- liftIO $ Net.socket AF_UNIX Stream defaultProtocol
   let permaDir = getDirPath $ inputFile ^. #permanent
       scratchDir = getDirPath $ inputFile ^. #scratch
@@ -145,12 +146,14 @@ inputToEnvAndRun = do
             input = iPiIn,
             output = iPiOut,
             workDir = ipiWorkingDir,
-            initCoords = ipiWorkingDir </> Path.relFile "InitialCoords.xyz"
+            initCoords = ipiWorkingDir </> Path.relFile "InitialCoords.xyz",
+            status = iPiStatus
           }
 
   -- The Pysisyphus connection and slots.
   pysisIn <- newEmptyTMVarIO
   pysisOut <- newEmptyTMVarIO
+  pysisStatus <- newEmptyTMVarIO
   pysisSocket <- liftIO $ Net.socket AF_UNIX Stream defaultProtocol
   let pysisWorkDir = permaDir </> Path.relDir "pysisyphus"
       pysisAddr = SockAddrUnix . Path.toString $ scratchDirAbs </>  Path.relFile "pysis.socket"
@@ -161,7 +164,8 @@ inputToEnvAndRun = do
             input = pysisIn,
             output = pysisOut,
             workDir = pysisWorkDir,
-            initCoords = pysisWorkDir </> Path.relFile "InitialCoords.xyz"
+            initCoords = pysisWorkDir </> Path.relFile "InitialCoords.xyz",
+            status = pysisStatus
           }
 
   -- LOG

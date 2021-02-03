@@ -82,21 +82,21 @@ spicyExecMain = do
   forM_ tasks $ \t -> do
     case t of
       Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
-      Optimise -> view pysisL >>= geomMacroDriver pysisClientThread
+      Optimise -> view pysisL >>= geomMacroDriver
       Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
       MD -> do
         logError "A MD run was requested but MD is not implemented yet."
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
 
   -- LOG
-  finalMol <- view moleculeL >>= atomically . readTVar
-  logDebug . display . writeSpicy $ finalMol
+  -- finalMol <- view moleculeL >>= atomically . readTVar
+  -- logDebug . display . writeSpicy $ finalMol
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread
   threadDelay 5000000
-  cancel pysisClientThread
-  cancel pysisServerThread
+  wait pysisClientThread
+  wait pysisServerThread
   -- cancel ipiThread
 
   -- LOG

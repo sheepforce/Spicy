@@ -11,7 +11,6 @@
 module Spicy.Wrapper.IPI.Pysisyphus
   ( providePysis,
     runPysisServer,
-
   )
 where
 
@@ -60,11 +59,11 @@ providePysis = do
   pysisIPI <- view pysisL
 
   -- Start another thread in the backgroud, that runs Pysisyphus.
-  logDebugS logSource "Starting pysisyphus i-PI server ..."
+  -- logDebugS logSource "Starting pysisyphus i-PI server ..."
   pysisServerThread <- async runPysisServer
 
   -- Start another thread that runs the client
-  logDebugS logSource "Starting i-PI client loop ..."
+  -- logDebugS logSource "Starting i-PI client loop ..."
   pysisClientThread <- async $ ipiClient pysisIPI
 
   -- Return the two handles of the threads that need to be killed after an optimisation.
@@ -90,28 +89,24 @@ runPysisServer = do
     SockAddrUnix path -> return path
     SockAddrInet _ _ -> do
       logErrorS logSource "Wrong socket type given. Need a UNIX socket but got an INET socket."
-      throwM . PysisException $ "Wrong socket type given: INET"
+      throwM . localExc $ "Wrong socket type given: INET"
     SockAddrInet6 _ _ _ _ -> do
       logErrorS logSource "Wrong socket type given. Need a UNIX socket but got an INET6 socket."
-      throwM . PysisException $ "Wrong socket type given: INET6"
+      throwM . localExc $ "Wrong socket type given: INET6"
   pysisWrapperM <- view $ wrapperConfigsL % #pysisyphus
   pysisWrapper <- case pysisWrapperM of
     Just path -> return . Path.toString . getFilePath $ path
     Nothing -> do
       logErrorS logSource "Pysisyphus is not configured. Cannot run optimisations. Quiting ..."
-      throwM . PysisException $ "pysisyphus not found."
+      throwM . localExc $ "pysisyphus not found."
 
   -- Make the permanent pysisyphus working directory.
   pysisDir <- view $ pysisL % #workDir
   liftIO $ Path.createDirectoryIfMissing True pysisDir
 
   -- Make the scratch directory, where the socket lives.
-  socketAddr <-
-    (view $ pysisL % #socket) >>= liftIO . getSocketName >>= \scktAddr -> case scktAddr of
-      SockAddrUnix path -> return . Path.absFile $ path
-      _ ->
-        throwM . localExc $ "Expecting a UNIX socket to be used for Pysisyphus communication."
-  let scratchDir = Path.takeDirectory socketAddr
+  let socketAbsPath = Path.absFile socketPath
+      scratchDir = Path.takeDirectory socketAbsPath
   liftIO $ Path.createDirectoryIfMissing True scratchDir
 
   -- LOG
@@ -156,15 +151,18 @@ runPysisServer = do
   writeFileUTF8 pysisYamlPath pysisYaml
 
   -- LOG
-  logDebugS logSource $ "Worte Pysisyphus YAML input to " <> path2Utf8Builder pysisYamlPath
+  logDebugS logSource $ "Wrote Pysisyphus YAML input to " <> path2Utf8Builder pysisYamlPath
 
-  -- Make the pysisDir the working directory of Pysis and run it on the input. This should also
-  -- start the i-PI server of pysisyphus.
-  let pysisCmdArgs =
-        [ Path.toString . Path.takeFileName $ pysisYamlPath
-        ]
+  -- Build Pysis command line arguments.
+  let pysisCmdArgs = [Path.toString . Path.takeFileName $ pysisYamlPath]
+
+  -- Mark the Pysis server as ready immediately before starting it.
+  logDebugS logSource "Pysisyphus server starts and becomes ready ..."
+  atomically . putTMVar (ipi ^. #status) $ MoreData
   (exitCode, pysisOut, pysisErr) <-
     withWorkingDir (Path.toString pysisDir) $ proc pysisWrapper pysisCmdArgs readProcess
+  logDebugS logSource "Pysisyphus sever terminated."
+  void . atomically . tryPutTMVar (ipi ^. #status) $ Done
 
   -- Pysisyphus output.
   writeFileBinary

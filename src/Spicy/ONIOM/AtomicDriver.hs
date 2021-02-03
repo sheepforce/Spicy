@@ -164,19 +164,16 @@ geomMacroDriver ::
     HasInputFile env,
     HasCalcSlot env
   ) =>
-  -- | The 'Async' handler for the i-PI **client** thread.
-  Async () ->
   -- | The i-PI settings that correspond to the i-PI client and server, that shall do the updates.
   IPI ->
   RIO env ()
-geomMacroDriver ipiClientThread ipi = do
+geomMacroDriver ipi = do
+  return ()
+  {-
   -- Check if the client is still runnning and expects us to provide new data.
-  isRunning <-
-    poll ipiClientThread >>= \status -> case status of
-      Nothing -> return True
-      Just _ -> return False
+  let clientWantsMore = True
 
-  when isRunning $ do
+  when clientWantsMore $ do
     -- Get communication vars with the server.
     let ipiForceIn = ipi ^. #input
         ipiPosOut = ipi ^. #output
@@ -185,8 +182,11 @@ geomMacroDriver ipiClientThread ipi = do
     molT <- view moleculeL
     molOld <- atomically . readTVar $ molT
 
+
     -- Get a new Position data from the server and update the molecule.
+    logDebug "Works A1"
     posData <- atomically . takeTMVar $ ipiPosOut
+    logDebug "Works A2"
     posVec <- case posData ^. #coords of
       NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
     molNewStruct <- updateMolWithPosVec posVec molOld
@@ -205,7 +205,8 @@ geomMacroDriver ipiClientThread ipi = do
     atomically . putTMVar ipiForceIn $ forceData
 
     -- Reiterate for the next geometry.
-    geomMacroDriver ipiClientThread ipi
+    geomMacroDriver ipi
+  -}
 
 ----------------------------------------------------------------------------------------------------
 
