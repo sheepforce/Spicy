@@ -202,10 +202,8 @@ executePsi4 calcID inputFilePath = do
   -- Provide some information if something went wrong.
   unless (exitCode == ExitSuccess) $ do
     logError $ "Psi4 execution terminated abnormally. Got exit code: " <> displayShow exitCode
-    logError "Psi4 error messages:"
-    mapM_ (logError . ("  " <>) . displayShow) . ByteStringLazy8.lines $ psi4Err
-    logError "Psi4 stdout messsages:"
-    mapM_ (logError . ("  " <>) . displayShow) . ByteStringLazy8.lines $ psi4Out
+    logError $ "Psi4 error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Err)
+    logError $ "Psi4 stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
 
 ----------------------------------------------------------------------------------------------------
