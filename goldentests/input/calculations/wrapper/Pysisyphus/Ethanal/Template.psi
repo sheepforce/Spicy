@@ -12,7 +12,7 @@ set {
   {{/has_nopenshells}}
 }
 
-o, wfn = {{ task }}("bp86", return_wfn = True)
+o, wfn = {{ task }}("scf", return_wfn = True)
 fchk(wfn, "{{ prefix }}.fchk" )
 {{#doHessian}}
 np.array(o)
