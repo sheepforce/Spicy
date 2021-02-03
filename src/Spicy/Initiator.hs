@@ -168,12 +168,9 @@ inputToEnvAndRun = do
             status = pysisStatus
           }
 
-  -- LOG
-  logDebugS logSource $ "Home directory: " <> displayShow homeDir
-  logDebugS logSource $ "SpicyRC: " <> displayShow spicyrcPath
-  logDebugS logSource $ "Wrapper configuration:\n" <> displayShow wrapperConfigs'
-  logDebugS logSource $ "Input file:\n" <> displayShow inputFile
-  logDebugS logSource $ "Input molecule:\n" <> displayShow molecule'
+  -- Make sure the scratch is empty.
+  scratchExists <- liftIO .  Dir.doesDirectoryExist $ scratchDirAbs
+  when scratchExists . liftIO . Dir.removeDirectoryRecursive $ scratchDirAbs
 
   -- Construct the LogFunction and return the runtime environment
   logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
@@ -191,12 +188,6 @@ inputToEnvAndRun = do
               ipi = ipi',
               calcSlot = calcSlot'
             }
-
-    -- Start the Pysisyphus thread.
-
-    -- Start the i-PI thread.
-
-    -- Start the caculation thread.
 
     -- The spicy main thread.
     runRIO spicyEnv spicyExecMain
