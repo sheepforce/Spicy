@@ -107,7 +107,7 @@ data PosData = PosData
   { cell :: CellVecs,
     inverseCell :: CellVecs,
     coords :: NetVec
-  }
+  } deriving (Show)
 
 -- Serialisation
 instance Binary PosData where

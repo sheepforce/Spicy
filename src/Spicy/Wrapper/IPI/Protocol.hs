@@ -116,13 +116,14 @@ ipiClient ipi = do
           let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
           logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
           coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
-          let cell = decode cell'
+          let nCoordElemsBS = runPut . putInt32host . fromIntegral $ (3 * nAtoms)
+              cell = decode cell'
               iCell = decode iCell'
               posData =
                 PosData
                   { cell = cell,
                     inverseCell = iCell,
-                    coords = decode $ nAtoms' <> coords'
+                    coords = decode $ nCoordElemsBS <> coords'
                   }
           logDebugS logSource $ "Cell:\n" <> displayShow cell
           logDebugS logSource $ "Inverse Cell:\n" <> displayShow iCell
@@ -134,9 +135,7 @@ ipiClient ipi = do
           logDebugS logSource $ "Waiting for energies and forces from Spicy."
 
           -- Wait for Oniom driver to provide force data. Also Clears the client status.
-          forceData <- atomically $ do
-            void $ tryTakeTMVar (ipi ^. #status)
-            takeTMVar inp
+          forceData <- atomically . takeTMVar $ inp
           logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
           thrdStatus <- getMsg
           logDebugS logSource $ "Response from server: " <> showMsg thrdStatus
