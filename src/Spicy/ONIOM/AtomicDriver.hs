@@ -191,7 +191,6 @@ geomMacroDriver ipi = do
     -- Get the molecule in the new structure with its forces.
     molWithForces <- atomically . readTVar $ molT
     forceData <- molToForceData molWithForces
-    logError "Have force data ... providing them to the i-PI client"
     atomically . putTMVar ipiForceIn $ forceData
 
     -- Reiterating

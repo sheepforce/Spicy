@@ -368,7 +368,3 @@ instance FromJSON CType where
 instance ToJSON CType where
   toJSON v = case v of
     IPISever -> toJSON @Text "ipiserver"
-
-{-
-toJSON IPISever = toJSON @Text "ipiserver"
--}

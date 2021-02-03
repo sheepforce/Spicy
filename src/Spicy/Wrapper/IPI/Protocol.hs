@@ -54,7 +54,7 @@ ipiClient ipi = do
       throwM . localExc $ "Got wrong socket type for server communication."
   waitForSocket scktAbsPath
   threadDelay 200000
-  logDebugS logSource "i-PI socket became ready!"
+  logDebugS logSource "i-PI socket became ready."
 
   -- Connect to the server socket.
   logDebugS logSource $ "Connecting the socket at " <> displayShow (ipi ^. #socketAddr) <> " ..."
