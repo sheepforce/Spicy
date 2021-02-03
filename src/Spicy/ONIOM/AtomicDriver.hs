@@ -57,7 +57,6 @@ oniomCalcDriver ::
 oniomCalcDriver calcID wTask = do
   -- Obtain infos from the environment.
   molT <- view moleculeL
-  mol <- atomically . readTVar $ molT
   calcSlotT <- view calcSlotL
 
   let layerID = calcID ^. #molID
@@ -75,7 +74,8 @@ oniomCalcDriver calcID wTask = do
     assignTaskToCalc molT calcID wTask
 
   -- Polarise the layer with all information that is available above.
-  molWithPol <- maybePolariseLayer mol layerID
+  molWithTask <- atomically . readTVar $ molT
+  molWithPol <- maybePolariseLayer molWithTask layerID
   atomically . writeTVar molT $ molWithPol
 
   -- Run the specified calculation in the calculation slot. Then wait for its results.
@@ -168,10 +168,35 @@ geomMacroDriver ::
   IPI ->
   RIO env ()
 geomMacroDriver ipi = do
-  return ()
-  {-
   -- Check if the client is still runnning and expects us to provide new data.
-  let clientWantsMore = True
+  clientWantsMore <- atomically . takeTMVar $ ipi ^. #status
+  when (clientWantsMore == MoreData) $ do
+    -- Get communication variables with the i-PI client and Spicy.
+    let ipiForceIn = ipi ^. #input
+        ipiPosOut = ipi ^. #output
+    molT <- view moleculeL
+
+    -- Obtain the molecule before i-PI modifications.
+    molOld <- atomically . readTVar $ molT
+    posData <- atomically . takeTMVar $ ipiPosOut
+    posVec <- case posData ^. #coords of
+      NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
+    molNewStruct <- updateMolWithPosVec posVec molOld
+    atomically . writeTVar molT $ molNewStruct
+
+    -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
+    multicentreOniomNDriver WTGradient
+    multicentreOniomNCollector WTGradient
+
+    -- Get the molecule in the new structure with its forces.
+    molWithForces <- atomically . readTVar $ molT
+    forceData <- molToForceData molWithForces
+    logError "Have force data ... providing them to the i-PI client"
+    atomically . putTMVar ipiForceIn $ forceData
+
+    -- Reiterating
+    geomMacroDriver ipi
+  {-
 
   when clientWantsMore $ do
     -- Get communication vars with the server.
