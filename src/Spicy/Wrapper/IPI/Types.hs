@@ -28,13 +28,14 @@ import RIO hiding (lens)
 import qualified RIO.ByteString as ByteString
 import qualified RIO.Vector.Storable as VectorS
 
--- | Vectors as transfered over the network.
+-- | Vectors as transfered over the network. Takes into account that 3N and not N elements are
+-- expected.
 newtype NetVec = NetVec (VectorS.Vector Double)
   deriving (Eq, Show)
 
 instance Binary NetVec where
-  put (NetVec v) = genericPutVectorWith (putInt32host . fromIntegral) putDoublehost v
-  get = NetVec <$> genericGetVectorWith (fromIntegral <$> getInt32host) getDoublehost
+  put (NetVec v) = genericPutVectorWith (putInt32host . fromIntegral . (`div` 3)) putDoublehost v
+  get = NetVec <$> genericGetVectorWith (fromIntegral . (* 3) <$> getInt32host) getDoublehost
 
 ----------------------------------------------------------------------------------------------------
 
@@ -107,7 +108,8 @@ data PosData = PosData
   { cell :: CellVecs,
     inverseCell :: CellVecs,
     coords :: NetVec
-  } deriving (Show)
+  }
+  deriving (Show)
 
 -- Serialisation
 instance Binary PosData where

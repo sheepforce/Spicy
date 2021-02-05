@@ -16,7 +16,6 @@ where
 
 import Data.Binary
 import Data.Binary.Get hiding (Done)
-import Data.Binary.Put
 import Data.Massiv.Array as Massiv hiding (loop)
 import Data.Massiv.Array.Manifest.Vector as Massiv
 import Network.Socket
@@ -116,14 +115,13 @@ ipiClient ipi = do
           let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
           logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
           coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
-          let nCoordElemsBS = runPut . putInt32host . fromIntegral $ (3 * nAtoms)
-              cell = decode cell'
+          let cell = decode cell'
               iCell = decode iCell'
               posData =
                 PosData
                   { cell = cell,
                     inverseCell = iCell,
-                    coords = decode $ nCoordElemsBS <> coords'
+                    coords = decode $ nAtoms' <> coords'
                   }
           logDebugS logSource $ "Cell:\n" <> displayShow cell
           logDebugS logSource $ "Inverse Cell:\n" <> displayShow iCell
@@ -149,9 +147,6 @@ ipiClient ipi = do
           liftIO $ sendAll sckt "FORCEREADY"
           liftIO . sendAll sckt . encode $ forceData
           logDebugS logSource "Sent energies and forces to server."
-
-          -- iPI can now wait for additional bytes. We don't need additional information, so we send a 0.
-          liftIO $ sendAll sckt . runPut . putInt32host $ (0 :: Int32)
 
           -- Next communication loop begins.
           logDebugS logSource "Finished i-PI client loop. Reiterating ..."
@@ -193,13 +188,13 @@ molToForceData mol = do
       mol ^. #energyDerivatives % #energy
 
   -- Obtain the forces in Hartree/Angstrom
-  forcesAngstrom :: Massiv.Vector S Double <-
+  gradientAngstrom :: Massiv.Vector S Double <-
     maybe2MThrow (localExc "Gradient is missing from the molecule") $
       getVectorS <$> (mol ^. #energyDerivatives % #gradient)
 
   -- Construct the virial matrix and convert from Hartree/Angstrom to Bohr/Angstrom.
   let virial = CellVecs (T 0 0 0) (T 0 0 0) (T 0 0 0)
-      forcesBohr = compute @S . Massiv.map convertA2B $ forcesAngstrom
+      forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientAngstrom
 
   return
     ForceData

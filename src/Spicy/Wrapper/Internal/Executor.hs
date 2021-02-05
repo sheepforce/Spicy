@@ -289,9 +289,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
           $ atoms
       multipoleMap = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
 
-  -- LOG
-  logDebug $ "Obtained multipoles from GDMA:\n" <> displayShow modelMultipoleList
-
+  -- Message if something is wrong with the number of poles expected and obtained.
   unless (List.length modelMultipoleList == List.length modelAtomKeys) $ do
     logError
       "Number of model atoms and number of multipole expansions centres obtained from GDMA\

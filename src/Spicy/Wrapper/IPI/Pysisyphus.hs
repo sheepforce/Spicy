@@ -142,7 +142,8 @@ runPysisServer = do
             calc =
               Calc
                 { type_ = IPISever,
-                  address = Just socketPath
+                  address = Just socketPath,
+                  verbose = False
                 }
           }
 
@@ -328,20 +329,23 @@ instance ToJSON OType where
 
 data Calc = Calc
   { type_ :: CType,
-    address :: Maybe String
+    address :: Maybe String,
+    verbose :: Bool
   }
 
 instance FromJSON Calc where
   parseJSON = withObject "calc" $ \v -> do
     type_ <- v .: "type"
     address <- v .: "address"
-    return Calc {type_ = type_, address = address}
+    verbose <- v .: "verbose"
+    return Calc {type_ = type_, address = address, verbose = verbose}
 
 instance ToJSON Calc where
-  toJSON (Calc {type_, address}) =
+  toJSON (Calc {type_, address, verbose}) =
     object
       [ "type" .= type_,
-        "address" .= address
+        "address" .= address,
+        "verbose" .= verbose
       ]
 
 -- Lenses
