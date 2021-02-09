@@ -114,7 +114,8 @@ data WrapperConfigs = WrapperConfigs
     nwchem :: Maybe JFilePath,
     gdma :: Maybe JFilePath,
     ipi :: Maybe JFilePath,
-    pysisyphus :: Maybe JFilePath
+    pysisyphus :: Maybe JFilePath,
+    xtb :: Maybe JFilePath
   }
   deriving (Show, Generic)
 
@@ -138,6 +139,9 @@ instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "ipi" k WrapperC
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}
+
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "xtb" k WrapperConfigs WrapperConfigs a b where
+  labelOptic = lens xtb $ \s b -> s {xtb = b}
 
 -- Reader Classes
 class HasWrapperConfigs env where
@@ -202,3 +206,52 @@ instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSl
   labelOptic = lens (output :: CalcSlot -> TMVar Molecule) $ \s b -> (s {output = b} :: CalcSlot)
 
 ----------------------------------------------------------------------------------------------------
+<<<<<<< HEAD
+=======
+
+-- | The status of the i-PI server. This is not part of the protocol but there so tell a client if
+-- we can already connect and if it needs to continue delivering data.
+data IPIServerStatus = MoreData | Done deriving (Eq, Show)
+
+-- | i-PI communication settings and variables. Generic over i-PI implementations.
+data IPI = IPI
+  { -- | The network socket used for communication with the server.
+    socket :: Socket,
+    -- | The address of the socket in use.
+    socketAddr :: SockAddr,
+    -- | Input channel. When this variable is filled the i-PI server starts its calculation of
+    -- new positions.
+    input :: TMVar ForceData,
+    -- | Output channel. When the i-PI server has finished its calculation, these values will be
+    -- filled and are ready to be consumed by Spicy.
+    output :: TMVar PosData,
+    -- | Working directory of the process.
+    workDir :: Path.AbsRelDir,
+    -- | The path to a coordinate file, used to initialise the i-PI server with coordinates.
+    initCoords :: Path.AbsRelFile,
+    -- | The status of the i-PI server.
+    status :: TMVar IPIServerStatus
+  }
+
+-- Lenses
+instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "socket" k IPI IPI a b where
+  labelOptic = lens (\s -> (socket :: IPI -> Socket) s) $ \s b -> s {socket = b}
+
+instance (k ~ A_Lens, a ~ SockAddr, b ~ a) => LabelOptic "socketAddr" k IPI IPI a b where
+  labelOptic = lens (\s -> socketAddr s) $ \s b -> s {socketAddr = b}
+
+instance (k ~ A_Lens, a ~ TMVar ForceData, b ~ a) => LabelOptic "input" k IPI IPI a b where
+  labelOptic = lens (\s -> (input :: IPI -> TMVar ForceData) s) $ \s b -> (s {input = b} :: IPI)
+
+instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI a b where
+  labelOptic = lens (\s -> (output :: IPI -> TMVar PosData) s) $ \s b -> (s {output = b} :: IPI)
+
+instance (k ~ A_Lens, a ~ Path.AbsRelDir, b ~ a) => LabelOptic "workDir" k IPI IPI a b where
+  labelOptic = lens (\s -> workDir s) $ \s b -> s {workDir = b}
+
+instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
+  labelOptic = lens (\s -> initCoords s) $ \s b -> s {initCoords = b}
+
+instance (k ~ A_Lens, a ~ TMVar IPIServerStatus, b ~ a) => LabelOptic "status" k IPI IPI a b where
+  labelOptic = lens (\s -> status s) $ \s b -> s {status = b}
+>>>>>>> d5014cf... Setup Branch

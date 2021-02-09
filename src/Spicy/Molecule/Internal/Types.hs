@@ -1408,6 +1408,7 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 data Program
   = Psi4
   | Nwchem
+  | XTB
   deriving (Eq, Show, Generic)
 
 instance ToJSON Program where

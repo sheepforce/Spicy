@@ -98,11 +98,13 @@ runCalculation calcID = do
   case software of
     Psi4 -> executePsi4 calcID inputFilePath
     Nwchem -> undefined
+    XTB -> executeXTB calcID inputFilePath
 
   -- Parse the output, that has been produced by the wrapper.
   calcOutput <- case software of
     Psi4 -> analysePsi4 calcID
     Nwchem -> undefined
+    XTB -> undefined
 
   -- Print logging information about the output obtained.
   -- mapM_ logInfo . hShow $ calcOutput
@@ -203,6 +205,80 @@ executePsi4 calcID inputFilePath = do
     logError $ "Psi4 execution terminated abnormally. Got exit code: " <> displayShow exitCode
     logError $ "Psi4 error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Err)
     logError $ "Psi4 stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
+    throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
+
+executeXTB ::
+  (HasWrapperConfigs env, HasMolecule env, HasLogFunc env, HasProcessContext env) =>
+  -- | ID of the calculation to perform.
+  CalcID ->
+  -- | Path to the input file of XTB.
+  Path.AbsFile ->
+  RIO env ()
+executeXTB calcID inputFilePath = do
+  -- Obtain the XTB wrapper.
+  xtbWrapper <-
+    view (wrapperConfigsL % #xtb) >>= \wrapper -> case wrapper of
+      Just w -> return . getFilePath $ w
+      Nothing -> throwM $ WrapperGenericException "executeXTB" "XTB wrapper is not configured. Cannot execute."
+
+  -- Create the calculation context lens.
+  let calcLens = calcIDLensGen calcID
+
+  -- Gather information for the execution of XTB
+  mol <- view moleculeL >>= atomically . readTVar
+  let calcContextM = mol ^? calcLens
+  calcContext <- case calcContextM of
+    Nothing ->
+      throwM $
+        MolLogicException
+          "runCalculation"
+          "Requested to perform a calculation, which does not exist."
+    Just cntxt -> return cntxt
+
+  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+      scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
+      software = calcContext ^. #input % #software
+      outputFilePath = Path.replaceExtension inputFilePath ".out"
+
+  -- Check if this function is appropiate to execute the calculation at all.
+  unless (software == XTB) $ do
+    logError
+      "A calculation should be done with the XTB driver function,\
+      \ but the calculation is not a XTB calculation."
+    throwM $
+      SpicyIndirectionException
+        "executeXTB"
+        ( "Requested to execute XTB on calculation with CalcID "
+            <> show calcID
+            <> "but this is not a XTB calculation."
+        )
+
+  -- Prepare the command line arguments to XTB.
+  let xtbCmdArgs =
+        [ "--input=" <> Path.toString inputFilePath,
+          "--output=" <> Path.toString outputFilePath,
+          "--nthread=" <> show (calcContext ^. #input % #nThreads),
+          "--scratch=" <> Path.toString scratchDir,
+          "--prefix=" <> (calcContext ^. #input % #prefixName),
+          "--messy"
+        ]
+
+  -- Debug logging before execution of XTB.
+  logDebug $ "Starting XTB with command line arguments: " <> displayShow xtbCmdArgs
+
+  -- Launch the Psi4 process and read its stdout and stderr.
+  (exitCode, xtbOut, xtbErr) <-
+    withWorkingDir (Path.toString permanentDir) $
+      proc
+        (Path.toString xtbWrapper)
+        xtbCmdArgs
+        readProcess
+
+  -- Provide some information if something went wrong.
+  unless (exitCode == ExitSuccess) $ do
+    logError $ "xtb execution terminated abnormally. Got exit code: " <> displayShow exitCode
+    logError $ "xtb error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbErr)
+    logError $ "xtb stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbOut)
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
 
 ----------------------------------------------------------------------------------------------------
@@ -362,6 +438,60 @@ analysePsi4 calcID = do
           & #energyDerivatives % #hessian .~ hessianOutput
           & #multipoles .~ multipoles
 
+  return calcOutput
+  where
+    localExcp = WrapperGenericException "analysePsi4"
+
+analyseXTB ::
+  (HasLogFunc env, HasMolecule env, HasProcessContext env, HasWrapperConfigs env) =>
+  CalcID ->
+  RIO env CalcOutput
+analyseXTB calcID = do
+  -- Create the calcID lens and the mol lens.
+  let molLens = molIDLensGen (calcID ^. #molID)
+      calcLens = calcIDLensGen calcID
+
+  -- Gather information about the run which to analyse.
+  mol <- view moleculeL >>= atomically . readTVar
+  localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
+  calcContext <- case mol ^? calcLens of
+    Just x -> return x
+    Nothing ->
+      throwM $
+        MolLogicException
+          "runCalculation" -- Shouldn't this be analyzeXTB?
+          "Requested to analyze a Calculation, which does not exist."
+
+{-
+  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+      prefixName = calcContext ^. #input % #prefixName
+      fchkPath = permanentDir </> Path.relFile prefixName <.> ".fchk"
+      hessianPath = permanentDir </> Path.relFile prefixName <.> ".hess"
+      task' = calcContext ^. #input % #task
+
+  logDebug $ "Reading the formatted checkpoint file: " <> path2Utf8Builder fchkPath
+
+  -- Read the formatted checkpoint file from the permanent directory.
+  fChkOutput <- getResultsFromFChk =<< readFileUTF8 (Path.toAbsRel fchkPath)
+
+  -- If the task was a hessian calculation, also parse the numpy array with the hessian.
+  hessianOutput <- case task' of
+    WTHessian -> do
+      logDebug $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
+      hessianContent <- readFileUTF8 (Path.toAbsRel hessianPath)
+      hessian <- parse' doubleSquareMatrix hessianContent
+      return . Just $ hessian
+    _ -> return Nothing
+
+  -- Perform the GDMA calculation on the FChk file and obtain its results.
+  multipoles <- gdmaAnalysis fchkPath (localMol ^. #atoms) 4
+
+  -- Combine the Hessian and multipole information into the main output from the FChk.
+  let calcOutput =
+        fChkOutput
+          & #energyDerivatives % #hessian .~ hessianOutput
+          & #multipoles .~ multipoles
+-}  
   return calcOutput
   where
     localExcp = WrapperGenericException "analysePsi4"
