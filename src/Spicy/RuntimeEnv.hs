@@ -144,7 +144,8 @@ data WrapperConfigs = WrapperConfigs
     nwchem :: Maybe JFilePath,
     gdma :: Maybe JFilePath,
     ipi :: Maybe JFilePath,
-    pysisyphus :: Maybe JFilePath
+    pysisyphus :: Maybe JFilePath,
+    xtb :: Maybe JFilePath
   }
   deriving (Show, Generic)
 
@@ -168,6 +169,9 @@ instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "ipi" k WrapperC
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens (\s -> pysisyphus s) $ \s b -> s {pysisyphus = b}
+
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "xtb" k WrapperConfigs WrapperConfigs a b where
+  labelOptic = lens xtb $ \s b -> s {xtb = b}
 
 -- Reader Classes
 class HasWrapperConfigs env where
@@ -231,7 +235,7 @@ instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSl
 
 ----------------------------------------------------------------------------------------------------
 
--- | The status of the i-PI server. This is nort part of the protocol but there so tell a client if
+-- | The status of the i-PI server. This is not part of the protocol but there so tell a client if
 -- we can already connect and if it needs to continue delivering data.
 data IPIServerStatus = MoreData | Done deriving (Eq, Show)
 
