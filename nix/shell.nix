@@ -18,7 +18,7 @@ in
     tools = {
       cabal = "3.2.0.0";
       hlint = "2.2.11";
-      haskell-language-server = "0.6.0"; # See https://github.com/input-output-hk/haskell.nix/blob/master/overlays/tools.nix from time to time.
+      haskell-language-server = "0.9.0.0"; # Hackage versions should be available
       hpack = "0.34.3";
       ormolu = "0.1.4.1";
     };
