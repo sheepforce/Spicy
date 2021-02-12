@@ -42,8 +42,16 @@ orderPoles RawXTB{..} = do
   mdi <- sequenceA $ mkDipole <$> atomicDipoles
   mquad <- sequenceA $ mkQuadrupole <$> atomicQuadrupoles
   return . V.toList $ V.zipWith3 CMultipoles (Just <$> mmono) (Just <$> mdi) (Just <$> mquad)
-      unless (length vec == 3) . throwM $ DataStructureException "orderPoles.mkDipole" "Dipole has incorrect number of entries!"
->>>>>>> b358810... Multipole parsing from XTB
+  where
+    (!??) :: MonadThrow m => Vector a -> Int -> m a
+    v !?? i = case v V.!? i of
+      Nothing -> throwM (DataStructureException "!?" "Vector index out of bounds!")
+      Just r -> return r
+    -- Assumes x,y,z ordering!
+    mkDipole :: MonadThrow m => Vector Double -> m CDipole
+    mkDipole vec = do
+      -- Sanitiy check - is this vector the right length?
+      unless (RIO.length vec == 3) . throwM $ DataStructureException "orderPoles.mkDipole" "Dipole has incorrect number of entries!"
       x <- vec !?? 0
       y <- vec !?? 1
       z <- vec !?? 2
@@ -54,11 +62,7 @@ orderPoles RawXTB{..} = do
     -- Assumes xx, xy, yy, xz, yz, zz ordering in the xtb output!
     mkQuadrupole :: MonadThrow m => Vector Double -> m CQuadrupole
     mkQuadrupole vec = do
-<<<<<<< HEAD
       unless (RIO.length vec == 6) . throwM $ DataStructureException "orderPoles.mkQuadrupole" "Quadrupole has incorrect number of entries!"
-=======
-      unless (length vec == 6) . throwM $ DataStructureException "orderPoles.mkQuadrupole" "Quadrupole has incorrect number of entries!"
->>>>>>> b358810... Multipole parsing from XTB
       xx <- vec !?? 0
       xy <- vec !?? 1
       yy <- vec !?? 2
