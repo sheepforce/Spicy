@@ -34,6 +34,7 @@ import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.Shallow
 import Spicy.Wrapper.Internal.Output.GDMA
 import Spicy.Wrapper.Internal.Output.Generic
+import Spicy.Wrapper.Internal.Output.XTB
 import System.Path
   ( (<++>),
     (<.>),
@@ -462,19 +463,19 @@ analyseXTB calcID = do
           "runCalculation" -- Shouldn't this be analyzeXTB?
           "Requested to analyze a Calculation, which does not exist."
 
-{-
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
-      prefixName = calcContext ^. #input % #prefixName
-      fchkPath = permanentDir </> Path.relFile prefixName <.> ".fchk"
-      hessianPath = permanentDir </> Path.relFile prefixName <.> ".hess"
+      --prefixName = calcContext ^. #input % #prefixName
+      jsonPath = permanentDir </> Path.relFile "xtbout" <.> ".json"
+      --hessianPath = permanentDir </> Path.relFile prefixName <.> ".hess" TODO
       task' = calcContext ^. #input % #task
 
-  logDebug $ "Reading the formatted checkpoint file: " <> path2Utf8Builder fchkPath
+  logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
 
   -- Read the formatted checkpoint file from the permanent directory.
-  fChkOutput <- getResultsFromFChk =<< readFileUTF8 (Path.toAbsRel fchkPath)
+  --fChkOutput <- getResultsFromFChk =<< readFileUTF8 (Path.toAbsRel fchkPath)
 
   -- If the task was a hessian calculation, also parse the numpy array with the hessian.
+  {- TODO
   hessianOutput <- case task' of
     WTHessian -> do
       logDebug $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
@@ -482,16 +483,23 @@ analyseXTB calcID = do
       hessian <- parse' doubleSquareMatrix hessianContent
       return . Just $ hessian
     _ -> return Nothing
+  -}
 
   -- Perform the GDMA calculation on the FChk file and obtain its results.
-  multipoles <- gdmaAnalysis fchkPath (localMol ^. #atoms) 4
+  modelMultipoleList <- parseXTBout . fromStrictBytes =<< readFileBinary (Path.toString jsonPath)
 
+  -- How does the input to xtb work? Does it contain Link/Dummy atoms that need to be filtered?
+  let atoms = localMol ^. #atoms
+      modelAtomKeys =
+        IntSet.toAscList
+        . IntMap.keysSet
+        . IntMap.filter (not . isAtomLink . isLink)
+        . IntMap.filter (\a -> not $ a ^. #isDummy)
+        $ atoms
+      multipoles = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
   -- Combine the Hessian and multipole information into the main output from the FChk.
-  let calcOutput =
-        fChkOutput
-          & #energyDerivatives % #hessian .~ hessianOutput
-          & #multipoles .~ multipoles
--}  
+      calcOutput =
+        CalcOutput undefined multipoles -- TODO
   return calcOutput
   where
-    localExcp = WrapperGenericException "analysePsi4"
+    localExcp = WrapperGenericException "analyseXTB"
