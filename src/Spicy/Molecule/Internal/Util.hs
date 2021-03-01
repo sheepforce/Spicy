@@ -2522,7 +2522,7 @@ updateMolWithPosVec pos mol = do
       -- Updates of this layers data and inputs for next recursion steps.
       let updateNonDummies = updatedRealAtoms <> updateLinkAtoms
           thisLayerUpdated = molLayer & #atoms .~ updateNonDummies
-          newCoordsUpdated = newCoords <> (fmap (^. #coordinates) updateLinkAtoms)
+          newCoordsUpdated = newCoords <> fmap (^. #coordinates) updateLinkAtoms
 
       -- Recursively update all sublayers.
       let subMols = thisLayerUpdated ^. #subMol
@@ -2531,6 +2531,8 @@ updateMolWithPosVec pos mol = do
       return $ thisLayerUpdated & #subMol .~ subMolsUpdated
 
 ----------------------------------------------------------------------------------------------------
+-- | Reduces the search radius of a neighbour list to a smaller distance of neighbours. This should
+-- be more efficient than building a new neighbourlist with a different radius.
 shrinkNeighbourList ::
   MonadThrow m =>
   IntMap Atom ->

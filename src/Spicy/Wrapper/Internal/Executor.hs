@@ -14,7 +14,6 @@ module Spicy.Wrapper.Internal.Executor
 where
 
 import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy8
-import Data.Foldable
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Optics hiding (view)
