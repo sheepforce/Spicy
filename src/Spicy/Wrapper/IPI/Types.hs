@@ -30,7 +30,7 @@ import qualified RIO.Vector.Storable as VectorS
 
 -- | Vectors as transfered over the network. Takes into account that 3N and not N elements are
 -- expected.
-newtype NetVec = NetVec (VectorS.Vector Double)
+newtype NetVec = NetVec {getNetVec :: VectorS.Vector Double}
   deriving (Eq, Show)
 
 instance Binary NetVec where
@@ -64,6 +64,9 @@ instance Binary Status where
 -- | A triple of values, e.g. a vector in \(R^3\).
 data T a = T a a a deriving (Eq, Show)
 
+instance Functor T where
+  fmap f (T a b c) = T (f a) (f b) (f c)
+
 -- Serialisation
 instance Binary (T Double) where
   put (T a b c) = do
@@ -80,15 +83,18 @@ instance Binary (T Double) where
 ----------------------------------------------------------------------------------------------------
 
 -- | The cell vectors of a simulation cell.
-data CellVecs = CellVecs
-  { a :: T Double,
-    b :: T Double,
-    c :: T Double
+data CellVecs a = CellVecs
+  { a :: T a,
+    b :: T a,
+    c :: T a
   }
   deriving (Eq, Show)
 
+instance Functor CellVecs where
+  fmap f CellVecs {..} = CellVecs (fmap f a) (fmap f b) (fmap f c)
+
 -- Serialisation
-instance Binary CellVecs where
+instance Binary (CellVecs Double) where
   put (CellVecs {a, b, c}) = do
     put a
     put b
@@ -105,8 +111,8 @@ instance Binary CellVecs where
 -- | Position data as in the i-PI protocoll. Usually send by an i-PI server to the client. The client
 -- is Spicy.
 data PosData = PosData
-  { cell :: CellVecs,
-    inverseCell :: CellVecs,
+  { cell :: CellVecs Double,
+    inverseCell :: CellVecs Double,
     coords :: NetVec
   }
   deriving (Show)
@@ -125,10 +131,10 @@ instance Binary PosData where
     return $ PosData {cell = cell, inverseCell = inverseCell, coords = coords}
 
 -- Lenses
-instance (k ~ A_Lens, a ~ CellVecs, b ~ a) => LabelOptic "cell" k PosData PosData a b where
+instance (k ~ A_Lens, a ~ CellVecs Double, b ~ a) => LabelOptic "cell" k PosData PosData a b where
   labelOptic = lens (\s -> cell s) $ \s b -> s {cell = b}
 
-instance (k ~ A_Lens, a ~ CellVecs, b ~ a) => LabelOptic "inverseCell" k PosData PosData a b where
+instance (k ~ A_Lens, a ~ CellVecs Double, b ~ a) => LabelOptic "inverseCell" k PosData PosData a b where
   labelOptic = lens (\s -> inverseCell s) $ \s b -> s {inverseCell = b}
 
 instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "coords" k PosData PosData a b where
@@ -141,7 +147,7 @@ instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "coords" k PosData PosDat
 data ForceData = ForceData
   { potentialEnergy :: Double,
     forces :: NetVec,
-    virial :: CellVecs,
+    virial :: CellVecs Double,
     optionalData :: ByteString
   }
 
@@ -176,7 +182,7 @@ instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "potentialEnergy" k Force
 instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "forces" k ForceData ForceData a b where
   labelOptic = lens (\s -> forces s) $ \s b -> s {forces = b}
 
-instance (k ~ A_Lens, a ~ CellVecs, b ~ a) => LabelOptic "virial" k ForceData ForceData a b where
+instance (k ~ A_Lens, a ~ CellVecs Double, b ~ a) => LabelOptic "virial" k ForceData ForceData a b where
   labelOptic = lens (\s -> virial s) $ \s b -> s {virial = b}
 
 instance (k ~ A_Lens, a ~ ByteString, b ~ a) => LabelOptic "optionalData" k ForceData ForceData a b where

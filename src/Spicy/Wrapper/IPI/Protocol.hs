@@ -23,6 +23,7 @@ import Network.Socket.ByteString.Lazy
 import Optics hiding (view)
 import RIO hiding (view, (^.))
 import qualified RIO.ByteString.Lazy as BL
+import qualified RIO.Vector.Storable as VectorS
 import Spicy.Common
 import Spicy.Data
 import Spicy.Molecule
@@ -117,20 +118,21 @@ ipiClient ipi = do
           coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
           let cell = decode cell'
               iCell = decode iCell'
-              posData =
+              posDataBohr =
                 PosData
                   { cell = cell,
                     inverseCell = iCell,
                     coords = decode $ nAtoms' <> coords'
                   }
+              posDataAngstrom = posDataToAngstrom posDataBohr
           logDebugS logSource $ "Cell:\n" <> displayShow cell
           logDebugS logSource $ "Inverse Cell:\n" <> displayShow iCell
-          logDebugS logSource $ "Coordinate vector:\n" <> displayShow (coords posData)
+          logDebugS logSource $ "Coordinate vector:\n" <> displayShow (coords posDataAngstrom)
 
           -- The posdata are given back to the ONIOM main loop in the shared variable.
-          logDebugS logSource $ "Providing Spicy with Position data from server."
-          atomically . putTMVar out $ posData
-          logDebugS logSource $ "Waiting for energies and forces from Spicy."
+          logDebugS logSource "Providing Spicy with Position data from server."
+          atomically . putTMVar out $ posDataAngstrom
+          logDebugS logSource "Waiting for energies and forces from Spicy."
 
           -- Wait for Oniom driver to provide force data. Also Clears the client status.
           forceData <- atomically . takeTMVar $ inp
@@ -158,7 +160,7 @@ ipiClient ipi = do
     waitForSocket :: MonadIO m => Path.AbsFile -> m ()
     waitForSocket scktPath = do
       scktExists <- liftIO $ Path.doesFileExist scktPath
-      unless (scktExists) $ do
+      unless scktExists $ do
         threadDelay 500000
         waitForSocket scktPath
 
@@ -206,3 +208,11 @@ molToForceData mol = do
   where
     convertA2B v = v / (angstrom2Bohr 1)
     localExc = SpicyIndirectionException "molToForceData"
+
+-- | Converts the posdata as obtained from the server from bohr to angstrom.
+posDataToAngstrom :: PosData -> PosData
+posDataToAngstrom PosData {..} =
+  let cellA = fmap bohr2Angstrom cell
+      invCellA = fmap bohr2Angstrom inverseCell
+      coordsA = NetVec . VectorS.map bohr2Angstrom . getNetVec $ coords
+   in PosData {cell = cellA, inverseCell = invCellA, coords = coordsA}

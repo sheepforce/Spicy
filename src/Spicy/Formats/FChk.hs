@@ -57,6 +57,7 @@ import qualified RIO.Set as Set
 import qualified RIO.Text as Text
 import qualified RIO.Text.Lazy as TL
 import Spicy.Common
+import Spicy.Data
 import Spicy.Math
 import Spicy.Molecule
 
@@ -235,13 +236,22 @@ getResultsFromFChk content = do
   fchk <- parse' fChk content
   let fchkBlocks = fchk ^. #blocks
       energy' = fchkBlocks Map.!? "Total Energy"
-      gradient' = fchkBlocks Map.!? "Cartesian Gradient"
+      gradientBohr = (fchkBlocks Map.!? "Cartesian Gradient") ^? _Just % _Array % _ArrayDouble
       hessianContent = fchkBlocks Map.!? "Cartesian Force Constants"
 
   let hessianLTVec = hessianContent ^? _Just % _Array % _ArrayDouble
-  hessian' <- case hessianLTVec of
+  hessianBohr <- case hessianLTVec of
     Just vec -> Just . MatrixS <$> ltMat2Square vec
     Nothing -> return Nothing
+
+  -- Convert gradient from Hartree/Bohr to Hartree/Angstrom and hessian from hartree/Bohr^2 to
+  -- Hartree/Angstrom^2.
+  let gradientAngstrom = compute . Massiv.map (* (1 / bohr2Angstrom 1)) <$> gradientBohr
+      hessianAngstrom =
+        compute @S
+          . Massiv.map (* (1 / (bohr2Angstrom 1 ^ (2 :: Int))))
+          . getMatrixS
+          <$> hessianBohr
 
   return
     CalcOutput
@@ -249,8 +259,8 @@ getResultsFromFChk content = do
         energyDerivatives =
           EnergyDerivatives
             { energy = energy' ^? _Just % _Scalar % _ScalarDouble,
-              gradient = VectorS <$> gradient' ^? _Just % _Array % _ArrayDouble,
-              hessian = hessian'
+              gradient = VectorS <$> gradientAngstrom,
+              hessian = MatrixS <$> hessianAngstrom
             }
       }
 
