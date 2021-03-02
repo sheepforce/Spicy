@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.3.
+-- This file has been generated from package.yaml by hpack version 0.34.2.
 --
 -- see: https://github.com/sol/hpack
 
@@ -65,6 +65,7 @@ library
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
+      Spicy.Wrapper.IPI.IPI
       Spicy.Wrapper.IPI.Protocol
       Spicy.Wrapper.IPI.Pysisyphus
       Spicy.Wrapper.IPI.Types
@@ -101,6 +102,7 @@ library
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
+    , xml-conduit >=1.9.0.0 && <1.10
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
@@ -146,6 +148,7 @@ executable spicy
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
+    , xml-conduit >=1.9.0.0 && <1.10
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
@@ -192,6 +195,7 @@ test-suite unittests
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
+    , xml-conduit >=1.9.0.0 && <1.10
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
@@ -239,6 +243,7 @@ benchmark bench
     , text >=1.2.3.1 && <1.3
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
+    , xml-conduit >=1.9.0.0 && <1.10
     , yaml >=0.11.2.0 && <0.12
   if flag(dev)
     ghc-options: -O0
