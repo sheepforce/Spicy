@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-partial-fields #-}
+
 -- |
 -- Module      : Spicy.Wrapper.IPI.Types
 -- Description : Communication with i-PI servers.
