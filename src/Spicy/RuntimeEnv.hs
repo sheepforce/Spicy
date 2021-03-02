@@ -23,7 +23,6 @@ module Spicy.RuntimeEnv
     HasMotion (..),
     CalcSlot (..),
     HasCalcSlot (..),
-    IPIServerStatus(..),
     IPI (..),
   )
 where
@@ -231,10 +230,6 @@ instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSl
 
 ----------------------------------------------------------------------------------------------------
 
--- | The status of the i-PI server. This is nort part of the protocol but there so tell a client if
--- we can already connect and if it needs to continue delivering data.
-data IPIServerStatus = MoreData | Done deriving (Eq, Show)
-
 -- | i-PI communication settings and variables. Generic over i-PI implementations.
 data IPI = IPI
   { -- | The network socket used for communication with the server.
@@ -243,7 +238,7 @@ data IPI = IPI
     socketAddr :: SockAddr,
     -- | Input channel. When this variable is filled the i-PI server starts its calculation of
     -- new positions.
-    input :: TMVar ForceData,
+    input :: TMVar InputData,
     -- | Output channel. When the i-PI server has finished its calculation, these values will be
     -- filled and are ready to be consumed by Spicy.
     output :: TMVar PosData,
@@ -252,7 +247,7 @@ data IPI = IPI
     -- | The path to a coordinate file, used to initialise the i-PI server with coordinates.
     initCoords :: Path.AbsRelFile,
     -- | The status of the i-PI server.
-    status :: TMVar IPIServerStatus
+    status :: TMVar DataRequest
   }
 
 -- Lenses
@@ -262,8 +257,8 @@ instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "socket" k IPI IPI a b wh
 instance (k ~ A_Lens, a ~ SockAddr, b ~ a) => LabelOptic "socketAddr" k IPI IPI a b where
   labelOptic = lens (\s -> socketAddr s) $ \s b -> s {socketAddr = b}
 
-instance (k ~ A_Lens, a ~ TMVar ForceData, b ~ a) => LabelOptic "input" k IPI IPI a b where
-  labelOptic = lens (\s -> (input :: IPI -> TMVar ForceData) s) $ \s b -> (s {input = b} :: IPI)
+instance (k ~ A_Lens, a ~ TMVar InputData, b ~ a) => LabelOptic "input" k IPI IPI a b where
+  labelOptic = lens (\s -> (input :: IPI -> TMVar InputData) s) $ \s b -> (s {input = b} :: IPI)
 
 instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI a b where
   labelOptic = lens (\s -> (output :: IPI -> TMVar PosData) s) $ \s b -> (s {output = b} :: IPI)
@@ -274,5 +269,5 @@ instance (k ~ A_Lens, a ~ Path.AbsRelDir, b ~ a) => LabelOptic "workDir" k IPI I
 instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
   labelOptic = lens (\s -> initCoords s) $ \s b -> s {initCoords = b}
 
-instance (k ~ A_Lens, a ~ TMVar IPIServerStatus, b ~ a) => LabelOptic "status" k IPI IPI a b where
+instance (k ~ A_Lens, a ~ TMVar DataRequest, b ~ a) => LabelOptic "status" k IPI IPI a b where
   labelOptic = lens (\s -> status s) $ \s b -> s {status = b}

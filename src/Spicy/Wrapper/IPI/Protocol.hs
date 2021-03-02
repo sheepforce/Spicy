@@ -11,6 +11,7 @@
 module Spicy.Wrapper.IPI.Protocol
   ( ipiClient,
     molToForceData,
+    molToHessianData,
   )
 where
 
@@ -101,7 +102,6 @@ ipiClient ipi = do
         -- Continue to process data.
         "STATUS" -> do
           logDebugS logSource "Server status OK."
-          atomically . putTMVar (ipi ^. #status) $ MoreData
 
           -- We send "READY" again and expect another status message. Not documented.
           logDebugS logSource "Sending READY to server."
@@ -134,21 +134,33 @@ ipiClient ipi = do
           atomically . putTMVar out $ posDataAngstrom
           logDebugS logSource "Waiting for energies and forces from Spicy."
 
-          -- Wait for Oniom driver to provide force data. Also Clears the client status.
-          forceData <- atomically . takeTMVar $ inp
-          logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
+          -- Wait for Oniom driver to provide force or hessian data. Also Clears the client status.
           thrdStatus <- getMsg
           logDebugS logSource $ "Response from server: " <> showMsg thrdStatus
           unless (thrdStatus == "STATUS") . statusExc $ thrdStatus
           logDebugS logSource "Telling server that we have new data."
           liftIO $ sendAll sckt "HAVEDATA"
-          getforce <- getMsg
-          logDebugS logSource $ "Got response from server: " <> showMsg getforce
-          unless (getforce == "GETFORCE") . statusExc $ getforce
-          logDebugS logSource "Server wants force data. Sending to server."
-          liftIO $ sendAll sckt "FORCEREADY"
-          liftIO . sendAll sckt . encode $ forceData
-          logDebugS logSource "Sent energies and forces to server."
+          getRequest <- getMsg
+          logDebugS logSource $ "Got response from server: " <> showMsg getRequest
+          case getRequest of
+            "GETFORCE" -> do
+              logDebugS logSource "Server wants force data. Preparing calculation."
+              atomically . putTMVar (ipi ^. #status) $ WantForces
+              forceData <- atomically . takeTMVar $ inp
+              logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
+              liftIO $ sendAll sckt "FORCEREADY"
+              liftIO . sendAll sckt . encode $ forceData
+              logDebugS logSource "Sent energies and forces to server."
+            "GETHESSIAN" -> do
+              logDebugS logSource "Server wants hessian data. Preparing calculation."
+              atomically . putTMVar (ipi ^. #status) $ WantHessian
+              hessianData <- atomically . takeTMVar $ inp
+              liftIO $ sendAll sckt "HESSIANREADY"
+              liftIO . sendAll sckt . encode $ hessianData
+              logDebugS logSource "Sent energies and hessian to server."
+            string -> statusExc string
+
+          logDebugS logSource "Sent data to server."
 
           -- Next communication loop begins.
           logDebugS logSource "Finished i-PI client loop. Reiterating ..."
@@ -182,7 +194,7 @@ ipiClient ipi = do
 
 -- | Builds a 'ForceData' structure from a collected 'Molecule'. Conversion from Angstrom to Bohr
 -- happens here.
-molToForceData :: MonadThrow m => Molecule -> m ForceData
+molToForceData :: MonadThrow m => Molecule -> m InputData
 molToForceData mol = do
   -- Obtain the potential energy.
   potentialEnergy <-
@@ -207,6 +219,29 @@ molToForceData mol = do
       }
   where
     convertA2B v = v / (angstrom2Bohr 1)
+    localExc = SpicyIndirectionException "molToForceData"
+
+-- | Converts a molecule to the hessian data for iPI. Takes care of the Angstrom -> Bohr conversion.
+molToHessianData :: MonadThrow m => Molecule -> m InputData
+molToHessianData mol = do
+  -- Obtain the potential energy.
+  potentialEnergy <-
+    maybe2MThrow (localExc "Energy is missing from the molecule") $
+      mol ^. #energyDerivatives % #energy
+
+  -- Obtain the hessian in Hartree/Angstrom^2
+  hessianAngstrom :: Massiv.Matrix S Double <-
+    maybe2MThrow (localExc "Hessian is missing from the molecule") $
+      getMatrixS <$> (mol ^. #energyDerivatives % #hessian)
+
+  let hessianBohr = compute @S . Massiv.map convertA2B $ hessianAngstrom
+  return
+    HessianData
+      { potentialEnergy = potentialEnergy,
+        hessian = hessianBohr
+      }
+  where
+    convertA2B v = v / ((angstrom2Bohr 1) ^ (2 :: Int))
     localExc = SpicyIndirectionException "molToForceData"
 
 -- | Converts the posdata as obtained from the server from bohr to angstrom.

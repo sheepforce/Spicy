@@ -169,10 +169,11 @@ geomMacroDriver ::
   RIO env ()
 geomMacroDriver ipi = do
   -- Check if the client is still runnning and expects us to provide new data.
-  clientWantsMore <- atomically . takeTMVar $ ipi ^. #status
-  when (clientWantsMore == MoreData) $ do
+  ipiServerWants <- atomically . takeTMVar $ ipi ^. #status
+  traceM $ "GeomMacroDiver. Server want status: " <> tShow ipiServerWants
+  unless (ipiServerWants == Done) $ do
     -- Get communication variables with the i-PI client and Spicy.
-    let ipiForceIn = ipi ^. #input
+    let ipiDataIn = ipi ^. #input
         ipiPosOut = ipi ^. #output
     molT <- view moleculeL
 
@@ -185,52 +186,29 @@ geomMacroDriver ipi = do
     atomically . writeTVar molT $ molNewStruct
 
     -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
-    multicentreOniomNDriver WTGradient
-    multicentreOniomNCollector WTGradient
+    ipiData <- case ipiServerWants of
+      WantForces -> do
+        multicentreOniomNDriver WTGradient
+        multicentreOniomNCollector WTGradient
+        molWithForces <- atomically . readTVar $ molT
+        molToForceData molWithForces
+      WantHessian -> do
+        multicentreOniomNDriver WTHessian
+        multicentreOniomNCollector WTHessian
+        molWithHessian <- atomically . readTVar $ molT
+        molToHessianData molWithHessian
+      Done -> do
+        logError
+          "The macro geometry driver should be done but has entered an other\
+          \ calculation loop."
+        throwM $
+          SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
 
-    -- Get the molecule in the new structure with its forces.
-    molWithForces <- atomically . readTVar $ molT
-    forceData <- molToForceData molWithForces
-    atomically . putTMVar ipiForceIn $ forceData
+    -- Get the molecule in the new structure with its forces or hessian.
+    atomically . putTMVar ipiDataIn $ ipiData
 
     -- Reiterating
     geomMacroDriver ipi
-  {-
-
-  when clientWantsMore $ do
-    -- Get communication vars with the server.
-    let ipiForceIn = ipi ^. #input
-        ipiPosOut = ipi ^. #output
-
-    -- Get the current molecule and position data from the i-PI server.
-    molT <- view moleculeL
-    molOld <- atomically . readTVar $ molT
-
-
-    -- Get a new Position data from the server and update the molecule.
-    logDebug "Works A1"
-    posData <- atomically . takeTMVar $ ipiPosOut
-    logDebug "Works A2"
-    posVec <- case posData ^. #coords of
-      NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
-    molNewStruct <- updateMolWithPosVec posVec molOld
-    atomically . writeTVar molT $ molNewStruct
-
-    -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
-    multicentreOniomNDriver WTGradient
-
-    -- Process the results and collect the gradients for a geometry optimisation step.
-    multicentreOniomNCollector WTGradient
-
-    -- Place the coordinates in the Pysis input variable to trigger a geometry optimisation step by
-    -- Pysisyphus.
-    molWithForces <- atomically . readTVar $ molT
-    forceData <- molToForceData molWithForces
-    atomically . putTMVar ipiForceIn $ forceData
-
-    -- Reiterate for the next geometry.
-    geomMacroDriver ipi
-    -}
 
 ----------------------------------------------------------------------------------------------------
 

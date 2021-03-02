@@ -10,18 +10,20 @@
 -- i-PI type definitions and serialisation to binary network communication. See
 -- <<http://ipi-code.org/assets/pdf/manual.pdf i-PI>> protocol (section 3.3.1).
 module Spicy.Wrapper.IPI.Types
-  ( NetVec (..),
+  ( DataRequest (..),
+    NetVec (..),
     Status (..),
     T (..),
     CellVecs (..),
     PosData (..),
-    ForceData (..),
+    InputData (..),
   )
 where
 
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
+import Data.Massiv.Array as Massiv
 import Data.Vector.Binary
 import Optics
 import RIO hiding (lens)
@@ -58,6 +60,12 @@ instance Binary Status where
       "READY" -> return Ready
       "HAVEDATA" -> return HaveData
       _ -> fail "invalid status message"
+
+data DataRequest
+  = Done
+  | WantForces
+  | WantHessian
+  deriving (Eq, Show)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -144,46 +152,35 @@ instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "coords" k PosData PosDat
 
 -- | The force data on the current structure. This data is sent to the server, which calculates new
 -- positions from the implicitly existend coordinates. This is the information sent by Spicy.
-data ForceData = ForceData
-  { potentialEnergy :: Double,
-    forces :: NetVec,
-    virial :: CellVecs Double,
-    optionalData :: ByteString
-  }
+data InputData
+  = ForceData
+      { potentialEnergy :: Double,
+        forces :: NetVec,
+        virial :: CellVecs Double,
+        optionalData :: ByteString
+      }
+  | HessianData
+      { potentialEnergy :: Double,
+        -- | Molecular cartesian hessian in Hartree/Bohr^2. This must encode the symmetric square
+        -- matrix.
+        hessian :: Matrix S Double
+      }
 
 -- Serialisation
-instance Binary ForceData where
-  put (ForceData {potentialEnergy, forces, virial, optionalData}) = do
+instance Binary InputData where
+  put ForceData {potentialEnergy, forces, virial, optionalData} = do
     putDoublehost potentialEnergy
     put forces
     put virial
     let optionalLength = fromIntegral . ByteString.length $ optionalData
     putInt32host optionalLength
     putByteString optionalData
+  put HessianData {potentialEnergy, hessian} = do
+    putDoublehost potentialEnergy
+    let Sz (m :. _) = size hessian
+        nAtoms = m `div` 3
+        hessianVec = toStorableVector . flatten $ hessian
+    putInt32host . fromIntegral $ nAtoms
+    genericPutVectorWith (\_ -> putInt32host . fromIntegral $ nAtoms) putDoublehost hessianVec
 
-  get = do
-    potentialEnergy <- getDoublehost
-    forces <- get
-    virial <- get
-    optionalLength <- fromIntegral <$> getInt32host
-    optionalData <- getByteString optionalLength
-    return $
-      ForceData
-        { potentialEnergy = potentialEnergy,
-          forces = forces,
-          virial = virial,
-          optionalData = optionalData
-        }
-
--- Lenses
-instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "potentialEnergy" k ForceData ForceData a b where
-  labelOptic = lens (\s -> potentialEnergy s) $ \s b -> s {potentialEnergy = b}
-
-instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "forces" k ForceData ForceData a b where
-  labelOptic = lens (\s -> forces s) $ \s b -> s {forces = b}
-
-instance (k ~ A_Lens, a ~ CellVecs Double, b ~ a) => LabelOptic "virial" k ForceData ForceData a b where
-  labelOptic = lens (\s -> virial s) $ \s b -> s {virial = b}
-
-instance (k ~ A_Lens, a ~ ByteString, b ~ a) => LabelOptic "optionalData" k ForceData ForceData a b where
-  labelOptic = lens (\s -> optionalData s) $ \s b -> s {optionalData = b}
+  get = error "Decoding force or hessian data is not possible"
