@@ -170,7 +170,6 @@ geomMacroDriver ::
 geomMacroDriver ipi = do
   -- Check if the client is still runnning and expects us to provide new data.
   ipiServerWants <- atomically . takeTMVar $ ipi ^. #status
-  traceM $ "GeomMacroDiver. Server want status: " <> tShow ipiServerWants
   unless (ipiServerWants == Done) $ do
     -- Get communication variables with the i-PI client and Spicy.
     let ipiDataIn = ipi ^. #input
