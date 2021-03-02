@@ -3,6 +3,7 @@
 , pkgs ? import ./nixpkgs.nix { }
 , psi4 ? pkgs.psi4
 , gdma ? pkgs.gdma
+, pysisyphus ? pkgs.pysisyphus
 }:
 let
   spicyrc =
@@ -10,6 +11,7 @@ let
       text = pkgs.lib.generators.toYAML {} {
         "psi4" = "${psi4}/bin/psi4";
         "gdma" = "${gdma}/bin/gdma";
+        "pysisyphus" = "${pysisyphus}/bin/pysis";
       };
     in
       pkgs.writeTextFile {
