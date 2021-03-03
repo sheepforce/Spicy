@@ -28,11 +28,14 @@ import Data.Binary.Get
 import Data.Binary.Put
 import Data.Massiv.Array as Massiv
 import Data.Vector.Binary
-import Network.Socket hiding (socket)
+import Network.Socket as Net hiding (socket)
+import qualified Network.Socket as Net
 import Optics
 import RIO hiding (lens)
 import qualified RIO.ByteString as ByteString
 import qualified RIO.Vector.Storable as VectorS
+import Spicy.Common
+import System.Path ((</>))
 import qualified System.Path as Path
 
 -- | i-PI communication settings and variables. Generic over i-PI implementations.
@@ -54,6 +57,23 @@ data IPI = IPI
     -- | The status of the i-PI server.
     status :: TMVar DataRequest
   }
+
+instance DefaultIO IPI where
+  defIO = do
+    socket <- liftIO $ Net.socket AF_UNIX Stream defaultProtocol
+    ipiIn <- newEmptyTMVarIO
+    ipiOut <- newEmptyTMVarIO
+    status <- newEmptyTMVarIO
+    return
+      IPI
+        { socket = socket,
+          socketAddr = SockAddrUnix "./ipi.socket",
+          input = ipiIn,
+          output = ipiOut,
+          workDir = Path.dirPath ".",
+          initCoords = Path.dirPath "." </> Path.relFile "InitialCoords.xyz",
+          status = status
+        }
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "socket" k IPI IPI a b where

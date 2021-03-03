@@ -23,6 +23,7 @@ module Spicy.Common
     -- $class
     Check (..),
     PrettyPrint (..),
+    DefaultIO(..),
 
     -- * Parser Helper Functions
     -- $parserHelper
@@ -309,19 +310,24 @@ instance Exception IPIException
 -- $classDefinitions
 -- Definitions of classes used in Spicy.
 
--- |
--- A class for various data structures, which use some assumptions in Spicy. Running a check on them
+-- | A class for various data structures, which use some assumptions in Spicy. Running a check on them
 -- allows to be sure about the correctnes of their assumptions.
 class Check a where
   check :: MonadThrow m => a -> m a
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A class for data, that can be printed nicely to a human friendly format with the purpose of logging.
--- Each line is a separate 'UTF8Builder', which allows prepending the log info string before each line.
+-- | A class for data, that can be printed nicely to a human friendly format with the purpose of
+-- logging. Each line is a separate 'UTF8Builder', which allows prepending the log info string
+-- before each line.
 class PrettyPrint a where
   prettyP :: a -> Utf8Builder
+
+----------------------------------------------------------------------------------------------------
+
+-- | A class of default values, which need to be initialised by IO.
+class DefaultIO a where
+  defIO :: MonadIO m => m a
 
 {-
 ####################################################################################################

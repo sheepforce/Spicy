@@ -944,6 +944,22 @@ data Optimisation = Optimisation
     pysisyphus :: IPI
   }
 
+instance DefaultIO Optimisation where
+  defIO =
+    return
+      Optimisation
+        { coordType = DLC,
+          maxCycles = 50,
+          recalcHess = Nothing,
+          hessianUpdate = BFGS,
+          trustRadius = 0.3,
+          minTrust = 0.1,
+          maxTrust = 1.0,
+          lineSearch = True,
+          optType = Minimum RFO,
+          pysisyphus = undefined
+        }
+
 instance ToJSON Optimisation where
   toJSON
     Optimisation
