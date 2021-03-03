@@ -73,7 +73,8 @@ providePysis = do
 ----------------------------------------------------------------------------------------------------
 
 -- | Launches a Pysishus i-PI server in the background with the required input and waits for it to
--- finish.
+-- finish. Pysisyphus will respect the optimisation settings, that are given on the top level of the
+-- visible molecule.
 runPysisServer ::
   ( HasWrapperConfigs env,
     HasProcessContext env,
@@ -84,14 +85,14 @@ runPysisServer ::
   RIO env ()
 runPysisServer = do
   -- Obtain initial information
-  mol <- view moleculeL >>= atomically . readTVar
+  mol <- view moleculeL >>= readTVarIO
   ipi <- view pysisL
   socketPath <- case ipi ^. #socketAddr of
     SockAddrUnix path -> return path
-    SockAddrInet _ _ -> do
+    SockAddrInet {} -> do
       logErrorS logSource "Wrong socket type given. Need a UNIX socket but got an INET socket."
       throwM . localExc $ "Wrong socket type given: INET"
-    SockAddrInet6 _ _ _ _ -> do
+    SockAddrInet6 {} -> do
       logErrorS logSource "Wrong socket type given. Need a UNIX socket but got an INET6 socket."
       throwM . localExc $ "Wrong socket type given: INET6"
   pysisWrapperM <- view $ wrapperConfigsL % #pysisyphus
@@ -126,26 +127,7 @@ runPysisServer = do
     "Wrote initial coordinates for Pysisyphus to " <> path2Utf8Builder initCoordFileAbs
 
   -- Construct a pysisyphus input file.
-  let pysisInput =
-        PysisInput
-          { geom =
-              Geom -- TODO (phillip|p=50|#Unfinished) - The coordinate type should be obtained from the CalcInput from the molecule.
-                { type_ = Cart,
-                  fn = JFilePathAbs initCoordFileAbs
-                },
-            opt =
-              Opt -- TODO (phillip|p=50|#Unfinished) - The optimisation type should be obtained from the CalcInput from the molecule.
-                { type_ = RFO,
-                  align = False,
-                  max_cycles = 100
-                },
-            calc =
-              Calc
-                { type_ = IPISever,
-                  address = Just socketPath,
-                  verbose = False
-                }
-          }
+  let pysisInput = undefined :: PysisInput
 
   -- Make a working directory for Pysisyphus and write the input file to it.
   let pysisYamlPath = pysisDir </> Path.relFile "pysis_servers_spicy.yml"
@@ -188,187 +170,116 @@ runPysisServer = do
 -- | Pysisyphus input file data structure.
 data PysisInput = PysisInput
   { geom :: Geom,
-    opt :: Opt,
+    optimiser :: Either MinOpt TSOpt,
     calc :: Calc
   }
 
-instance FromJSON PysisInput where
-  parseJSON = withObject "pysisinput" $ \v -> do
-    geom <- v .: "geom"
-    opt <- v .: "opt"
-    calc <- v .: "calc"
-    return PysisInput {geom = geom, opt = opt, calc = calc}
-
 instance ToJSON PysisInput where
-  toJSON (PysisInput {geom, opt, calc}) =
-    object
+  toJSON PysisInput {geom, optimiser, calc} =
+    object $
       [ "geom" .= geom,
-        "opt" .= opt,
         "calc" .= calc
       ]
+        <> case optimiser of
+          Left opt -> ["opt" .= opt]
+          Right tsopt -> ["tsopt" .= tsopt]
 
--- Lenses
-instance (k ~ A_Lens, a ~ Geom, b ~ a) => LabelOptic "geom" k PysisInput PysisInput a b where
-  labelOptic = lens (\s -> geom s) $ \s b -> s {geom = b}
+----------------------------------------------------------------------------------------------------
 
-instance (k ~ A_Lens, a ~ Opt, b ~ a) => LabelOptic "opt" k PysisInput PysisInput a b where
-  labelOptic = lens (\s -> opt s) $ \s b -> s {opt = b}
-
-instance (k ~ A_Lens, a ~ Calc, b ~ a) => LabelOptic "calc" k PysisInput PysisInput a b where
-  labelOptic = lens (\s -> calc s) $ \s b -> s {calc = b}
-
-{-
-====================================================================================================
--}
-
--- | Settings for the input geometry.
-data Geom = Geom
-  { type_ :: GType,
-    fn :: JFilePathAbs
+-- | @opt@ block of a pysisyphus input. All values are explicit here and will be written always.
+data MinOpt = MinOpt
+  { optType :: MinOptAlg,
+    maxCycles :: Int,
+    recalcHessian :: Maybe Int,
+    updateHessian :: HessianUpdate,
+    lineSearch :: Bool,
+    minTrust :: Double,
+    maxTrust :: Double,
+    trustRadius :: Double
   }
 
-instance FromJSON Geom where
-  parseJSON = withObject "geom" $ \v -> do
-    type_ <- v .: "type"
-    fn <- v .: "fn"
-    return Geom {type_ = type_, fn = fn}
+instance ToJSON MinOpt where
+  toJSON
+    MinOpt
+      { optType,
+        maxCycles,
+        recalcHessian,
+        updateHessian,
+        lineSearch,
+        minTrust,
+        maxTrust,
+        trustRadius
+      } =
+      object
+        [ "type" .= optType,
+          "max_cycles" .= maxCycles,
+          "hessian_recalc" .= recalcHessian,
+          "hessian_update" .= updateHessian,
+          "line_search" .= lineSearch,
+          "trust_radius" .= trustRadius,
+          "trust_min" .= minTrust,
+          "trust_max" .= maxTrust
+        ]
+
+----------------------------------------------------------------------------------------------------
+
+-- | @tsopt@ block of a pysisyphus input.
+data TSOpt = TSOpt
+  { optType :: TSOptAlg,
+    maxCycles :: Int,
+    recalcHessian :: Maybe Int,
+    minTrust :: Double,
+    maxTrust :: Double,
+    trustRadius :: Double
+  }
+
+instance ToJSON TSOpt where
+  toJSON TSOpt {optType, maxCycles, recalcHessian, minTrust, maxTrust, trustRadius} =
+    object
+      [ "type" .= optType,
+        "max_cycles" .= maxCycles,
+        "hessian_recalc" .= recalcHessian,
+        "trust_radius" .= trustRadius,
+        "trust_max" .= maxTrust,
+        "trust_min" .= minTrust
+      ]
+
+----------------------------------------------------------------------------------------------------
+
+-- | @geom@ input block of Pysisyphus
+data Geom = Geom
+  { fn :: JFilePathAbs,
+    coordType :: CoordType
+  }
 
 instance ToJSON Geom where
-  toJSON (Geom {type_, fn}) =
+  toJSON Geom {fn, coordType} =
     object
-      [ "type" .= type_,
-        "fn" .= fn
+      [ "fn" .= fn,
+        "type" .= coordType
       ]
-
--- Lenses
-instance (k ~ A_Lens, a ~ GType, b ~ a) => LabelOptic "gtype" k Geom Geom a b where
-  labelOptic = lens (\s -> (type_ :: Geom -> GType) s) $ \s b -> (s {type_ = b} :: Geom)
-
-instance (k ~ A_Lens, a ~ JFilePathAbs, b ~ a) => LabelOptic "fn" k Geom Geom a b where
-  labelOptic = lens (\s -> fn s) $ \s b -> s {fn = b}
 
 ----------------------------------------------------------------------------------------------------
 
--- | Types of geometry definitions.
-data GType
-  = -- | Delocalised internals
-    DLC
-  | -- | Cartesian coordinates
-    Cart
-  | -- | Redundant internal coordinates
-    Redund
-
-instance FromJSON GType where
-  parseJSON v = case v of
-    String "dlc" -> pure DLC
-    String "cart" -> pure Cart
-    String "redund" -> pure Redund
-    _ -> fail "encountered unknown field for GType"
-
-instance ToJSON GType where
-  toJSON v = case v of
-    DLC -> toJSON @Text "dlc"
-    Cart -> toJSON @Text "cart"
-    Redund -> toJSON @Text "redund"
-
-{-
-====================================================================================================
--}
-
-data Opt = Opt
-  { type_ :: OType,
-    align :: Bool,
-    max_cycles :: Int
-  }
-  deriving (Generic)
-
-instance FromJSON Opt where
-  parseJSON = withObject "opt" $ \v -> do
-    type_ <- v .: "type"
-    align <- v .: "align"
-    max_cycles <- v .: "max_cycles"
-    return Opt {type_ = type_, align = align, max_cycles = max_cycles}
-
-instance ToJSON Opt where
-  toJSON (Opt {type_, align, max_cycles}) =
-    object
-      [ "type" .= type_,
-        "align" .= align,
-        "max_cycles" .= max_cycles
-      ]
-
--- Lenses
-instance (k ~ A_Lens, a ~ OType, b ~ a) => LabelOptic "type_" k Opt Opt a b where
-  labelOptic = lens (\s -> (type_ :: Opt -> OType) s) $ \s b -> (s {type_ = b} :: Opt)
-
-instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "align'" k Opt Opt a b where
-  labelOptic = lens (\s -> align s) $ \s b -> s {align = b}
-
-instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "max_cycles'" k Opt Opt a b where
-  labelOptic = lens (\s -> max_cycles s) $ \s b -> s {max_cycles = b}
-
-----------------------------------------------------------------------------------------------------
-
--- | Types of geometry optimisers
-data OType
-  = RFO
-  deriving (Generic)
-
-instance FromJSON OType where
-  parseJSON v = case v of
-    String "rfo" -> pure RFO
-    _ -> fail "encountered unknown field for OType"
-
-instance ToJSON OType where
-  toJSON v = case v of
-    RFO -> toJSON @Text "rfo"
-
-{-
-====================================================================================================
--}
-
+-- | @calc@ input block of Pysisyphus.
 data Calc = Calc
-  { type_ :: CType,
+  { calcType :: CalcType,
     address :: Maybe String,
     verbose :: Bool
   }
 
-instance FromJSON Calc where
-  parseJSON = withObject "calc" $ \v -> do
-    type_ <- v .: "type"
-    address <- v .: "address"
-    verbose <- v .: "verbose"
-    return Calc {type_ = type_, address = address, verbose = verbose}
-
 instance ToJSON Calc where
-  toJSON (Calc {type_, address, verbose}) =
+  toJSON Calc {calcType, address, verbose} =
     object
-      [ "type" .= type_,
+      [ "type" .= calcType,
         "address" .= address,
         "verbose" .= verbose
       ]
 
--- Lenses
-instance (k ~ A_Lens, a ~ CType, b ~ a) => LabelOptic "type_" k Calc Calc a b where
-  labelOptic = lens (\s -> (type_ :: Calc -> CType) s) $ \s b -> (s {type_ = b} :: Calc)
-
-instance (k ~ A_Lens, a ~ Maybe String, b ~ a) => LabelOptic "address''" k Calc Calc a b where
-  labelOptic = lens (\s -> address s) $ \s b -> s {address = b}
-
 ----------------------------------------------------------------------------------------------------
 
--- | Calculations types that can be performed with pysisyphus.
-data CType
-  = -- | Generic calculations, which provide their input by means of a network socket.
-    IPISever
+-- | Calculation types that the combination of Pysisyphus and Spicy supports.
+data CalcType = IPIServer
 
--- deriving (Generic)
-
-instance FromJSON CType where
-  parseJSON v = case v of
-    String "ipiserver" -> pure IPISever
-    _ -> fail $ "encountered unknown field for CType"
-
-instance ToJSON CType where
-  toJSON v = case v of
-    IPISever -> toJSON @Text "ipiserver"
+instance ToJSON CalcType where
+  toJSON IPIServer = toJSON @Text "ipiserver"

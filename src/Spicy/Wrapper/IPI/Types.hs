@@ -12,7 +12,8 @@
 -- i-PI type definitions and serialisation to binary network communication. See
 -- <<http://ipi-code.org/assets/pdf/manual.pdf i-PI>> protocol (section 3.3.1).
 module Spicy.Wrapper.IPI.Types
-  ( DataRequest (..),
+  ( IPI (..),
+    DataRequest (..),
     NetVec (..),
     Status (..),
     T (..),
@@ -27,10 +28,56 @@ import Data.Binary.Get
 import Data.Binary.Put
 import Data.Massiv.Array as Massiv
 import Data.Vector.Binary
+import Network.Socket hiding (socket)
 import Optics
 import RIO hiding (lens)
 import qualified RIO.ByteString as ByteString
 import qualified RIO.Vector.Storable as VectorS
+import qualified System.Path as Path
+
+-- | i-PI communication settings and variables. Generic over i-PI implementations.
+data IPI = IPI
+  { -- | The network socket used for communication with the server.
+    socket :: Socket,
+    -- | The address of the socket in use.
+    socketAddr :: SockAddr,
+    -- | Input channel. When this variable is filled the i-PI server starts its calculation of
+    -- new positions.
+    input :: TMVar InputData,
+    -- | Output channel. When the i-PI server has finished its calculation, these values will be
+    -- filled and are ready to be consumed by Spicy.
+    output :: TMVar PosData,
+    -- | Working directory of the process.
+    workDir :: Path.AbsRelDir,
+    -- | The path to a coordinate file, used to initialise the i-PI server with coordinates.
+    initCoords :: Path.AbsRelFile,
+    -- | The status of the i-PI server.
+    status :: TMVar DataRequest
+  }
+
+-- Lenses
+instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "socket" k IPI IPI a b where
+  labelOptic = lens (\s -> (socket :: IPI -> Socket) s) $ \s b -> s {socket = b}
+
+instance (k ~ A_Lens, a ~ SockAddr, b ~ a) => LabelOptic "socketAddr" k IPI IPI a b where
+  labelOptic = lens (\s -> socketAddr s) $ \s b -> s {socketAddr = b}
+
+instance (k ~ A_Lens, a ~ TMVar InputData, b ~ a) => LabelOptic "input" k IPI IPI a b where
+  labelOptic = lens (\s -> (input :: IPI -> TMVar InputData) s) $ \s b -> (s {input = b} :: IPI)
+
+instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI a b where
+  labelOptic = lens (\s -> (output :: IPI -> TMVar PosData) s) $ \s b -> (s {output = b} :: IPI)
+
+instance (k ~ A_Lens, a ~ Path.AbsRelDir, b ~ a) => LabelOptic "workDir" k IPI IPI a b where
+  labelOptic = lens (\s -> workDir s) $ \s b -> s {workDir = b}
+
+instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
+  labelOptic = lens (\s -> initCoords s) $ \s b -> s {initCoords = b}
+
+instance (k ~ A_Lens, a ~ TMVar DataRequest, b ~ a) => LabelOptic "status" k IPI IPI a b where
+  labelOptic = lens (\s -> status s) $ \s b -> s {status = b}
+
+----------------------------------------------------------------------------------------------------
 
 -- | Vectors as transfered over the network. Takes into account that 3N and not N elements are
 -- expected.
