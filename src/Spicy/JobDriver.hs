@@ -75,7 +75,7 @@ spicyExecMain = do
 
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
-  logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
+  logInfo "Preparing layout for a MC-ONIOMn calculation ..."
   layoutMoleculeForCalc
 
   -- Perform the specified tasks on the input file.
@@ -83,7 +83,8 @@ spicyExecMain = do
   forM_ tasks $ \t -> do
     case t of
       Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
-      Optimise -> view pysisL >>= geomMacroDriver
+      Optimise Macro -> view pysisL >>= geomMacroDriver
+      Optimise Micro -> undefined
       Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
       MD -> do
         logError "A MD run was requested but MD is not implemented yet."
@@ -108,7 +109,7 @@ spicyExecMain = do
 initNeighbourList :: (HasMolecule env) => RIO env ()
 initNeighbourList = do
   molT <- view moleculeL
-  mol <- atomically . readTVar $ molT
+  mol <- readTVarIO molT
   nL <- neighbourList 15 mol
   atomically . writeTVar molT $ mol & #neighbourlist .~ Map.singleton 15 nL
 
@@ -125,7 +126,7 @@ changeTopologyOfMolecule ::
 changeTopologyOfMolecule = do
   -- Get the molecule to manipulate
   molT <- view moleculeL
-  mol <- atomically . readTVar $ molT
+  mol <- readTVarIO molT
 
   -- Get the input file information.
   inputFile <- view inputFileL
@@ -194,8 +195,8 @@ changeTopologyOfMolecule = do
 -- | Perform transformation of the molecule data structure as obtained from the input to match the
 -- requirements for the requested calculation type.
 layoutMoleculeForCalc ::
-  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env ()
+  (HasInputFile env, HasMolecule env) => RIO env ()
 layoutMoleculeForCalc = do
   inputFile <- view inputFileL
   case inputFile ^. #model of
-    ONIOMn {} -> oniomNLayout
+    ONIOMn {} -> mcOniomNLayout

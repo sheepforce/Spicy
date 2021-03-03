@@ -927,7 +927,7 @@ data Optimisation = Optimisation
     maxCycles :: Int,
     -- | Recalculate a true hessian every n steps. If this is 'Nothing' no hessians will be
     -- calculated
-    recalcHess :: Maybe Int,
+    hessianRecalc :: Maybe Int,
     -- | How the hessian is updated through the curse of the optimisation.
     hessianUpdate :: HessianUpdate,
     -- | Initial trust radius of the optimisation.
@@ -950,7 +950,7 @@ instance DefaultIO Optimisation where
       Optimisation
         { coordType = DLC,
           maxCycles = 50,
-          recalcHess = Nothing,
+          hessianRecalc = Nothing,
           hessianUpdate = BFGS,
           trustRadius = 0.3,
           minTrust = 0.1,
@@ -965,7 +965,7 @@ instance ToJSON Optimisation where
     Optimisation
       { coordType,
         maxCycles,
-        recalcHess,
+        hessianRecalc,
         hessianUpdate,
         trustRadius,
         maxTrust,
@@ -976,13 +976,13 @@ instance ToJSON Optimisation where
       object
         [ "coordType" .= coordType,
           "maxCycles" .= maxCycles,
-          "recalcHess" .= recalcHess,
+          "hessianRecalc" .= hessianRecalc,
           "hessianUpdate" .= hessianUpdate,
           "trustRadius" .= trustRadius,
           "maxTrust" .= maxTrust,
           "minTrust" .= minTrust,
           "lineSearch" .= lineSearch,
-          "optTyp" .= optType
+          "optType" .= optType
         ]
 
 -- Lenses
@@ -992,8 +992,8 @@ instance (k ~ A_Lens, a ~ CoordType, b ~ a) => LabelOptic "coordType" k Optimisa
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "maxCycles" k Optimisation Optimisation a b where
   labelOptic = lens maxCycles $ \s b -> s {maxCycles = b}
 
-instance (k ~ A_Lens, a ~ Maybe Int, b ~ a) => LabelOptic "recalcHess" k Optimisation Optimisation a b where
-  labelOptic = lens recalcHess $ \s b -> s {recalcHess = b}
+instance (k ~ A_Lens, a ~ Maybe Int, b ~ a) => LabelOptic "hessianRecalc" k Optimisation Optimisation a b where
+  labelOptic = lens hessianRecalc $ \s b -> s {hessianRecalc = b}
 
 instance (k ~ A_Lens, a ~ HessianUpdate, b ~ a) => LabelOptic "hessianUpdate" k Optimisation Optimisation a b where
   labelOptic = lens hessianUpdate $ \s b -> s {hessianUpdate = b}
@@ -1323,8 +1323,9 @@ data CalcInput = CalcInput
     --   calculations in ONIOM (low calculation
     --   level on model system).
     embedding :: !Embedding,
-    -- | Settings for geometry optimisations on this layer.
-    optimisation :: !(Maybe Optimisation)
+    -- | Settings for geometry optimisations on this layer. Always given and if not specified in the
+    -- input defaulting.
+    optimisation :: !Optimisation
   }
   deriving (Generic)
 
@@ -1368,7 +1369,7 @@ instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "template" k CalcInput Calc
 instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInput CalcInput a b where
   labelOptic = lens embedding $ \s b -> s {embedding = b}
 
-instance (k ~ A_Lens, a ~ Maybe Optimisation, b ~ a) => LabelOptic "optimisation" k CalcInput CalcInput a b where
+instance (k ~ A_Lens, a ~ Optimisation, b ~ a) => LabelOptic "optimisation" k CalcInput CalcInput a b where
   labelOptic = lens optimisation $ \s b -> s {optimisation = b}
 
 ----------------------------------------------------------------------------------------------------

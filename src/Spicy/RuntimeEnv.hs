@@ -28,7 +28,6 @@ module Spicy.RuntimeEnv
 where
 
 import Data.Aeson
-import Network.Socket hiding (socket)
 import Optics
 import RIO hiding (Lens', Vector, lens)
 import RIO.Process (HasProcessContext (..), ProcessContext)
@@ -37,7 +36,6 @@ import Spicy.Common
 import Spicy.InputFile hiding (MD, molecule)
 import Spicy.Molecule hiding (pysisyphus)
 import Spicy.Wrapper.IPI.Types
-import System.Path as Path
 
 ----------------------------------------------------------------------------------------------------
 
@@ -71,31 +69,31 @@ data SpicyEnv = SpicyEnv
 
 -- Lenses
 instance (k ~ A_Lens, a ~ TVar Molecule, b ~ a) => LabelOptic "molecule" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> molecule s) $ \s b -> s {molecule = b}
+  labelOptic = lens molecule $ \s b -> s {molecule = b}
 
 instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "calculation" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> calculation s) $ \s b -> s {calculation = b}
+  labelOptic = lens calculation $ \s b -> s {calculation = b}
 
 instance (k ~ A_Lens, a ~ WrapperConfigs, b ~ a) => LabelOptic "wrapperConfigs" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> wrapperConfigs s) $ \s b -> s {wrapperConfigs = b}
+  labelOptic = lens wrapperConfigs $ \s b -> s {wrapperConfigs = b}
 
 instance (k ~ A_Lens, a ~ TVar Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> motion s) $ \s b -> s {motion = b}
+  labelOptic = lens motion $ \s b -> s {motion = b}
 
 instance (k ~ A_Lens, a ~ LogFunc, b ~ a) => LabelOptic "logFunc" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> logFunc s) $ \s b -> s {logFunc = b}
+  labelOptic = lens logFunc $ \s b -> s {logFunc = b}
 
 instance (k ~ A_Lens, a ~ ProcessContext, b ~ a) => LabelOptic "procCntxt" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> procCntxt s) $ \s b -> s {procCntxt = b}
+  labelOptic = lens procCntxt $ \s b -> s {procCntxt = b}
 
 instance (k ~ A_Lens, a ~ CalcSlot, b ~ a) => LabelOptic "calcSlot" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> calcSlot s) $ \s b -> s {calcSlot = b}
+  labelOptic = lens calcSlot $ \s b -> s {calcSlot = b}
 
 instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysis" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> pysis s) $ \s b -> s {pysis = b}
+  labelOptic = lens pysis $ \s b -> s {pysis = b}
 
 instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "ipi" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (\s -> (ipi :: SpicyEnv -> IPI) s) $ \s b -> (s {ipi = b} :: SpicyEnv)
+  labelOptic = lens (ipi :: SpicyEnv -> IPI) $ \s b -> (s {ipi = b} :: SpicyEnv)
 
 -- Reader Classes
 
@@ -154,19 +152,19 @@ instance FromJSON WrapperConfigs
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "psi4" k WrapperConfigs WrapperConfigs a b where
-  labelOptic = lens (\s -> psi4 s) $ \s b -> s {psi4 = b}
+  labelOptic = lens psi4 $ \s b -> s {psi4 = b}
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "nwchem" k WrapperConfigs WrapperConfigs a b where
-  labelOptic = lens (\s -> nwchem s) $ \s b -> s {nwchem = b}
+  labelOptic = lens nwchem $ \s b -> s {nwchem = b}
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "gdma" k WrapperConfigs WrapperConfigs a b where
-  labelOptic = lens (\s -> gdma s) $ \s b -> s {gdma = b}
+  labelOptic = lens gdma $ \s b -> s {gdma = b}
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "ipi" k WrapperConfigs WrapperConfigs a b where
-  labelOptic = lens (\s -> (ipi :: WrapperConfigs -> Maybe JFilePath) s) $ \s b -> (s {ipi = b} :: WrapperConfigs)
+  labelOptic = lens (ipi :: WrapperConfigs -> Maybe JFilePath) $ \s b -> (s {ipi = b} :: WrapperConfigs)
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k WrapperConfigs WrapperConfigs a b where
-  labelOptic = lens (\s -> pysisyphus s) $ \s b -> s {pysisyphus = b}
+  labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}
 
 -- Reader Classes
 class HasWrapperConfigs env where
@@ -194,13 +192,13 @@ class HasMotion env where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "ready" k Motion Motion a b where
-  labelOptic = lens (\s -> ready s) $ \s b -> s {ready = b}
+  labelOptic = lens ready $ \s b -> s {ready = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "outerCycle" k Motion Motion a b where
-  labelOptic = lens (\s -> outerCycle s) $ \s b -> s {outerCycle = b}
+  labelOptic = lens outerCycle $ \s b -> s {outerCycle = b}
 
 instance (k ~ A_Lens, a ~ Map MolID Int, b ~ a) => LabelOptic "innerCycles" k Motion Motion a b where
-  labelOptic = lens (\s -> innerCycles s) $ \s b -> s {innerCycles = b}
+  labelOptic = lens innerCycles $ \s b -> s {innerCycles = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -223,9 +221,9 @@ instance HasCalcSlot CalcSlot where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ TMVar CalcID, b ~ a) => LabelOptic "input" k CalcSlot CalcSlot a b where
-  labelOptic = lens (\s -> (input :: CalcSlot -> TMVar CalcID) s) $ \s b -> (s {input = b} :: CalcSlot)
+  labelOptic = lens (input :: CalcSlot -> TMVar CalcID) $ \s b -> (s {input = b} :: CalcSlot)
 
 instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSlot CalcSlot a b where
-  labelOptic = lens (\s -> (output :: CalcSlot -> TMVar Molecule) s) $ \s b -> (s {output = b} :: CalcSlot)
+  labelOptic = lens (output :: CalcSlot -> TMVar Molecule) $ \s b -> (s {output = b} :: CalcSlot)
 
 ----------------------------------------------------------------------------------------------------

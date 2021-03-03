@@ -13,12 +13,15 @@ module Spicy.InputFile
   ( InputFile (..),
     HasInputFile (..),
     Task (..),
+    Style (..),
     InputMolecule (..),
     FileType (..),
     TopoChanges (..),
     Model (..),
     TheoryLayer (..),
     Execution (..),
+    Opt (..),
+    OptTarget (..),
   )
 where
 
@@ -27,7 +30,7 @@ import Optics
 import RIO hiding (Lens', lens)
 import Spicy.Aeson
 import Spicy.Common
-import Spicy.Molecule (Embedding, Program)
+import Spicy.Molecule (CoordType, Embedding, HessianUpdate, Program)
 
 -- | Definition of a complete calculation of arbitrary type.
 data InputFile = InputFile
@@ -59,22 +62,22 @@ instance FromJSON InputFile where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Seq Task, b ~ a) => LabelOptic "task" k InputFile InputFile a b where
-  labelOptic = lens (\s -> task s) $ \s b -> s {task = b}
+  labelOptic = lens task $ \s b -> s {task = b}
 
 instance (k ~ A_Lens, a ~ InputMolecule, b ~ a) => LabelOptic "molecule" k InputFile InputFile a b where
-  labelOptic = lens (\s -> molecule s) $ \s b -> s {molecule = b}
+  labelOptic = lens molecule $ \s b -> s {molecule = b}
 
 instance (k ~ A_Lens, a ~ Maybe TopoChanges, b ~ a) => LabelOptic "topology" k InputFile InputFile a b where
-  labelOptic = lens (\s -> topology s) $ \s b -> s {topology = b}
+  labelOptic = lens topology $ \s b -> s {topology = b}
 
 instance (k ~ A_Lens, a ~ Model, b ~ a) => LabelOptic "model" k InputFile InputFile a b where
-  labelOptic = lens (\s -> model s) $ \s b -> s {model = b}
+  labelOptic = lens model $ \s b -> s {model = b}
 
 instance (k ~ A_Lens, a ~ JDirPath, b ~ a) => LabelOptic "scratch" k InputFile InputFile a b where
-  labelOptic = lens (\s -> scratch s) $ \s b -> s {scratch = b}
+  labelOptic = lens scratch $ \s b -> s {scratch = b}
 
 instance (k ~ A_Lens, a ~ JDirPath, b ~ a) => LabelOptic "permanent" k InputFile InputFile a b where
-  labelOptic = lens (\s -> permanent s) $ \s b -> s {permanent = b}
+  labelOptic = lens permanent $ \s b -> s {permanent = b}
 
 -- Reader Class
 class HasInputFile env where
@@ -89,8 +92,11 @@ instance HasInputFile InputFile where
 data Task
   = -- | Single point energy calculation. No change in structure
     Energy
-  | -- | Optimisation of the molecular structure.
-    Optimise
+  | -- | Optimisation of the molecular structure. Can do simple optimisations with macro iterarions
+    -- only or advanced optimisations with micro iterations. Macroiterations are controlled by
+    -- the optimisation settings on the real layer, optimisations with micro iterations are
+    -- controlled by each layer individually.
+    Optimise Style
   | -- | Frequency calculation with numerical or analytical hessian.
     Frequency
   | -- | Molecular dynamics simulation.
@@ -101,6 +107,21 @@ instance ToJSON Task where
   toEncoding = genericToEncoding spicyJOption
 
 instance FromJSON Task where
+  parseJSON = genericParseJSON spicyJOption
+
+----------------------------------------------------------------------------------------------------
+
+-- | Optimisation style. Either simple with macro iterations only or by using microiterations on
+-- each layer.
+data Style
+  = Macro
+  | Micro
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Style where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON Style where
   parseJSON = genericParseJSON spicyJOption
 
 ----------------------------------------------------------------------------------------------------
@@ -236,7 +257,9 @@ data TheoryLayer = TheoryLayer
     --   description.
     execution :: Execution,
     -- | Defines the embedding type for the current layer.
-    embedding :: Embedding
+    embedding :: Embedding,
+    -- | Settings for the optimiser on a given layer.
+    optimisation :: Maybe Opt
   }
   deriving (Eq, Show, Generic)
 
@@ -274,6 +297,9 @@ instance (k ~ A_Lens, a ~ Execution, b ~ a) => LabelOptic "execution" k TheoryLa
 instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k TheoryLayer TheoryLayer a b where
   labelOptic = lens (\s -> embedding s) $ \s b -> s {embedding = b}
 
+instance (k ~ A_Lens, a ~ Maybe Opt, b ~ a) => LabelOptic "optimisation" k TheoryLayer TheoryLayer a b where
+  labelOptic = lens (\s -> optimisation s) $ \s b -> s {optimisation = b}
+
 ----------------------------------------------------------------------------------------------------
 
 -- |
@@ -296,10 +322,80 @@ instance FromJSON Execution where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "nProcesses" k Execution Execution a b where
-  labelOptic = lens (\s -> nProcesses s) $ \s b -> s {nProcesses = b}
+  labelOptic = lens nProcesses $ \s b -> s {nProcesses = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "nThreads" k Execution Execution a b where
-  labelOptic = lens (\s -> nThreads s) $ \s b -> s {nThreads = b}
+  labelOptic = lens nThreads $ \s b -> s {nThreads = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "memory" k Execution Execution a b where
-  labelOptic = lens (\s -> memory s) $ \s b -> s {memory = b}
+  labelOptic = lens memory $ \s b -> s {memory = b}
+
+----------------------------------------------------------------------------------------------------
+
+-- | Settings for geometry optimisations. Either for macroiterations for the full system or for
+-- a single layer if for microiterations. All values are optional and defaults for minima
+-- optimisations on small and medium systems will be used.
+data Opt = Opt
+  { -- | Selects whether to optimise to a minimum or a saddle point.
+    target :: Maybe OptTarget,
+    -- | Coordinate system in which the optimisation is carried out.
+    coords :: Maybe CoordType,
+    -- | Maximum number of iterations. Only influences microiterations. Macroiterations are taken
+    -- from somewhere else.
+    iterations :: Maybe Int,
+    -- | Option to recalculate the hessian every n steps. If not given, the hessian will never be
+    -- recalculated.
+    hessianRecalc :: Maybe Int,
+    -- | Hessian update algorithm.
+    hessianUpdate :: Maybe HessianUpdate,
+    -- | Initial trust radius in optimisations.
+    trust :: Maybe Double,
+    -- | Maximum the trust radius can reach.
+    trustMax :: Maybe Double,
+    -- | Minimum the trust radius can reach.
+    trustMin :: Maybe Double
+  }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Opt where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON Opt where
+  parseJSON = genericParseJSON spicyJOption
+
+-- Lenses
+instance (k ~ A_Lens, a ~ Maybe OptTarget, b ~ a) => LabelOptic "target" k Opt Opt a b where
+  labelOptic = lens target $ \s b -> s {target = b}
+
+instance (k ~ A_Lens, a ~ Maybe CoordType, b ~ a) => LabelOptic "coords" k Opt Opt a b where
+  labelOptic = lens coords $ \s b -> s {coords = b}
+
+instance (k ~ A_Lens, a ~ Maybe Int, b ~ a) => LabelOptic "iterations" k Opt Opt a b where
+  labelOptic = lens iterations $ \s b -> s {iterations = b}
+
+instance (k ~ A_Lens, a ~ Maybe Int, b ~ a) => LabelOptic "hessianRecalc" k Opt Opt a b where
+  labelOptic = lens hessianRecalc $ \s b -> s {hessianRecalc = b}
+
+instance (k ~ A_Lens, a ~ Maybe HessianUpdate, b ~ a) => LabelOptic "hessianUpdate" k Opt Opt a b where
+  labelOptic = lens hessianUpdate $ \s b -> s {hessianUpdate = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "trust" k Opt Opt a b where
+  labelOptic = lens trust $ \s b -> s {trust = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "trustMax" k Opt Opt a b where
+  labelOptic = lens trustMax $ \s b -> s {trustMax = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "trustMin" k Opt Opt a b where
+  labelOptic = lens trustMin $ \s b -> s {trustMin = b}
+
+----------------------------------------------------------------------------------------------------
+data OptTarget
+  = Min
+  | TS
+  deriving (Eq, Show, Generic)
+
+instance ToJSON OptTarget where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON OptTarget where
+  parseJSON = genericParseJSON spicyJOption
