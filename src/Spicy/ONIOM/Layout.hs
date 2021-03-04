@@ -145,7 +145,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
                 (ONIOMKey Original, CalcContext {input = calcOriginal, output = Nothing}) :
                 ( case calcInherited of
                     Nothing -> []
-                    Just calcInh -> [(ONIOMKey Original, CalcContext {input = calcInh, output = Nothing})]
+                    Just calcInh -> [(ONIOMKey Inherited, CalcContext {input = calcInh, output = Nothing})]
                 )
           }
 
