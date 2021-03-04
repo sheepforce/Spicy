@@ -72,6 +72,8 @@ import Text.Mustache
 -- - **Psi4:** The calculation is expected to at least produce a formatted checkpoint file with the
 --   name `{{ prefix }}.fchk`. Hessian information need to be saved by numpy as plain text array, as
 --   they don't make it to the FChk for some reason in Psi4.
+-- - **XTB:** Yes, the input option in the template is called spin. Yes, it accepts NOpenshells,
+--   not the actual spin. No, this does not make sense.
 translate2Input ::
   (MonadThrow m, MonadIO m) =>
   -- | The complete molecule construct from top level on.
@@ -178,7 +180,7 @@ toMolRepr ::
   Molecule ->
   -- | The 'Program' for which the representation shall be generated.
   Program ->
-  -- | Molecule representation inf the program format.
+  -- | Molecule representation in the program format.
   m Text
 toMolRepr mol program'
   | program' == Psi4 = simpleCartesianAngstrom
