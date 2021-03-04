@@ -105,7 +105,7 @@ runCalculation calcID = do
   calcOutput <- case software of
     Psi4 -> analysePsi4 calcID
     Nwchem -> undefined
-    XTB -> undefined
+    XTB -> analyseXTB calcID
 
   -- Print logging information about the output obtained.
   -- mapM_ logInfo . hShow $ calcOutput
@@ -233,13 +233,13 @@ executeXTB calcID inputFilePath = do
       throwM $
         MolLogicException
           "runCalculation"
-          "Requested to perform a calculation, which does not exist."
+          "Requested to perform a calculation which does not exist."
     Just cntxt -> return cntxt
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
-      scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
+      --scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
       software = calcContext ^. #input % #software
-      outputFilePath = Path.replaceExtension inputFilePath ".out"
+      --outputFilePath = Path.replaceExtension inputFilePath ".out" -- We don't care about this with XTB - all the files have static names
 
   -- Check if this function is appropiate to execute the calculation at all.
   unless (software == XTB) $ do
@@ -254,20 +254,27 @@ executeXTB calcID inputFilePath = do
             <> "but this is not a XTB calculation."
         )
 
+  -- TODO: Write an .xyz file with the atomic coordinates
+
   -- Prepare the command line arguments to XTB.
-  let xtbCmdArgs =
-        [ "--input=" <> Path.toString inputFilePath,
-          "--output=" <> Path.toString outputFilePath,
-          "--nthread=" <> show (calcContext ^. #input % #nThreads),
-          "--scratch=" <> Path.toString scratchDir,
-          "--prefix=" <> (calcContext ^. #input % #prefixName),
-          "--messy"
+  let cmdTask = case calcContext ^. #input % #task of
+        WTEnergy -> "--sp"
+        WTGradient -> "--grad"
+        WTHessian -> "--hess"
+      xtbCmdArgs =
+        [ "--input=" <> Path.toString inputFilePath, -- TODO
+          cmdTask
+          -- TODO: Feed the input geometry here
+          --"--parallel " <> show (calcContext ^. #input % #nProc), -- Not sure if this would work, will check later
+          --"--nthread=" <> show (calcContext ^. #input % #nThreads), -- No idea how to set
+          --"--scratch=" <> Path.toString scratchDir, -- No idea how to set this, or whether it is even necessary for XTB
+          --"--prefix=" <> (calcContext ^. #input % #prefixName), -- XTB supports something similar, but not for all output files?
         ]
 
   -- Debug logging before execution of XTB.
   logDebug $ "Starting XTB with command line arguments: " <> displayShow xtbCmdArgs
 
-  -- Launch the Psi4 process and read its stdout and stderr.
+  -- Launch the XTB process and read its stdout and stderr.
   (exitCode, xtbOut, xtbErr) <-
     withWorkingDir (Path.toString permanentDir) $
       proc
@@ -275,12 +282,16 @@ executeXTB calcID inputFilePath = do
         xtbCmdArgs
         readProcess
 
+  -- Aside: I don't think XTB supports a separate scratch directory.
+  -- It might be better for production use to run everything in the
+  -- scratch, then manually copy everything to the permanent directory
+
   -- Provide some information if something went wrong.
   unless (exitCode == ExitSuccess) $ do
     logError $ "xtb execution terminated abnormally. Got exit code: " <> displayShow exitCode
     logError $ "xtb error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbErr)
     logError $ "xtb stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbOut)
-    throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
+    throwM $ WrapperGenericException "executeXTB" "XTB execution terminated abnormally."
 
 ----------------------------------------------------------------------------------------------------
 
@@ -446,7 +457,7 @@ analysePsi4 calcID = do
     localExcp = WrapperGenericException "analysePsi4"
 
 analyseXTB ::
-  (HasLogFunc env, HasMolecule env, HasProcessContext env, HasWrapperConfigs env) =>
+  (HasLogFunc env, HasMolecule env) =>
   CalcID ->
   RIO env CalcOutput
 analyseXTB calcID = do
@@ -466,29 +477,30 @@ analyseXTB calcID = do
           "Requested to analyze a Calculation, which does not exist."
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
-      --prefixName = calcContext ^. #input % #prefixName
       jsonPath = permanentDir </> Path.relFile "xtbout" <.> ".json"
-      --hessianPath = permanentDir </> Path.relFile prefixName <.> ".hess" TODO
+      gradientPath = permanentDir </> Path.relFile "gradient"
+      hessianPath = permanentDir </> Path.relFile "hessian"
       task' = calcContext ^. #input % #task
 
-  logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
+  gradientOutput <- do
+    logDebug $ "Reading gradient file " <> path2Utf8Builder gradientPath
+    gradientContent <- readFileUTF8 $ Path.toAbsRel gradientPath
+    gradient <- parse' parseXTBgradient gradientContent
+    return . Just $ gradient
 
-  -- Read the formatted checkpoint file from the permanent directory.
-  --fChkOutput <- getResultsFromFChk =<< readFileUTF8 (Path.toAbsRel fchkPath)
-
-  -- If the task was a hessian calculation, also parse the numpy array with the hessian.
-  {- TODO
+  -- If the task was a hessian calculation, also parse the array with the hessian.
   hessianOutput <- case task' of
     WTHessian -> do
       logDebug $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
       hessianContent <- readFileUTF8 (Path.toAbsRel hessianPath)
-      hessian <- parse' doubleSquareMatrix hessianContent
+      hessian <- parse' parseXTBhessian hessianContent
       return . Just $ hessian
     _ -> return Nothing
-  -}
 
-  -- Perform the GDMA calculation on the FChk file and obtain its results.
-  modelMultipoleList <- parseXTBout . fromStrictBytes =<< readFileBinary (Path.toString jsonPath)
+  -- Get multipoles from the output json.
+  logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
+  rawXTBout <- parseXTBout . fromStrictBytes =<< readFileBinary (Path.toString jsonPath)
+  modelMultipoleList <- xtbMultipoles rawXTBout
 
   -- How does the input to xtb work? Does it contain Link/Dummy atoms that need to be filtered?
   let atoms = localMol ^. #atoms
@@ -499,9 +511,13 @@ analyseXTB calcID = do
         . IntMap.filter (\a -> not $ a ^. #isDummy)
         $ atoms
       multipoles = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
-  -- Combine the Hessian and multipole information into the main output from the FChk.
-      calcOutput =
-        CalcOutput undefined multipoles -- TODO
+      enDeriv = EnergyDerivatives
+        (pure.totalEnergy $ rawXTBout)
+        gradientOutput
+        hessianOutput
+      calcOutput = CalcOutput
+        enDeriv
+        multipoles
   return calcOutput
   where
     localExcp = WrapperGenericException "analyseXTB"
