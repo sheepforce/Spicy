@@ -35,7 +35,6 @@ import Spicy.ONIOM.Collector
 import Spicy.ONIOM.Layout
 import Spicy.RuntimeEnv
 import Spicy.Wrapper
-import Spicy.Wrapper.IPI.Pysisyphus
 import qualified System.Path as Path
 
 logSource :: LogSource
@@ -62,7 +61,6 @@ spicyExecMain = do
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
   link calcSlotThread
-  (pysisServer, pysisClient) <- providePysis
 
   -- Building an inital neighbourlist for large distances.
   logInfo "Constructing initial neighbour list for molecule ..."
@@ -95,8 +93,6 @@ spicyExecMain = do
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread
-  wait pysisClient
-  wait pysisServer
 
   -- LOG
   logInfo "Spicy execution finished. Wup Wup!"

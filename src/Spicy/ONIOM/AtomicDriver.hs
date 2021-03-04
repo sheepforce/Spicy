@@ -32,6 +32,7 @@ import RIO hiding
     (^?),
   )
 import qualified RIO.Map as Map
+import RIO.Process
 import RIO.Seq (Seq (..))
 import qualified RIO.Vector.Storable as VectorS
 import Spicy.Common
@@ -42,6 +43,7 @@ import Spicy.Molecule
 import Spicy.ONIOM.Collector
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.IPI.Protocol
+import Spicy.Wrapper.IPI.Pysisyphus
 import Spicy.Wrapper.IPI.Types
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
@@ -162,7 +164,9 @@ geomMacroDriver ::
   ( HasMolecule env,
     HasLogFunc env,
     HasInputFile env,
-    HasCalcSlot env
+    HasCalcSlot env,
+    HasProcessContext env,
+    HasWrapperConfigs env
   ) =>
   RIO env ()
 geomMacroDriver = do
@@ -173,6 +177,13 @@ geomMacroDriver = do
       case optSettings of
         Nothing -> throw . localExc $ "Pysisyphus connection settings could not be found."
         Just i -> return i
+
+  -- Launch a Pysisyphus server and an i-PI client for the optimisation.
+  (pysisServer, pysisClient) <- providePysis
+  link pysisServer
+  link pysisClient
+
+  -- Start the loop that provides the i-PI client thread with data for the optimisation.
   loop pysisIPI
   where
     localExc = SpicyIndirectionException "geomMacroDriver"
