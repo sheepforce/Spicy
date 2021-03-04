@@ -119,7 +119,7 @@ runPysisServer = do
     "Wrote initial coordinates for Pysisyphus to " <> path2Utf8Builder initCoordFileAbs
 
   -- Construct a pysisyphus input file.
-  let pysisInput = undefined :: PysisInput
+  pysisInput <- opt2Pysis initCoordFileAbs optSettings
 
   -- Make a working directory for Pysisyphus and write the input file to it.
   let pysisYamlPath = pysisWorkDir </> Path.relFile "pysis_servers_spicy.yml"
