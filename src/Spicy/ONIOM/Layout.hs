@@ -156,7 +156,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
   (childMolDepthBranch, newMaxKey2) <- go workDir scratchDir newMaxKey1 childID childMol subTL
 
   -- Reinsert the child branch into the parent before continuing to add other childs.
-  let parentWithThisBranch = parentMol & #subMol % ix childKey .~ childMolDepthBranch
+  let parentWithThisBranch = parentMol & #subMol %~ IntMap.insert childKey childMolDepthBranch
 
   -- After construction of the entire branch, construct the next branch. Breadth first recursion
   -- now.
