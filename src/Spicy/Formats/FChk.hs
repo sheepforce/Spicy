@@ -163,22 +163,22 @@ data ScalarVal
 
 -- Prisms
 _ScalarInt :: Prism' ScalarVal Int
-_ScalarInt = prism' (\b -> ScalarInt b) $ \s -> case s of
+_ScalarInt = prism' ScalarInt $ \s -> case s of
   ScalarInt b -> Just b
   _ -> Nothing
 
 _ScalarDouble :: Prism' ScalarVal Double
-_ScalarDouble = prism' (\b -> ScalarDouble b) $ \s -> case s of
+_ScalarDouble = prism' ScalarDouble $ \s -> case s of
   ScalarDouble b -> Just b
   _ -> Nothing
 
 _ScalarText :: Prism' ScalarVal Text
-_ScalarText = prism' (\b -> ScalarText b) $ \s -> case s of
+_ScalarText = prism' ScalarText $ \s -> case s of
   ScalarText b -> Just b
   _ -> Nothing
 
 _ScalarLogical :: Prism' ScalarVal Bool
-_ScalarLogical = prism' (\b -> ScalarLogical b) $ \s -> case s of
+_ScalarLogical = prism' ScalarLogical $ \s -> case s of
   ScalarLogical b -> Just b
   _ -> Nothing
 
@@ -512,7 +512,6 @@ writeFChk fchk =
          in Massiv.foldMono
               (\k -> fromMaybe mempty . fmap (blockWriter k) $ localMap Map.!? k)
               keyVec
-
       unorderedOtherBlocks =
         let localMap = Map.withoutKeys cntntBlks $ Set.fromList blockOrder
          in Map.foldlWithKey' (\acc k v -> acc <> blockWriter k v) mempty localMap
