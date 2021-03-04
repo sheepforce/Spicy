@@ -55,8 +55,7 @@ spicyExecMain ::
     HasLogFunc env,
     HasWrapperConfigs env,
     HasProcessContext env,
-    HasCalcSlot env,
-    HasPysis env
+    HasCalcSlot env
   ) =>
   RIO env ()
 spicyExecMain = do
@@ -83,7 +82,7 @@ spicyExecMain = do
   forM_ tasks $ \t -> do
     case t of
       Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
-      Optimise Macro -> view pysisL >>= geomMacroDriver
+      Optimise Macro -> geomMacroDriver
       Optimise Micro -> undefined
       Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
       MD -> do

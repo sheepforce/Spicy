@@ -14,9 +14,7 @@
 -- implementation of RIO's @Has*@ typeclasses more consistent, than scattering type definitions across
 -- modules.
 module Spicy.RuntimeEnv
-  ( HasPysis (..),
-    HasIPI (..),
-    SpicyEnv (..),
+  ( SpicyEnv (..),
     WrapperConfigs (..),
     HasWrapperConfigs (..),
     Motion (..),
@@ -59,11 +57,7 @@ data SpicyEnv = SpicyEnv
     -- | A process context for RIO.
     procCntxt :: !ProcessContext,
     -- | The current calculation to be performed by the calculator thread.
-    calcSlot :: !CalcSlot,
-    -- | Connection settings for pysisyphus i-PI server.
-    pysis :: !IPI,
-    -- | Connection settings for the i-PI i-PI server.
-    ipi :: !IPI
+    calcSlot :: !CalcSlot
   }
   deriving (Generic)
 
@@ -89,22 +83,7 @@ instance (k ~ A_Lens, a ~ ProcessContext, b ~ a) => LabelOptic "procCntxt" k Spi
 instance (k ~ A_Lens, a ~ CalcSlot, b ~ a) => LabelOptic "calcSlot" k SpicyEnv SpicyEnv a b where
   labelOptic = lens calcSlot $ \s b -> s {calcSlot = b}
 
-instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysis" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens pysis $ \s b -> s {pysis = b}
-
-instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "ipi" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens (ipi :: SpicyEnv -> IPI) $ \s b -> (s {ipi = b} :: SpicyEnv)
-
 -- Reader Classes
-
--- | A reader class, that is aware of connection details to pysisyphus.
-class HasPysis env where
-  pysisL :: Lens' env IPI
-
--- | A reader class, that is aware of connection details to i-PI.
-class HasIPI env where
-  ipiL :: Lens' env IPI
-
 instance HasMotion SpicyEnv where
   motionL = #motion
 
@@ -125,12 +104,6 @@ instance HasProcessContext SpicyEnv where
 
 instance HasCalcSlot SpicyEnv where
   calcSlotL = #calcSlot
-
-instance HasPysis SpicyEnv where
-  pysisL = #pysis
-
-instance HasIPI SpicyEnv where
-  ipiL = #ipi
 
 ----------------------------------------------------------------------------------------------------
 
@@ -177,9 +150,7 @@ instance HasWrapperConfigs WrapperConfigs where
 
 -- | Defining the curent state of Motion in either an Optimisation or MD run.
 data Motion = Motion
-  { -- | Flag of the molecule is ready to be moved (an iteration has passed completely.)
-    ready :: Bool,
-    -- | The counter of outer optimisation steps (whole system as one with transformed gradients).
+  { -- | The counter of outer optimisation steps (whole system as one with transformed gradients).
     outerCycle :: Int,
     -- | The counter for inner optimisation cycles on each 'MolID' of the 'Molecule' separately.
     innerCycles :: Map MolID Int
@@ -191,9 +162,6 @@ class HasMotion env where
   motionL :: Lens' env (TVar Motion)
 
 -- Lenses
-instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "ready" k Motion Motion a b where
-  labelOptic = lens ready $ \s b -> s {ready = b}
-
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "outerCycle" k Motion Motion a b where
   labelOptic = lens outerCycle $ \s b -> s {outerCycle = b}
 
@@ -211,6 +179,13 @@ data CalcSlot = CalcSlot
     -- | The finished result. Should be taken and emptied by the consumer.
     output :: TMVar Molecule
   }
+
+-- Default Class
+instance DefaultIO CalcSlot where
+  defIO = do
+    calcSlotIn <- newEmptyTMVarIO
+    calcSlotOut <- newEmptyTMVarIO
+    return CalcSlot {input = calcSlotIn, output = calcSlotOut}
 
 -- Reader Classes
 class HasCalcSlot env where

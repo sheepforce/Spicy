@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.ONIOM.AtomicDriver
 -- Description : Preparation, running an analysis of ONIOM jobs on layouted systems
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -21,7 +21,7 @@ module Spicy.ONIOM.AtomicDriver
 where
 
 import Data.Default
-import Data.Massiv.Array as Massiv hiding (forM_)
+import Data.Massiv.Array as Massiv hiding (forM_, loop)
 import Data.Massiv.Array.Manifest.Vector as Massiv
 import Optics hiding (Empty, view)
 import RIO hiding
@@ -74,7 +74,7 @@ oniomCalcDriver calcID wTask = do
     assignTaskToCalc molT calcID wTask
 
   -- Polarise the layer with all information that is available above.
-  molWithTask <- atomically . readTVar $ molT
+  molWithTask <- readTVarIO molT
   molWithPol <- maybePolariseLayer molWithTask layerID
   atomically . writeTVar molT $ molWithPol
 
@@ -110,7 +110,7 @@ multicentreOniomNDriver ::
 multicentreOniomNDriver atomicTask = do
   -- Obtain environment information
   molT <- view moleculeL
-  mol <- atomically . readTVar $ molT
+  mol <- readTVarIO molT
   inputFile <- view inputFileL
 
   let modelOK = case inputFile ^. #model of
@@ -129,7 +129,7 @@ multicentreOniomNDriver atomicTask = do
   -- actual multipole fields of the atoms, to allow for electronic embedding in deeper layers.
   forM_ allMolIDs $ \layerID -> do
     -- Iteration dependent iterations.
-    molCurr <- atomically . readTVar $ molT
+    molCurr <- readTVarIO molT
     let layerLens = molIDLensGen layerID
     calcKeys <-
       maybe2MThrow (localExc "Invalid layer specified") $
@@ -147,7 +147,7 @@ multicentreOniomNDriver atomicTask = do
 
       -- If this was a high level original calculation transfer the multipoles to the atoms.
       when (calcK == ONIOMKey Original) $ do
-        molWithPolOutput <- atomically . readTVar $ molT
+        molWithPolOutput <- readTVarIO molT
         molWithPolTrans <- multipoleTransfer calcID molWithPolOutput
         atomically . writeTVar molT $ molWithPolTrans
   where
@@ -156,7 +156,7 @@ multicentreOniomNDriver atomicTask = do
 ----------------------------------------------------------------------------------------------------
 
 -- | A driver for geometry optimisations without microiteration. Does one full traversal of the
--- ONIOM molecule before a geometry displacement step.  Updates can happen by an arbitrary i-PI
+-- ONIOM molecule before a geometry displacement step. Updates can happen by an arbitrary i-PI
 -- server
 geomMacroDriver ::
   ( HasMolecule env,
@@ -164,50 +164,61 @@ geomMacroDriver ::
     HasInputFile env,
     HasCalcSlot env
   ) =>
-  -- | The i-PI settings that correspond to the i-PI client and server, that shall do the updates.
-  IPI ->
   RIO env ()
-geomMacroDriver ipi = do
-  -- Check if the client is still runnning and expects us to provide new data.
-  ipiServerWants <- atomically . takeTMVar $ ipi ^. #status
-  unless (ipiServerWants == Done) $ do
-    -- Get communication variables with the i-PI client and Spicy.
-    let ipiDataIn = ipi ^. #input
-        ipiPosOut = ipi ^. #output
-    molT <- view moleculeL
+geomMacroDriver = do
+  -- Obtain the Pysisyphus IPI settings for communication.
+  pysisIPI <-
+    view moleculeL >>= readTVarIO >>= \mol -> do
+      let optSettings = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation % #pysisyphus
+      case optSettings of
+        Nothing -> throw . localExc $ "Pysisyphus connection settings could not be found."
+        Just i -> return i
+  loop pysisIPI
+  where
+    localExc = SpicyIndirectionException "geomMacroDriver"
 
-    -- Obtain the molecule before i-PI modifications.
-    molOld <- atomically . readTVar $ molT
-    posData <- atomically . takeTMVar $ ipiPosOut
-    posVec <- case posData ^. #coords of
-      NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
-    molNewStruct <- updateMolWithPosVec posVec molOld
-    atomically . writeTVar molT $ molNewStruct
+    -- The optimisation loop.
+    loop pysisIPI = do
+      -- Check if the client is still runnning and expects us to provide new data.
+      ipiServerWants <- atomically . takeTMVar $ pysisIPI ^. #status
+      unless (ipiServerWants == Done) $ do
+        -- Get communication variables with the i-PI client and Spicy.
+        let ipiDataIn = pysisIPI ^. #input
+            ipiPosOut = pysisIPI ^. #output
+        molT <- view moleculeL
 
-    -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
-    ipiData <- case ipiServerWants of
-      WantForces -> do
-        multicentreOniomNDriver WTGradient
-        multicentreOniomNCollector WTGradient
-        molWithForces <- atomically . readTVar $ molT
-        molToForceData molWithForces
-      WantHessian -> do
-        multicentreOniomNDriver WTHessian
-        multicentreOniomNCollector WTHessian
-        molWithHessian <- atomically . readTVar $ molT
-        molToHessianData molWithHessian
-      Done -> do
-        logError
-          "The macro geometry driver should be done but has entered an other\
-          \ calculation loop."
-        throwM $
-          SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
+        -- Obtain the molecule before i-PI modifications.
+        molOld <- readTVarIO molT
+        posData <- atomically . takeTMVar $ ipiPosOut
+        posVec <- case posData ^. #coords of
+          NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
+        molNewStruct <- updateMolWithPosVec posVec molOld
+        atomically . writeTVar molT $ molNewStruct
 
-    -- Get the molecule in the new structure with its forces or hessian.
-    atomically . putTMVar ipiDataIn $ ipiData
+        -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
+        ipiData <- case ipiServerWants of
+          WantForces -> do
+            multicentreOniomNDriver WTGradient
+            multicentreOniomNCollector WTGradient
+            molWithForces <- readTVarIO molT
+            molToForceData molWithForces
+          WantHessian -> do
+            multicentreOniomNDriver WTHessian
+            multicentreOniomNCollector WTHessian
+            molWithHessian <- readTVarIO molT
+            molToHessianData molWithHessian
+          Done -> do
+            logError
+              "The macro geometry driver should be done but has entered an other\
+              \ calculation loop."
+            throwM $
+              SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
 
-    -- Reiterating
-    geomMacroDriver ipi
+        -- Get the molecule in the new structure with its forces or hessian.
+        atomically . putTMVar ipiDataIn $ ipiData
+
+        -- Reiterating
+        loop pysisIPI
 
 ----------------------------------------------------------------------------------------------------
 

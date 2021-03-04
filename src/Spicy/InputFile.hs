@@ -104,10 +104,21 @@ data Task
   deriving (Eq, Show, Generic)
 
 instance ToJSON Task where
-  toEncoding = genericToEncoding spicyJOption
+  toJSON Energy = toJSON @Text "energy"
+  toJSON (Optimise Macro) = toJSON @Text "optimise_macro"
+  toJSON (Optimise Micro) = toJSON @Text "optimise_micro"
+  toJSON Frequency = toJSON @Text "frequency"
+  toJSON MD = toJSON @Text "md"
 
 instance FromJSON Task where
-  parseJSON = genericParseJSON spicyJOption
+  parseJSON v =
+    case v of
+      String "energy" -> pure Energy
+      String "frequency" -> pure Frequency
+      String "md" -> pure MD
+      String "optimise_macro" -> pure $ Optimise Macro
+      String "optimise_micro" -> pure $ Optimise Micro
+      o -> fail $ "encountered unknown field for task" <> show o
 
 ----------------------------------------------------------------------------------------------------
 
@@ -119,10 +130,14 @@ data Style
   deriving (Eq, Show, Generic)
 
 instance ToJSON Style where
-  toEncoding = genericToEncoding spicyJOption
+  toJSON Macro = toJSON @Text "macro"
+  toJSON Micro = toJSON @Text "micro"
 
 instance FromJSON Style where
-  parseJSON = genericParseJSON spicyJOption
+  parseJSON v = case v of
+    String "macro" -> pure Macro
+    String "micro" -> pure Micro
+    _ -> fail "encountered unknown field for optimisation style"
 
 ----------------------------------------------------------------------------------------------------
 data InputMolecule = InputMolecule
@@ -193,16 +208,16 @@ instance FromJSON TopoChanges where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "guessBonds" k TopoChanges TopoChanges a b where
-  labelOptic = lens (\s -> guessBonds s) $ \s b -> s {guessBonds = b}
+  labelOptic = lens guessBonds $ \s b -> s {guessBonds = b}
 
 instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "radiusScaling" k TopoChanges TopoChanges a b where
-  labelOptic = lens (\s -> radiusScaling s) $ \s b -> s {radiusScaling = b}
+  labelOptic = lens radiusScaling $ \s b -> s {radiusScaling = b}
 
 instance (k ~ A_Lens, a ~ Maybe [(Int, Int)], b ~ a) => LabelOptic "bondsToRemove" k TopoChanges TopoChanges a b where
-  labelOptic = lens (\s -> bondsToRemove s) $ \s b -> s {bondsToRemove = b}
+  labelOptic = lens bondsToRemove $ \s b -> s {bondsToRemove = b}
 
 instance (k ~ A_Lens, a ~ Maybe [(Int, Int)], b ~ a) => LabelOptic "bondsToAdd" k TopoChanges TopoChanges a b where
-  labelOptic = lens (\s -> bondsToAdd s) $ \s b -> s {bondsToAdd = b}
+  labelOptic = lens bondsToAdd $ \s b -> s {bondsToAdd = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -271,34 +286,34 @@ instance FromJSON TheoryLayer where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "name" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> name s) $ \s b -> s {name = b}
+  labelOptic = lens name $ \s b -> s {name = b}
 
 instance (k ~ A_Lens, a ~ JFilePath, b ~ a) => LabelOptic "templateFile" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> templateFile s) $ \s b -> s {templateFile = b}
+  labelOptic = lens templateFile $ \s b -> s {templateFile = b}
 
 instance (k ~ A_Lens, a ~ Program, b ~ a) => LabelOptic "program" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> program s) $ \s b -> s {program = b}
+  labelOptic = lens program $ \s b -> s {program = b}
 
 instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "selection" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> selection s) $ \s b -> s {selection = b}
+  labelOptic = lens selection $ \s b -> s {selection = b}
 
 instance (k ~ A_Lens, a ~ Seq TheoryLayer, b ~ a) => LabelOptic "deeperLayer" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> deeperLayer s) $ \s b -> s {deeperLayer = b}
+  labelOptic = lens deeperLayer $ \s b -> s {deeperLayer = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "charge" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> charge s) $ \s b -> s {charge = b}
+  labelOptic = lens charge $ \s b -> s {charge = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "mult" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> mult s) $ \s b -> s {mult = b}
+  labelOptic = lens mult $ \s b -> s {mult = b}
 
 instance (k ~ A_Lens, a ~ Execution, b ~ a) => LabelOptic "execution" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> execution s) $ \s b -> s {execution = b}
+  labelOptic = lens execution $ \s b -> s {execution = b}
 
 instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> embedding s) $ \s b -> s {embedding = b}
+  labelOptic = lens embedding $ \s b -> s {embedding = b}
 
 instance (k ~ A_Lens, a ~ Maybe Opt, b ~ a) => LabelOptic "optimisation" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens (\s -> optimisation s) $ \s b -> s {optimisation = b}
+  labelOptic = lens optimisation $ \s b -> s {optimisation = b}
 
 ----------------------------------------------------------------------------------------------------
 

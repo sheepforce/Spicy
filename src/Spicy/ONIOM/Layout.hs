@@ -16,6 +16,7 @@ where
 
 import Data.Foldable
 import qualified Data.IntMap.Strict as IntMap
+import qualified Network.Socket as Net
 import Optics hiding (Empty, view)
 import RIO hiding
   ( Lens',
@@ -98,9 +99,17 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
   template <- readFileUTF8 . getFilePath $ tl ^. #templateFile
   opt <- optSettings <$> defIO
   let calcInheritOld = parentMol ^? #calcContext % ix (ONIOMKey Original) % #input
-  let childComment = textDisplay $ "Layer" <> molID2OniomHumandID (parentID |> childKey)
+      childComment = textDisplay $ "Layer" <> molID2OniomHumandID (parentID |> childKey)
       childID = parentID |> childKey
-      calcOriginal =
+      pysisSocket = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relFile "pysis.socket"
+      pysisDir = dirByIDAndCalc workDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"
+  pysis <-
+    defIO >>= \p ->
+      return $
+        p
+          & #socketAddr .~ (Net.SockAddrUnix . Path.toString $ pysisSocket)
+          & #workDir .~ Path.toAbsRel pysisDir
+  let calcOriginal =
         CalcInput
           { task = WTEnergy,
             restartFile = Nothing,
@@ -114,7 +123,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
             qMMMSpec = QM QMContext {charge = tl ^. #charge, mult = tl ^. #mult},
             template = template,
             embedding = tl ^. #embedding,
-            optimisation = opt
+            optimisation = opt & #pysisyphus .~ pysis
           }
       calcInherited = case calcInheritOld of
         Nothing -> Nothing

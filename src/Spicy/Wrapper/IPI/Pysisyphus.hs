@@ -16,9 +16,8 @@ where
 
 import Data.Aeson
 import Data.Yaml.Pretty
-import Network.Socket
 import Optics hiding (view)
-import RIO hiding (lens, view, (^.))
+import RIO hiding (lens, view, (^.), (^?))
 import RIO.Process
 import Spicy.Common
 import Spicy.Molecule
@@ -33,7 +32,7 @@ logSource :: LogSource
 logSource = "pysisyphus"
 
 -- | Exceptions thrown by Pysisphus callers.
-data PysisyphusExc = PysisyphusExc String deriving (Eq, Show)
+newtype PysisyphusExc = PysisyphusExc String deriving (Eq, Show)
 
 instance Exception PysisyphusExc
 
@@ -48,15 +47,18 @@ providePysis ::
   ( HasWrapperConfigs env,
     HasLogFunc env,
     HasProcessContext env,
-    HasPysis env,
     HasMolecule env
   ) =>
   RIO env (Async (), Async ())
 providePysis = do
   logDebugS logSource "Starting pysisyphus companion threads ..."
-
-  -- Obtain initial information.
-  pysisIPI <- view pysisL
+  molT <- view moleculeL
+  pysisIPI <-
+    readTVarIO molT >>= \mol ->
+      let maybeIPI = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation % #pysisyphus
+       in case maybeIPI of
+            Nothing -> throwM . PysisException $ "IPI connection settings missing."
+            Just ipi -> return ipi
 
   -- Start another thread in the backgroud, that runs Pysisyphus.
   -- logDebugS logSource "Starting pysisyphus i-PI server ..."
@@ -65,7 +67,7 @@ providePysis = do
 
   -- Start another thread that runs the client
   -- logDebugS logSource "Starting i-PI client loop ..."
-  clientThread <- async (ipiClient pysisIPI)
+  clientThread <- async $ ipiClient pysisIPI
   link clientThread
 
   return (serverThread, clientThread)
@@ -78,7 +80,6 @@ providePysis = do
 runPysisServer ::
   ( HasWrapperConfigs env,
     HasProcessContext env,
-    HasPysis env,
     HasLogFunc env,
     HasMolecule env
   ) =>
@@ -86,40 +87,31 @@ runPysisServer ::
 runPysisServer = do
   -- Obtain initial information
   mol <- view moleculeL >>= readTVarIO
-  ipi <- view pysisL
-  socketPath <- case ipi ^. #socketAddr of
-    SockAddrUnix path -> return path
-    SockAddrInet {} -> do
-      logErrorS logSource "Wrong socket type given. Need a UNIX socket but got an INET socket."
-      throwM . localExc $ "Wrong socket type given: INET"
-    SockAddrInet6 {} -> do
-      logErrorS logSource "Wrong socket type given. Need a UNIX socket but got an INET6 socket."
-      throwM . localExc $ "Wrong socket type given: INET6"
-  pysisWrapperM <- view $ wrapperConfigsL % #pysisyphus
-  pysisWrapper <- case pysisWrapperM of
-    Just path -> return . Path.toString . getFilePath $ path
-    Nothing -> do
-      logErrorS logSource "Pysisyphus is not configured. Cannot run optimisations. Quiting ..."
-      throwM . localExc $ "pysisyphus not found."
+  optSettings <-
+    maybe2MThrow (localExc "Missing settings for pysisyphus in the calculation input") $
+      mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
+  let pysisWorkDir = optSettings ^. #pysisyphus % #workDir
+      initCoordFile = optSettings ^. #pysisyphus % #initCoords
+  socketPath <- unixSocket2Path $ optSettings ^. #pysisyphus % #socketAddr
+  pysisWrapper <-
+    view wrapperConfigsL >>= \wc -> case wc ^. #pysisyphus of
+      Nothing -> throwM . localExc $ "Pysisyphus executable could not be located."
+      Just (JFilePath path) -> return path
 
-  -- Make the permanent pysisyphus working directory.
-  pysisDir <- view $ pysisL % #workDir
-  liftIO $ Path.createDirectoryIfMissing True pysisDir
-
-  -- Make the scratch directory, where the socket lives.
-  let socketAbsPath = Path.absFile socketPath
-      scratchDir = Path.takeDirectory socketAbsPath
+  -- Make the work directory, where pysisyphus is started, and the scratch directory, where the
+  -- socket lives.
+  liftIO $ Path.createDirectoryIfMissing True pysisWorkDir
+  let scratchDir = Path.takeDirectory socketPath
   liftIO $ Path.createDirectoryIfMissing True scratchDir
 
   -- LOG
   logDebugS logSource $
     "Pysisyphus-server companion thread. Preparing to start pysisyphus:\n"
       <> ("  UNIX socket      : " <> displayShow socketPath <> "\n")
-      <> ("  Pysisphus wrapper: " <> displayShow pysisWrapper <> "\n")
-      <> ("  Working directory: " <> path2Utf8Builder pysisDir)
+      <> ("  Pysisphus wrapper: " <> displayShow (Path.toString pysisWrapper) <> "\n")
+      <> ("  Working directory: " <> path2Utf8Builder pysisWorkDir)
 
   -- Write initial coordinates for Pysisyphus to a file at the given location.
-  initCoordFile <- view $ pysisL % #initCoords
   initCoordFileAbs <- liftIO . Path.genericMakeAbsoluteFromCwd $ initCoordFile
   writeXYZ mol >>= writeFileUTF8 (Path.toAbsRel initCoordFile)
 
@@ -130,7 +122,7 @@ runPysisServer = do
   let pysisInput = undefined :: PysisInput
 
   -- Make a working directory for Pysisyphus and write the input file to it.
-  let pysisYamlPath = pysisDir </> Path.relFile "pysis_servers_spicy.yml"
+  let pysisYamlPath = pysisWorkDir </> Path.relFile "pysis_servers_spicy.yml"
       pysisYaml = decodeUtf8Lenient . encodePretty defConfig $ pysisInput
   writeFileUTF8 pysisYamlPath pysisYaml
 
@@ -143,12 +135,13 @@ runPysisServer = do
   -- Mark the Pysis server as ready immediately before starting it.
   logDebugS logSource "Pysisyphus server starts and becomes ready ..."
   (exitCode, pysisOut, pysisErr) <-
-    withWorkingDir (Path.toString pysisDir) $ proc pysisWrapper pysisCmdArgs readProcess
+    withWorkingDir (Path.toString pysisWorkDir) $
+      proc (Path.toString pysisWrapper) pysisCmdArgs readProcess
   logDebugS logSource "Pysisyphus sever terminated."
 
   -- Pysisyphus output.
   writeFileBinary
-    (Path.toString $ pysisDir </> Path.relFile "pysisyphus.out")
+    (Path.toString $ pysisWorkDir </> Path.relFile "pysisyphus.out")
     . toStrictBytes
     $ pysisOut
 
@@ -283,3 +276,60 @@ data CalcType = IPIServer
 
 instance ToJSON CalcType where
   toJSON IPIServer = toJSON @Text "ipiserver"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Conversion of Optimisation settings to a Pysisyphus input.
+opt2Pysis :: MonadThrow m => Path.AbsFile -> Optimisation -> m PysisInput
+opt2Pysis
+  initCoordFile
+  Optimisation
+    { coordType,
+      maxCycles,
+      hessianRecalc,
+      hessianUpdate,
+      trustRadius,
+      maxTrust,
+      minTrust,
+      lineSearch,
+      optType,
+      pysisyphus
+    } = do
+    scktAddr <- unixSocket2Path $ pysisyphus ^. #socketAddr
+    return
+      PysisInput
+        { geom = geom,
+          optimiser = optimiser,
+          calc = calc . Path.toString $ scktAddr
+        }
+    where
+      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType}
+      optimiser = case optType of
+        SaddlePoint alg -> Right (tsOpt {optType = alg} :: TSOpt)
+        Minimum alg ->
+          Left $
+            MinOpt
+              { optType = alg,
+                maxCycles = maxCycles,
+                recalcHessian = hessianRecalc,
+                updateHessian = hessianUpdate,
+                lineSearch = lineSearch,
+                minTrust = minTrust,
+                maxTrust = maxTrust,
+                trustRadius = trustRadius
+              }
+      tsOpt =
+        TSOpt
+          { optType = RS_I_RFO,
+            maxCycles = maxCycles,
+            recalcHessian = hessianRecalc,
+            minTrust = minTrust,
+            maxTrust = maxTrust,
+            trustRadius = trustRadius
+          }
+      calc addr =
+        Calc
+          { calcType = IPIServer,
+            address = Just addr,
+            verbose = False
+          }

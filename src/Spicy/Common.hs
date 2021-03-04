@@ -23,7 +23,7 @@ module Spicy.Common
     -- $class
     Check (..),
     PrettyPrint (..),
-    DefaultIO(..),
+    DefaultIO (..),
 
     -- * Parser Helper Functions
     -- $parserHelper
@@ -130,6 +130,10 @@ module Spicy.Common
     -- $neighbouhrList
     NeighbourList,
 
+    -- ** Sockets
+    -- $socket
+    unixSocket2Path,
+
     -- ** Massiv
     VectorS (..),
     MatrixS (..),
@@ -175,6 +179,7 @@ import qualified Data.Text.Lazy.Builder as TB
 import qualified Data.Text.Lazy.Builder.RealFloat as TB
 import Data.Yaml.Include (decodeFileWithWarnings)
 import Formatting hiding (char)
+import Network.Socket as Net
 import Optics (A_Getter, Is, Optic', (^.))
 import RIO hiding
   ( Vector,
@@ -1385,11 +1390,27 @@ makeBondMatUnidirectorial bondMat =
 ====================================================================================================
 -}
 
--- $ neighbouhrList
+-- $neighbouhrList
 
 -- | A type alias for neighbourlists. Maps from an atom key to its neighbours within a certain
 -- distance.
 type NeighbourList = IntMap IntSet
+
+{-
+====================================================================================================
+-}
+
+-- $sockets
+
+-- | Get the path from a unix socket.
+unixSocket2Path :: MonadThrow m => SockAddr -> m Path.AbsRelFile
+unixSocket2Path sckt =
+  case sckt of
+    SockAddrUnix path -> return . Path.file $ path
+    SockAddrInet {} -> throwM . localExc $ "Wrong socket type given: INET"
+    SockAddrInet6 {} -> throwM . localExc $ "Wrong socket type given: INET6"
+  where
+    localExc = SpicyIndirectionException "unixSocket2Path"
 
 {-
 ====================================================================================================

@@ -77,25 +77,25 @@ instance DefaultIO IPI where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Socket, b ~ a) => LabelOptic "socket" k IPI IPI a b where
-  labelOptic = lens (\s -> (socket :: IPI -> Socket) s) $ \s b -> s {socket = b}
+  labelOptic = lens (socket :: IPI -> Socket) $ \s b -> s {socket = b}
 
 instance (k ~ A_Lens, a ~ SockAddr, b ~ a) => LabelOptic "socketAddr" k IPI IPI a b where
-  labelOptic = lens (\s -> socketAddr s) $ \s b -> s {socketAddr = b}
+  labelOptic = lens socketAddr $ \s b -> s {socketAddr = b}
 
 instance (k ~ A_Lens, a ~ TMVar InputData, b ~ a) => LabelOptic "input" k IPI IPI a b where
-  labelOptic = lens (\s -> (input :: IPI -> TMVar InputData) s) $ \s b -> (s {input = b} :: IPI)
+  labelOptic = lens (input :: IPI -> TMVar InputData) $ \s b -> (s {input = b} :: IPI)
 
 instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI a b where
-  labelOptic = lens (\s -> (output :: IPI -> TMVar PosData) s) $ \s b -> (s {output = b} :: IPI)
+  labelOptic = lens (output :: IPI -> TMVar PosData) $ \s b -> (s {output = b} :: IPI)
 
 instance (k ~ A_Lens, a ~ Path.AbsRelDir, b ~ a) => LabelOptic "workDir" k IPI IPI a b where
-  labelOptic = lens (\s -> workDir s) $ \s b -> s {workDir = b}
+  labelOptic = lens workDir $ \s b -> s {workDir = b}
 
 instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
-  labelOptic = lens (\s -> initCoords s) $ \s b -> s {initCoords = b}
+  labelOptic = lens initCoords $ \s b -> s {initCoords = b}
 
 instance (k ~ A_Lens, a ~ TMVar DataRequest, b ~ a) => LabelOptic "status" k IPI IPI a b where
-  labelOptic = lens (\s -> status s) $ \s b -> s {status = b}
+  labelOptic = lens status $ \s b -> s {status = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -172,7 +172,7 @@ instance Functor CellVecs where
 
 -- Serialisation
 instance Binary (CellVecs Double) where
-  put (CellVecs {a, b, c}) = do
+  put CellVecs {a, b, c} = do
     put a
     put b
     put c
@@ -196,7 +196,7 @@ data PosData = PosData
 
 -- Serialisation
 instance Binary PosData where
-  put (PosData {cell, inverseCell, coords}) = do
+  put PosData {cell, inverseCell, coords} = do
     put cell
     put inverseCell
     put coords
@@ -209,13 +209,13 @@ instance Binary PosData where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ CellVecs Double, b ~ a) => LabelOptic "cell" k PosData PosData a b where
-  labelOptic = lens (\s -> cell s) $ \s b -> s {cell = b}
+  labelOptic = lens cell $ \s b -> s {cell = b}
 
 instance (k ~ A_Lens, a ~ CellVecs Double, b ~ a) => LabelOptic "inverseCell" k PosData PosData a b where
-  labelOptic = lens (\s -> inverseCell s) $ \s b -> s {inverseCell = b}
+  labelOptic = lens inverseCell $ \s b -> s {inverseCell = b}
 
 instance (k ~ A_Lens, a ~ NetVec, b ~ a) => LabelOptic "coords" k PosData PosData a b where
-  labelOptic = lens (\s -> coords s) $ \s b -> s {coords = b}
+  labelOptic = lens coords $ \s b -> s {coords = b}
 
 ----------------------------------------------------------------------------------------------------
 

@@ -5,7 +5,7 @@ molecule:
   fileType: xyz
 model:
   theoryLayer:
-    name: BP86/def2-TZVPP
+    name: BP86/def2-SVP
     program: psi4
     charge: 0
     mult: 1
@@ -20,4 +20,4 @@ model:
       tag: electronic
       contents: [0.2,0.4]
 task:
-- optimise
+- optimise_macro

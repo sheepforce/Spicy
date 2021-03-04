@@ -20,8 +20,6 @@ import Data.FileEmbed
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Version (showVersion)
-import Network.Socket hiding (socket)
-import qualified Network.Socket as Net
 import Optics hiding (view)
 import Paths_spicy (version)
 import RIO hiding
@@ -94,12 +92,12 @@ inputToEnvAndRun = do
   inputArgs <- liftIO $ cmdArgs spicyArgs
 
   -- Look for a the spicyrc in the environment or alternatively in the home directory.
-  homeDir <- liftIO $ Dir.getHomeDirectory
+  homeDir <- liftIO Dir.getHomeDirectory
   maybeSpicyrcPath <- liftIO . lookupEnv $ "SPICYRC"
   let spicyrcPath = case maybeSpicyrcPath of
-        Nothing -> homeDir </> (Path.relFile ".spicyrc")
+        Nothing -> homeDir </> Path.relFile ".spicyrc"
         Just p -> Path.absFile p
-  wrapperConfigs' <- parseYamlFile spicyrcPath
+  wrapperConfigs <- parseYamlFile spicyrcPath
 
   -- Read the input file.
   let inputPathRel = Path.toAbsRel . Path.relFile $ inputArgs ^. #input
@@ -117,76 +115,36 @@ inputToEnvAndRun = do
   let allMolIDs = toList $ getAllMolIDsHierarchically molecule'
       motion' =
         Motion
-          { ready = False,
-            outerCycle = 0,
+          { outerCycle = 0,
             innerCycles = Map.fromList $ zip allMolIDs (repeat 0)
           }
   motionT <- newTVarIO motion'
 
   -- Create the input and output slots of the companion threads.
   -- The calculation slot, running the QC wrappers.
-  calcSlotIn <- newEmptyTMVarIO
-  calcSlotOut <- newEmptyTMVarIO
-  let calcSlot' = CalcSlot {input = calcSlotIn, output = calcSlotOut}
+  calcSlot <- defIO
 
-  -- The i-PI connection and slots.
-  iPiIn <- newEmptyTMVarIO
-  iPiOut <- newEmptyTMVarIO
-  iPiStatus <- newEmptyTMVarIO
-  iPiSocket <- liftIO $ Net.socket AF_UNIX Stream defaultProtocol
-  let permaDir = getDirPath $ inputFile ^. #permanent
-      scratchDir = getDirPath $ inputFile ^. #scratch
+  -- Directory settings.
+  let scratchDir = getDirPath $ inputFile ^. #scratch
   scratchDirAbs <- liftIO $ Path.genericMakeAbsoluteFromCwd scratchDir
-  let iPiAddr = SockAddrUnix . Path.toString $ scratchDirAbs </> Path.relFile "ipi.socket"
-      ipiWorkingDir = permaDir </> Path.relDir "i-PI"
-      ipi' =
-        IPI
-          { socket = iPiSocket,
-            socketAddr = iPiAddr,
-            input = iPiIn,
-            output = iPiOut,
-            workDir = ipiWorkingDir,
-            initCoords = ipiWorkingDir </> Path.relFile "InitialCoords.xyz",
-            status = iPiStatus
-          }
-
-  -- The Pysisyphus connection and slots.
-  pysisIn <- newEmptyTMVarIO
-  pysisOut <- newEmptyTMVarIO
-  pysisStatus <- newEmptyTMVarIO
-  pysisSocket <- liftIO $ Net.socket AF_UNIX Stream defaultProtocol
-  let pysisWorkDir = permaDir </> Path.relDir "pysisyphus"
-      pysisAddr = SockAddrUnix . Path.toString $ scratchDirAbs </>  Path.relFile "pysis.socket"
-      pysis' =
-        IPI
-          { socket = pysisSocket,
-            socketAddr = pysisAddr,
-            input = pysisIn,
-            output = pysisOut,
-            workDir = pysisWorkDir,
-            initCoords = pysisWorkDir </> Path.relFile "InitialCoords.xyz",
-            status = pysisStatus
-          }
 
   -- Make sure the scratch is empty.
-  scratchExists <- liftIO .  Dir.doesDirectoryExist $ scratchDirAbs
+  scratchExists <- liftIO . Dir.doesDirectoryExist $ scratchDirAbs
   when scratchExists . liftIO . Dir.removeDirectoryRecursive $ scratchDirAbs
 
   -- Construct the LogFunction and return the runtime environment
   logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
-  let logOptions = setLogUseTime True $ logOptions'
+  let logOptions = setLogUseTime True logOptions'
   withLogFunc logOptions $ \lf -> do
     let spicyEnv =
           SpicyEnv
             { molecule = moleculeT,
               calculation = inputFile,
-              wrapperConfigs = wrapperConfigs',
+              wrapperConfigs = wrapperConfigs,
               motion = motionT,
               procCntxt = procCntxt',
               logFunc = lf,
-              pysis = pysis',
-              ipi = ipi',
-              calcSlot = calcSlot'
+              calcSlot = calcSlot
             }
 
     -- The spicy main thread.
