@@ -17,6 +17,7 @@ where
 
 import Data.FileEmbed
 import Data.List.Split
+import qualified Data.Map as Map
 import Optics hiding (view)
 import RIO hiding
   ( view,
@@ -25,20 +26,22 @@ import RIO hiding
   )
 import qualified RIO.HashMap as HashMap
 import RIO.Process
-import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Data
 import Spicy.InputFile
 import Spicy.Molecule
 import Spicy.ONIOM.AtomicDriver
+import Spicy.ONIOM.Collector
 import Spicy.ONIOM.Layout
 import Spicy.RuntimeEnv
+import Spicy.Wrapper
 import qualified System.Path as Path
 
 logSource :: LogSource
 logSource = "JobDriver"
 
 ----------------------------------------------------------------------------------------------------
+
 -- | The Spicy Logo as ASCII art.
 jobDriverText :: Text
 jobDriverText =
@@ -50,38 +53,60 @@ spicyExecMain ::
     HasInputFile env,
     HasLogFunc env,
     HasWrapperConfigs env,
-    HasProcessContext env
+    HasProcessContext env,
+    HasCalcSlot env
   ) =>
   RIO env ()
 spicyExecMain = do
-  inputFile <- view inputFileL
+  -- Start the companion threads for i-PI, Pysis and the calculations.
+  calcSlotThread <- async provideCalcSlot
+  link calcSlotThread
 
-  -- Open the log file by starting with the job driver headline.
-  mapM_ (logInfo . text2Utf8Builder) $ Text.lines jobDriverText
+  -- Building an inital neighbourlist for large distances.
+  logInfo "Constructing initial neighbour list for molecule ..."
+  initNeighbourList
 
-  -- LOG
-  logInfo "Applying changes to the input topology ..."
   -- Apply topology updates as given in the input file to the molecule.
-  molTopologyAdaptions <- changeTopologyOfMolecule
+  logInfo "Applying changes to the input topology ..."
+  changeTopologyOfMolecule
 
-  -- LOG
-  logInfo $ "Preparing layout for a MC-ONIOMn calculation ..."
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
-  molLayouted <- local (& moleculeL .~ molTopologyAdaptions) layoutMoleculeForCalc
-  logInfo $
-    "Layouting done. Writing layout to "
-      <> (path2Utf8Builder . getDirPath $ inputFile ^. #permanent)
-      <> "."
-  -- local (& moleculeL .~ molLayouted) $ writeLayout writeXYZ
+  logInfo "Preparing layout for a MC-ONIOMn calculation ..."
+  layoutMoleculeForCalc
 
   -- Perform the specified tasks on the input file.
-  -- TODO (phillip|p=100|#Unfinished) - This is here for testing purposes. The real implementation should use a more abstract driver, that composes atomic tasks.
-  _molProcessed <- local (& moleculeL .~ molLayouted) (multicentreOniomNDriver WTGradient)
-  logDebug . display . writeSpicy $ _molProcessed
+  tasks <- view $ inputFileL % #task
+  forM_ tasks $ \t -> do
+    case t of
+      Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+      Optimise Macro -> geomMacroDriver
+      Optimise Micro -> undefined
+      Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+      MD -> do
+        logError "A MD run was requested but MD is not implemented yet."
+        throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
+
+  -- LOG
+  -- finalMol <- view moleculeL >>= atomically . readTVar
+  -- logDebug . display . writeSpicy $ finalMol
+
+  -- Kill the companion threads after we are done.
+  cancel calcSlotThread
 
   -- LOG
   logInfo "Spicy execution finished. Wup Wup!"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Construct an initial neighbour list with large distances for all atoms. Can be reduced to
+-- smaller values efficiently.
+initNeighbourList :: (HasMolecule env) => RIO env ()
+initNeighbourList = do
+  molT <- view moleculeL
+  mol <- readTVarIO molT
+  nL <- neighbourList 15 mol
+  atomically . writeTVar molT $ mol & #neighbourlist .~ Map.singleton 15 nL
 
 ----------------------------------------------------------------------------------------------------
 
@@ -92,16 +117,17 @@ spicyExecMain = do
 --   2. Remove bonds between pairs of atoms.
 --   3. Add bonds between pairs of atoms.
 changeTopologyOfMolecule ::
-  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
+  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env ()
 changeTopologyOfMolecule = do
   -- Get the molecule to manipulate
-  mol <- view moleculeL
+  molT <- view moleculeL
+  mol <- readTVarIO molT
 
   -- Get the input file information.
   inputFile <- view inputFileL
 
   case inputFile ^. #topology of
-    Nothing -> return mol
+    Nothing -> return ()
     Just topoChanges -> do
       -- Resolve the defaults to final values.
       let covScalingFactor = fromMaybe defCovScaling $ topoChanges ^. #radiusScaling
@@ -157,22 +183,15 @@ changeTopologyOfMolecule = do
           additionPairs
 
       -- The molecule after all changes to the topology have been applied.
-      return molNewBondsAdded
+      atomically . writeTVar molT $ molNewBondsAdded
 
 ----------------------------------------------------------------------------------------------------
 
 -- | Perform transformation of the molecule data structure as obtained from the input to match the
 -- requirements for the requested calculation type.
 layoutMoleculeForCalc ::
-  (HasInputFile env, HasMolecule env, HasLogFunc env) => RIO env Molecule
+  (HasInputFile env, HasMolecule env) => RIO env ()
 layoutMoleculeForCalc = do
   inputFile <- view inputFileL
   case inputFile ^. #model of
-    ONIOMn {} -> oniomNLayout
-
-----------------------------------------------------------------------------------------------------
-
--- | Supposed to run all tasks, that were specified in the input file in a stateful fashion. (Result of
--- the last task will be used as start for the next task.)
-runTasks :: RIO env Molecule
-runTasks = undefined
+    ONIOMn {} -> mcOniomNLayout

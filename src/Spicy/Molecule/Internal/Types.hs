@@ -66,6 +66,16 @@ module Spicy.Molecule.Internal.Types
     _Mechanical,
     _Electronic,
 
+    -- ** Optimiser Settings
+    Optimisation (..),
+    CoordType (..),
+    HessianUpdate (..),
+    OptType (..),
+    _Minimum,
+    _SaddlePoint,
+    TSOptAlg (..),
+    MinOptAlg (..),
+
     -- ** Energy Derivatives
     EnergyDerivatives (..),
 
@@ -91,16 +101,15 @@ module Spicy.Molecule.Internal.Types
 where
 
 import Data.Aeson
+import Data.Default
 import Data.List.Split (chunksOf)
-import Data.Massiv.Array as Massiv hiding
-  ( toList,
-  )
 import Formatting
 import Optics hiding (element)
 import RIO hiding (Lens', lens, view, (^.))
 import qualified RIO.Text as Text
 import Spicy.Aeson
 import Spicy.Common
+import Spicy.Wrapper.IPI.Types hiding (hessian, input, output)
 
 {-
 ####################################################################################################
@@ -375,13 +384,10 @@ data Molecule = Molecule
     -- representation. Also see 'Spicy.Molecule.Internal.Util.neighbourList'.
     neighbourlist :: !(Map Double NeighbourList)
   }
-  deriving (Show, Eq, Generic)
+  deriving (Generic)
 
 instance ToJSON Molecule where
   toEncoding = genericToEncoding spicyJOption
-
-instance FromJSON Molecule where
-  parseJSON = genericParseJSON spicyJOption
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "comment" k Molecule Molecule a b where
@@ -413,10 +419,7 @@ instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighb
 
 -- Reader Class
 class HasMolecule env where
-  moleculeL :: Lens' env Molecule
-
-instance HasMolecule Molecule where
-  moleculeL = castOptic simple
+  moleculeL :: Lens' env (TVar Molecule)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -546,13 +549,13 @@ instance FromJSON Fragment where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "label" k Fragment Fragment a b where
-  labelOptic = lens (\s -> (label :: Fragment -> Text) s) $ \s b -> (s {label = b} :: Fragment)
+  labelOptic = lens (label :: Fragment -> Text) $ \s b -> (s {label = b} :: Fragment)
 
 instance (k ~ A_Lens, a ~ Maybe Char, b ~ a) => LabelOptic "chain" k Fragment Fragment a b where
-  labelOptic = lens (\s -> chain s) $ \s b -> s {chain = b}
+  labelOptic = lens chain $ \s b -> s {chain = b}
 
 instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atoms" k Fragment Fragment a b where
-  labelOptic = lens (\s -> (atoms :: Fragment -> IntSet) s) $ \s b -> (s {atoms = b} :: Fragment)
+  labelOptic = lens (atoms :: Fragment -> IntSet) $ \s b -> (s {atoms = b} :: Fragment)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -594,10 +597,10 @@ data CalcID = CalcID
 
 -- Lenses
 instance (k ~ A_Lens, a ~ MolID, b ~ a) => LabelOptic "molID" k CalcID CalcID a b where
-  labelOptic = lens (\s -> molID s) $ \s b -> s {molID = b}
+  labelOptic = lens molID $ \s b -> s {molID = b}
 
 instance (k ~ A_Lens, a ~ CalcK, b ~ a) => LabelOptic "calcKey" k CalcID CalcID a b where
-  labelOptic = lens (\s -> calcKey s) $ \s b -> s {calcKey = b}
+  labelOptic = lens calcKey $ \s b -> s {calcKey = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -617,7 +620,7 @@ instance FromJSON CalcK where
 
 -- Prisms
 _ONIOMKey :: Prism' CalcK ONIOMHierarchy
-_ONIOMKey = prism' (\b -> ONIOMKey b) $ \s -> case s of
+_ONIOMKey = prism' ONIOMKey $ \s -> case s of
   ONIOMKey b -> Just b
 
 ----------------------------------------------------------------------------------------------------
@@ -673,19 +676,19 @@ instance PrettyPrint Multipoles where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Maybe Monopole, b ~ a) => LabelOptic "monopole" k Multipoles Multipoles a b where
-  labelOptic = lens (\s -> monopole s) $ \s b -> s {monopole = b}
+  labelOptic = lens monopole $ \s b -> s {monopole = b}
 
 instance (k ~ A_Lens, a ~ Maybe Dipole, b ~ a) => LabelOptic "dipole" k Multipoles Multipoles a b where
-  labelOptic = lens (\s -> dipole s) $ \s b -> s {dipole = b}
+  labelOptic = lens dipole $ \s b -> s {dipole = b}
 
 instance (k ~ A_Lens, a ~ Maybe Quadrupole, b ~ a) => LabelOptic "quadrupole" k Multipoles Multipoles a b where
-  labelOptic = lens (\s -> quadrupole s) $ \s b -> s {quadrupole = b}
+  labelOptic = lens quadrupole $ \s b -> s {quadrupole = b}
 
 instance (k ~ A_Lens, a ~ Maybe Octopole, b ~ a) => LabelOptic "octopole" k Multipoles Multipoles a b where
-  labelOptic = lens (\s -> octopole s) $ \s b -> s {octopole = b}
+  labelOptic = lens octopole $ \s b -> s {octopole = b}
 
 instance (k ~ A_Lens, a ~ Maybe Hexadecapole, b ~ a) => LabelOptic "hexadecapole" k Multipoles Multipoles a b where
-  labelOptic = lens (\s -> hexadecapole s) $ \s b -> s {hexadecapole = b}
+  labelOptic = lens hexadecapole $ \s b -> s {hexadecapole = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -708,7 +711,7 @@ type MultipoleR0 = Monopole
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q00" k Monopole Monopole a b where
-  labelOptic = lens (\s -> q00 s) $ \s b -> s {q00 = b}
+  labelOptic = lens q00 $ \s b -> s {q00 = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -733,13 +736,13 @@ type MultipoleR1 = Dipole
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q10" k Dipole Dipole a b where
-  labelOptic = lens (\s -> q11c s) $ \s b -> s {q10 = b}
+  labelOptic = lens q11c $ \s b -> s {q10 = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q11c" k Dipole Dipole a b where
-  labelOptic = lens (\s -> q11c s) $ \s b -> s {q11c = b}
+  labelOptic = lens q11c $ \s b -> s {q11c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q11s" k Dipole Dipole a b where
-  labelOptic = lens (\s -> q11s s) $ \s b -> s {q11s = b}
+  labelOptic = lens q11s $ \s b -> s {q11s = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -766,19 +769,19 @@ type MultipoleR2 = Quadrupole
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q20" k Quadrupole Quadrupole a b where
-  labelOptic = lens (\s -> q20 s) $ \s b -> s {q20 = b}
+  labelOptic = lens q20 $ \s b -> s {q20 = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q21c" k Quadrupole Quadrupole a b where
-  labelOptic = lens (\s -> q21c s) $ \s b -> s {q21c = b}
+  labelOptic = lens q21c $ \s b -> s {q21c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q21s" k Quadrupole Quadrupole a b where
-  labelOptic = lens (\s -> q21s s) $ \s b -> s {q21s = b}
+  labelOptic = lens q21s $ \s b -> s {q21s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q22c" k Quadrupole Quadrupole a b where
-  labelOptic = lens (\s -> q22c s) $ \s b -> s {q22c = b}
+  labelOptic = lens q22c $ \s b -> s {q22c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q22s" k Quadrupole Quadrupole a b where
-  labelOptic = lens (\s -> q22s s) $ \s b -> s {q22s = b}
+  labelOptic = lens q22s $ \s b -> s {q22s = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -807,25 +810,25 @@ type MultipoleR3 = Octopole
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q30" k Octopole Octopole a b where
-  labelOptic = lens (\s -> q30 s) $ \s b -> s {q30 = b}
+  labelOptic = lens q30 $ \s b -> s {q30 = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q31c" k Octopole Octopole a b where
-  labelOptic = lens (\s -> q31c s) $ \s b -> s {q31c = b}
+  labelOptic = lens q31c $ \s b -> s {q31c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q31s" k Octopole Octopole a b where
-  labelOptic = lens (\s -> q31s s) $ \s b -> s {q31s = b}
+  labelOptic = lens q31s $ \s b -> s {q31s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q32c" k Octopole Octopole a b where
-  labelOptic = lens (\s -> q32c s) $ \s b -> s {q32c = b}
+  labelOptic = lens q32c $ \s b -> s {q32c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q32s" k Octopole Octopole a b where
-  labelOptic = lens (\s -> q32s s) $ \s b -> s {q32s = b}
+  labelOptic = lens q32s $ \s b -> s {q32s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q33c" k Octopole Octopole a b where
-  labelOptic = lens (\s -> q33c s) $ \s b -> s {q33c = b}
+  labelOptic = lens q33c $ \s b -> s {q33c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q33s" k Octopole Octopole a b where
-  labelOptic = lens (\s -> q33s s) $ \s b -> s {q33s = b}
+  labelOptic = lens q33s $ \s b -> s {q33s = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -856,31 +859,31 @@ type MultipoleR4 = Hexadecapole
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q40" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q40 s) $ \s b -> s {q40 = b}
+  labelOptic = lens q40 $ \s b -> s {q40 = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q41c" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q41c s) $ \s b -> s {q41c = b}
+  labelOptic = lens q41c $ \s b -> s {q41c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q41s" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q41s s) $ \s b -> s {q41s = b}
+  labelOptic = lens q41s $ \s b -> s {q41s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q42c" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q42c s) $ \s b -> s {q42c = b}
+  labelOptic = lens q42c $ \s b -> s {q42c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q42s" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q42s s) $ \s b -> s {q42s = b}
+  labelOptic = lens q42s $ \s b -> s {q42s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q43c" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q43c s) $ \s b -> s {q43c = b}
+  labelOptic = lens q43c $ \s b -> s {q43c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q43s" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q43s s) $ \s b -> s {q43s = b}
+  labelOptic = lens q43s $ \s b -> s {q43s = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q44c" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q44c s) $ \s b -> s {q44c = b}
+  labelOptic = lens q44c $ \s b -> s {q44c = b}
 
 instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "q44s" k Hexadecapole Hexadecapole a b where
-  labelOptic = lens (\s -> q44s s) $ \s b -> s {q44s = b}
+  labelOptic = lens q44s $ \s b -> s {q44s = b}
 
 {-
 ====================================================================================================
@@ -908,9 +911,217 @@ _Mechanical = prism' (const Mechanical) $ \s -> case s of
   _ -> Nothing
 
 _Electronic :: Prism' Embedding (Maybe (Seq Double))
-_Electronic = prism' (\b -> Electronic b) $ \s -> case s of
+_Electronic = prism' Electronic $ \s -> case s of
   Electronic b -> Just b
   _ -> Nothing
+
+{-
+====================================================================================================
+-}
+
+-- | Settings for optimisers. Those are specific for a given layer if microiterations are used.
+-- If only macroiterations are used, the settings of the real system will be used.
+data Optimisation = Optimisation
+  { coordType :: CoordType,
+    -- | Maximum number of geometry optimisation iterations.
+    maxCycles :: Int,
+    -- | Recalculate a true hessian every n steps. If this is 'Nothing' no hessians will be
+    -- calculated
+    hessianRecalc :: Maybe Int,
+    -- | How the hessian is updated through the curse of the optimisation.
+    hessianUpdate :: HessianUpdate,
+    -- | Initial trust radius of the optimisation.
+    trustRadius :: Double,
+    -- | Maximum of the trust radius in optimisation.
+    maxTrust :: Double,
+    -- | Minimum of the trust radius in optimisation.
+    minTrust :: Double,
+    -- | Whether to perform a line search.
+    lineSearch :: Bool,
+    -- | Optimisation to either minima or saddle points.
+    optType :: OptType,
+    -- | Pysisyphus connection settings.
+    pysisyphus :: IPI
+  }
+
+instance DefaultIO Optimisation where
+  defIO =
+    return
+      Optimisation
+        { coordType = DLC,
+          maxCycles = 50,
+          hessianRecalc = Nothing,
+          hessianUpdate = BFGS,
+          trustRadius = 0.3,
+          minTrust = 0.1,
+          maxTrust = 1.0,
+          lineSearch = True,
+          optType = Minimum RFO,
+          pysisyphus = undefined
+        }
+
+instance ToJSON Optimisation where
+  toJSON
+    Optimisation
+      { coordType,
+        maxCycles,
+        hessianRecalc,
+        hessianUpdate,
+        trustRadius,
+        maxTrust,
+        minTrust,
+        lineSearch,
+        optType
+      } =
+      object
+        [ "coordType" .= coordType,
+          "maxCycles" .= maxCycles,
+          "hessianRecalc" .= hessianRecalc,
+          "hessianUpdate" .= hessianUpdate,
+          "trustRadius" .= trustRadius,
+          "maxTrust" .= maxTrust,
+          "minTrust" .= minTrust,
+          "lineSearch" .= lineSearch,
+          "optType" .= optType
+        ]
+
+-- Lenses
+instance (k ~ A_Lens, a ~ CoordType, b ~ a) => LabelOptic "coordType" k Optimisation Optimisation a b where
+  labelOptic = lens coordType $ \s b -> s {coordType = b}
+
+instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "maxCycles" k Optimisation Optimisation a b where
+  labelOptic = lens maxCycles $ \s b -> s {maxCycles = b}
+
+instance (k ~ A_Lens, a ~ Maybe Int, b ~ a) => LabelOptic "hessianRecalc" k Optimisation Optimisation a b where
+  labelOptic = lens hessianRecalc $ \s b -> s {hessianRecalc = b}
+
+instance (k ~ A_Lens, a ~ HessianUpdate, b ~ a) => LabelOptic "hessianUpdate" k Optimisation Optimisation a b where
+  labelOptic = lens hessianUpdate $ \s b -> s {hessianUpdate = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "trustRadius" k Optimisation Optimisation a b where
+  labelOptic = lens trustRadius $ \s b -> s {trustRadius = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "maxTrust" k Optimisation Optimisation a b where
+  labelOptic = lens maxTrust $ \s b -> s {maxTrust = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "minTrust" k Optimisation Optimisation a b where
+  labelOptic = lens minTrust $ \s b -> s {minTrust = b}
+
+instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "lineSearch" k Optimisation Optimisation a b where
+  labelOptic = lens lineSearch $ \s b -> s {lineSearch = b}
+
+instance (k ~ A_Lens, a ~ OptType, b ~ a) => LabelOptic "optType" k Optimisation Optimisation a b where
+  labelOptic = lens optType $ \s b -> s {optType = b}
+
+instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisyphus" k Optimisation Optimisation a b where
+  labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}
+
+----------------------------------------------------------------------------------------------------
+
+-- | Type of coordinates used for optimisation.
+data CoordType
+  = DLC
+  | Cart
+  | Redund
+  deriving (Eq, Show)
+
+instance FromJSON CoordType where
+  parseJSON v = case v of
+    String "dlc" -> pure DLC
+    String "cart" -> pure Cart
+    String "redund" -> pure Redund
+    _ -> fail "encountered unknown field for CoordType"
+
+instance ToJSON CoordType where
+  toJSON v = case v of
+    DLC -> toJSON @Text "dlc"
+    Cart -> toJSON @Text "cart"
+    Redund -> toJSON @Text "redund"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Algorithm to keep an approximate hessian up to date between optimisation steps.
+data HessianUpdate
+  = BFGS
+  | FlowChart
+  | DampedBFGS
+  | Bofill
+  deriving (Eq, Show)
+
+instance FromJSON HessianUpdate where
+  parseJSON v = case v of
+    String "bfgs" -> pure BFGS
+    String "flowchart" -> pure FlowChart
+    String "damped_bfgs" -> pure DampedBFGS
+    String "bofill" -> pure Bofill
+    _ -> fail "encountered unknown field for TSOptAlg"
+
+instance ToJSON HessianUpdate where
+  toJSON v = case v of
+    BFGS -> toJSON @Text "bfgs"
+    FlowChart -> toJSON @Text "flowchart"
+    DampedBFGS -> toJSON @Text "damped_bfgs"
+    Bofill -> toJSON @Text "bofill"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Optimisation type.
+data OptType
+  = Minimum MinOptAlg
+  | SaddlePoint TSOptAlg
+  deriving (Eq, Show, Generic)
+
+instance FromJSON OptType
+
+instance ToJSON OptType
+
+-- Prisms
+_Minimum :: Prism' OptType MinOptAlg
+_Minimum = prism' Minimum $ \s -> case s of
+  Minimum b -> Just b
+  _ -> Nothing
+
+_SaddlePoint :: Prism' OptType TSOptAlg
+_SaddlePoint = prism' SaddlePoint $ \s -> case s of
+  SaddlePoint b -> Just b
+  _ -> Nothing
+
+----------------------------------------------------------------------------------------------------
+
+-- | Optimisation algorithms for transition state/saddle point search.
+data TSOptAlg
+  = RS_I_RFO
+  | RS_P_RFO
+  | TRIM
+  deriving (Eq, Show)
+
+instance FromJSON TSOptAlg where
+  parseJSON v = case v of
+    String "rsirfo" -> pure RS_I_RFO
+    String "rsprfo" -> pure RS_P_RFO
+    String "trim" -> pure TRIM
+    _ -> fail "encountered unknown field for TSOptAlg"
+
+instance ToJSON TSOptAlg where
+  toJSON v = case v of
+    RS_I_RFO -> toJSON @Text "rsirfo"
+    RS_P_RFO -> toJSON @Text "rsprfo"
+    TRIM -> toJSON @Text "trim"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Optimisation algorithm for geometry optimisation to minima.
+data MinOptAlg
+  = RFO
+  deriving (Eq, Show)
+
+instance FromJSON MinOptAlg where
+  parseJSON v = case v of
+    String "rfo" -> pure RFO
+    _ -> fail "encountered unknown field for MinOptAlg"
+
+instance ToJSON MinOptAlg where
+  toJSON RFO = toJSON @Text "rfo"
 
 {-
 ====================================================================================================
@@ -943,13 +1154,13 @@ instance Default EnergyDerivatives where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "energy" k EnergyDerivatives EnergyDerivatives a b where
-  labelOptic = lens (\s -> energy s) $ \s b -> s {energy = b}
+  labelOptic = lens energy $ \s b -> s {energy = b}
 
 instance (k ~ A_Lens, a ~ Maybe (VectorS Double), b ~ a) => LabelOptic "gradient" k EnergyDerivatives EnergyDerivatives a b where
-  labelOptic = lens (\s -> gradient s) $ \s b -> s {gradient = b}
+  labelOptic = lens gradient $ \s b -> s {gradient = b}
 
 instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "hessian" k EnergyDerivatives EnergyDerivatives a b where
-  labelOptic = lens (\s -> hessian s) $ \s b -> s {hessian = b}
+  labelOptic = lens hessian $ \s b -> s {hessian = b}
 
 {-
 ====================================================================================================
@@ -1006,10 +1217,10 @@ instance FromJSON QMContext where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "charge" k QMContext QMContext a b where
-  labelOptic = lens (\s -> charge s) $ \s b -> s {charge = b}
+  labelOptic = lens charge $ \s b -> s {charge = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "mult" k QMContext QMContext a b where
-  labelOptic = lens (\s -> mult s) $ \s b -> s {mult = b}
+  labelOptic = lens mult $ \s b -> s {mult = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1040,12 +1251,12 @@ instance FromJSON QMMMSpec
 
 -- Prisms
 _QM :: Prism' QMMMSpec QMContext
-_QM = prism' (\b -> QM b) $ \s -> case s of
+_QM = prism' QM $ \s -> case s of
   QM b -> Just b
   _ -> Nothing
 
 _MM :: Prism' QMMMSpec MMContext
-_MM = prism' (\b -> MM b) $ \s -> case s of
+_MM = prism' MM $ \s -> case s of
   MM b -> Just b
   _ -> Nothing
 
@@ -1059,19 +1270,16 @@ data CalcContext = CalcContext
     --   defined by the 'CalcInput'.
     output :: !(Maybe CalcOutput)
   }
-  deriving (Eq, Show, Generic)
+  deriving (Generic)
 
 instance ToJSON CalcContext where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcContext where
-  parseJSON = genericParseJSON spicyJOption
-
 instance (k ~ A_Lens, a ~ CalcInput, b ~ a) => LabelOptic "input" k CalcContext CalcContext a b where
-  labelOptic = lens (\s -> input s) $ \s b -> s {input = b}
+  labelOptic = lens input $ \s b -> s {input = b}
 
 instance (k ~ A_Lens, a ~ Maybe CalcOutput, b ~ a) => LabelOptic "output" k CalcContext CalcContext a b where
-  labelOptic = lens (\s -> output s) $ \s b -> s {output = b}
+  labelOptic = lens output $ \s b -> s {output = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1114,52 +1322,55 @@ data CalcInput = CalcInput
     --   part. Might be ignored for Inherited
     --   calculations in ONIOM (low calculation
     --   level on model system).
-    embedding :: !Embedding
+    embedding :: !Embedding,
+    -- | Settings for geometry optimisations on this layer. Always given and if not specified in the
+    -- input defaulting.
+    optimisation :: !Optimisation
   }
-  deriving (Eq, Show, Generic)
+  deriving (Generic)
 
 instance ToJSON CalcInput where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcInput where
-  parseJSON = genericParseJSON spicyJOption
-
 -- Lenses
 instance (k ~ A_Lens, a ~ WrapperTask, b ~ a) => LabelOptic "task" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> task s) $ \s b -> s {task = b}
+  labelOptic = lens task $ \s b -> s {task = b}
 
-instance (k ~ A_Lens, a ~ (Maybe JFilePathAbs), b ~ a) => LabelOptic "restartFile" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> restartFile s) $ \s b -> s {restartFile = b}
+instance (k ~ A_Lens, a ~ Maybe JFilePathAbs, b ~ a) => LabelOptic "restartFile" k CalcInput CalcInput a b where
+  labelOptic = lens restartFile $ \s b -> s {restartFile = b}
 
 instance (k ~ A_Lens, a ~ Program, b ~ a) => LabelOptic "software" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> software s) $ \s b -> s {software = b}
+  labelOptic = lens software $ \s b -> s {software = b}
 
 instance (k ~ A_Lens, a ~ String, b ~ a) => LabelOptic "prefixName" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> prefixName s) $ \s b -> s {prefixName = b}
+  labelOptic = lens prefixName $ \s b -> s {prefixName = b}
 
 instance (k ~ A_Lens, a ~ JDirPathAbs, b ~ a) => LabelOptic "permaDir" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> permaDir s) $ \s b -> s {permaDir = b}
+  labelOptic = lens permaDir $ \s b -> s {permaDir = b}
 
 instance (k ~ A_Lens, a ~ JDirPathAbs, b ~ a) => LabelOptic "scratchDir" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> scratchDir s) $ \s b -> s {scratchDir = b}
+  labelOptic = lens scratchDir $ \s b -> s {scratchDir = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "nProcs" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> nProcs s) $ \s b -> s {nProcs = b}
+  labelOptic = lens nProcs $ \s b -> s {nProcs = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "nThreads" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> nThreads s) $ \s b -> s {nThreads = b}
+  labelOptic = lens nThreads $ \s b -> s {nThreads = b}
 
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "memory" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> memory s) $ \s b -> s {memory = b}
+  labelOptic = lens memory $ \s b -> s {memory = b}
 
 instance (k ~ A_Lens, a ~ QMMMSpec, b ~ a) => LabelOptic "qMMMSpec" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> qMMMSpec s) $ \s b -> s {qMMMSpec = b}
+  labelOptic = lens qMMMSpec $ \s b -> s {qMMMSpec = b}
 
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "template" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> template s) $ \s b -> s {template = b}
+  labelOptic = lens template $ \s b -> s {template = b}
 
 instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInput CalcInput a b where
-  labelOptic = lens (\s -> embedding s) $ \s b -> s {embedding = b}
+  labelOptic = lens embedding $ \s b -> s {embedding = b}
+
+instance (k ~ A_Lens, a ~ Optimisation, b ~ a) => LabelOptic "optimisation" k CalcInput CalcInput a b where
+  labelOptic = lens optimisation $ \s b -> s {optimisation = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1181,15 +1392,12 @@ data CalcOutput = CalcOutput
 instance ToJSON CalcOutput where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON CalcOutput where
-  parseJSON = genericParseJSON spicyJOption
-
 instance (k ~ A_Lens, a ~ EnergyDerivatives, b ~ a) => LabelOptic "energyDerivatives" k CalcOutput CalcOutput a b where
-  labelOptic = lens (\s -> (energyDerivatives :: CalcOutput -> EnergyDerivatives) s) $
+  labelOptic = lens (energyDerivatives :: CalcOutput -> EnergyDerivatives) $
     \s b -> (s {energyDerivatives = b} :: CalcOutput)
 
 instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k CalcOutput CalcOutput a b where
-  labelOptic = lens (\s -> (multipoles :: CalcOutput -> IntMap Multipoles) s) $
+  labelOptic = lens (multipoles :: CalcOutput -> IntMap Multipoles) $
     \s b -> (s {multipoles = b} :: CalcOutput)
 
 {-
@@ -1207,6 +1415,10 @@ instance ToJSON Program where
 
 instance FromJSON Program where
   parseJSON = genericParseJSON spicyJOption
+
+{-
+====================================================================================================
+-}
 
 {-
 ####################################################################################################
@@ -1231,7 +1443,7 @@ fMPLabel = sformat ((fitRight 4 %. right 4 ' ' %. stext) Formatting.% " = ")
 
 -- | Formatter for a labeled Multipole component.
 fMPComp :: (Text, Double) -> Text
-fMPComp (mLabel, value) = (fMPLabel mLabel) <> (fShortDouble value)
+fMPComp (mLabel, value) = fMPLabel mLabel <> fShortDouble value
 
 -- | Formatter for components of the multipole.
 fMP :: [(Text, Double)] -> Utf8Builder

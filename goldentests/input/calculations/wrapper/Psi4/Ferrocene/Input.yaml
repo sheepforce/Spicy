@@ -1,19 +1,15 @@
-permanent:
-  dirpath: Tests/permanent
-scratch:
-  dirpath: Tests/scratch
+permanent: Tests/permanent
+scratch: Tests/scratch
 molecule:
-  path:
-    filepath: goldentests/input/molecules/Ferrocene.xyz
+  path: goldentests/input/molecules/Ferrocene.xyz
   fileType: xyz
 model:
   theoryLayer:
-    name: BP86/def2-TZVPP
+    name: BP86/def2-SVP
     program: psi4
     charge: 0
     mult: 1
-    templateFile:
-      filepath: goldentests/input/calculations/wrapper/Psi4/Ferrocene/Template.psi
+    templateFile: goldentests/input/calculations/wrapper/Psi4/Ferrocene/Template.psi
     execution:
       nProcesses: 1
       nThreads: 8

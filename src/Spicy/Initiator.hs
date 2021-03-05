@@ -17,6 +17,7 @@ where
 
 import Data.Char
 import Data.FileEmbed
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Version (showVersion)
 import Optics hiding (view)
@@ -27,6 +28,7 @@ import RIO hiding
     (.~),
     (^.),
   )
+import RIO.List (repeat)
 import RIO.Process
 import Spicy.CmdArgs
 import Spicy.Common
@@ -42,6 +44,7 @@ import qualified System.Path.Directory as Dir
 
 logSource :: LogSource
 logSource = "Initiator"
+
 ----------------------------------------------------------------------------------------------------
 
 -- | The Spicy Logo as ASCII art.
@@ -84,17 +87,17 @@ spicyMain =
 -- - The molecule will be read from a file as specified in the input file. It will be used directly as
 --   obtained from the parser. Layouting for subsequent calculations is subject to the main call of
 --   spicy.
-inputToEnvAndRun   :: (HasLogFunc env) => RIO env ()
+inputToEnvAndRun :: (HasLogFunc env) => RIO env ()
 inputToEnvAndRun = do
   inputArgs <- liftIO $ cmdArgs spicyArgs
 
   -- Look for a the spicyrc in the environment or alternatively in the home directory.
-  homeDir <- liftIO $ Dir.getHomeDirectory
+  homeDir <- liftIO Dir.getHomeDirectory
   maybeSpicyrcPath <- liftIO . lookupEnv $ "SPICYRC"
   let spicyrcPath = case maybeSpicyrcPath of
-        Nothing -> homeDir </> (Path.relFile ".spicyrc")
+        Nothing -> homeDir </> Path.relFile ".spicyrc"
         Just p -> Path.absFile p
-  wrapperConfigs' <- parseYamlFile spicyrcPath
+  wrapperConfigs <- parseYamlFile spicyrcPath
 
   -- Read the input file.
   let inputPathRel = Path.toAbsRel . Path.relFile $ inputArgs ^. #input
@@ -103,30 +106,48 @@ inputToEnvAndRun = do
 
   -- Read the input molecule.
   molecule' <- loadInputMolecule $ inputFile ^. #molecule
+  moleculeT <- newTVarIO molecule'
 
-  -- Construct the process context
+  -- Construct the process context.
   procCntxt' <- mkDefaultProcessContext
 
-  -- LOG
-  logDebugS logSource $ "Home directory: " <> displayShow homeDir
-  logDebugS logSource $ "SpicyRC: " <> displayShow spicyrcPath
-  logDebugS logSource $ "Wrapper configuration:\n" <> displayShow wrapperConfigs'
-  logDebugS logSource $ "Input file:\n" <> displayShow inputFile
-  logDebugS logSource $ "Input molecule:\n" <> displayShow molecule'
+  -- Construct the motion state.
+  let allMolIDs = toList $ getAllMolIDsHierarchically molecule'
+      motion' =
+        Motion
+          { outerCycle = 0,
+            innerCycles = Map.fromList $ zip allMolIDs (repeat 0)
+          }
+  motionT <- newTVarIO motion'
+
+  -- Create the input and output slots of the companion threads.
+  -- The calculation slot, running the QC wrappers.
+  calcSlot <- defIO
+
+  -- Directory settings.
+  let scratchDir = getDirPath $ inputFile ^. #scratch
+  scratchDirAbs <- liftIO $ Path.genericMakeAbsoluteFromCwd scratchDir
+
+  -- Make sure the scratch is empty.
+  scratchExists <- liftIO . Dir.doesDirectoryExist $ scratchDirAbs
+  when scratchExists . liftIO . Dir.removeDirectoryRecursive $ scratchDirAbs
 
   -- Construct the LogFunction and return the runtime environment
   logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
-  let logOptions = setLogUseTime True $ logOptions'
+  let logOptions = setLogUseTime True logOptions'
   withLogFunc logOptions $ \lf -> do
     let spicyEnv =
           SpicyEnv
-            { molecule = molecule',
+            { molecule = moleculeT,
               calculation = inputFile,
-              wrapperConfigs = wrapperConfigs',
-              motion = Nothing,
+              wrapperConfigs = wrapperConfigs,
+              motion = motionT,
               procCntxt = procCntxt',
-              logFunc = lf
+              logFunc = lf,
+              calcSlot = calcSlot
             }
+
+    -- The spicy main thread.
     runRIO spicyEnv spicyExecMain
 
 ----------------------------------------------------------------------------------------------------

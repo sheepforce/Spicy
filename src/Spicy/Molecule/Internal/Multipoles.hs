@@ -42,6 +42,7 @@ module Spicy.Molecule.Internal.Multipoles
   )
 where
 
+import Data.Default
 import qualified Data.IntMap as IntMap
 import Data.Massiv.Array as Massiv hiding (swap)
 import Data.Tuple (swap)
@@ -269,7 +270,7 @@ sphericalToLocal matE sphModel = do
 
   let matP = sphModel ^. #axesSystem
       matPT = computeAs S . setComp Seq . transpose $ matP
-  matC <- extractFromToM (0 :. 0) (3 :. nC) valueMat
+  matC <- compute <$> extractFromToM (0 :. 0) (3 :. nC) valueMat
   chargeMag <- extractFromToM (3 :. 0) (4 :. nC) valueMat
 
   -- The matrix equation applied.
@@ -339,7 +340,7 @@ groupsInFrag ::
   BondMatrix ->
   m (Seq BestBondPartners)
 groupsInFrag atoms nl bondMat = do
-  let dummyFrag = Fragment { label = "dummy", chain = Nothing, atoms = IntMap.keysSet atoms}
+  let dummyFrag = Fragment {label = "dummy", chain = Nothing, atoms = IntMap.keysSet atoms}
       dummyMol =
         Molecule
           { comment = mempty,

@@ -40,6 +40,16 @@ module Spicy.Molecule
     _Mechanical,
     _Electronic,
 
+    -- ** Optimiser Settings
+    Optimisation (..),
+    CoordType (..),
+    HessianUpdate (..),
+    OptType (..),
+    _Minimum,
+    _SaddlePoint,
+    TSOptAlg (..),
+    MinOptAlg (..),
+
     -- ** Energy Derivatives
     EnergyDerivatives (..),
 
@@ -89,6 +99,10 @@ module Spicy.Molecule
     isAtomLink,
     removeRealLinkTagsFromModel,
     molToPointCharges,
+    getAllCalcIDsHierarchically,
+    getAllMolIDsHierarchically,
+    updateMolWithPosVec,
+    shrinkNeighbourList,
 
     -- * Writer
     writeXYZ,

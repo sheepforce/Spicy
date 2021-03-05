@@ -57,6 +57,7 @@ import qualified RIO.Set as Set
 import qualified RIO.Text as Text
 import qualified RIO.Text.Lazy as TL
 import Spicy.Common
+import Spicy.Data
 import Spicy.Math
 import Spicy.Molecule
 
@@ -79,19 +80,19 @@ data FChk = FChk
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "title" k FChk FChk a b where
-  labelOptic = lens (\s -> title s) $ \s b -> s {title = b}
+  labelOptic = lens title $ \s b -> s {title = b}
 
 instance (k ~ A_Lens, a ~ CalcType, b ~ a) => LabelOptic "calcType" k FChk FChk a b where
-  labelOptic = lens (\s -> calcType s) $ \s b -> s {calcType = b}
+  labelOptic = lens calcType $ \s b -> s {calcType = b}
 
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "basis" k FChk FChk a b where
-  labelOptic = lens (\s -> basis s) $ \s b -> s {basis = b}
+  labelOptic = lens basis $ \s b -> s {basis = b}
 
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "method" k FChk FChk a b where
-  labelOptic = lens (\s -> method s) $ \s b -> s {method = b}
+  labelOptic = lens method $ \s b -> s {method = b}
 
 instance (k ~ A_Lens, a ~ Map Text Content, b ~ a) => LabelOptic "blocks" k FChk FChk a b where
-  labelOptic = lens (\s -> blocks s) $ \s b -> s {blocks = b}
+  labelOptic = lens blocks $ \s b -> s {blocks = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -105,12 +106,12 @@ data Content
 
 -- Prisms
 _Scalar :: Prism' Content ScalarVal
-_Scalar = prism (\b -> Scalar b) $ \s -> case s of
+_Scalar = prism Scalar $ \s -> case s of
   Scalar b -> Right b
   a -> Left a
 
 _Array :: Prism' Content ArrayVal
-_Array = prism (\b -> Array b) $ \s -> case s of
+_Array = prism Array $ \s -> case s of
   Array b -> Right b
   a -> Left a
 
@@ -131,22 +132,22 @@ data ArrayVal
 
 -- Prisms
 _ArrayInt :: Prism' ArrayVal (Vector S Int)
-_ArrayInt = prism (\b -> ArrayInt b) $ \s -> case s of
+_ArrayInt = prism ArrayInt $ \s -> case s of
   ArrayInt b -> Right b
   a -> Left a
 
 _ArrayDouble :: Prism' ArrayVal (Vector S Double)
-_ArrayDouble = prism (\b -> ArrayDouble b) $ \s -> case s of
+_ArrayDouble = prism ArrayDouble $ \s -> case s of
   ArrayDouble b -> Right b
   a -> Left a
 
 _ArrayText :: Prism' ArrayVal Text
-_ArrayText = prism (\b -> ArrayText b) $ \s -> case s of
+_ArrayText = prism ArrayText $ \s -> case s of
   ArrayText b -> Right b
   a -> Left a
 
 _ArrayLogical :: Prism' ArrayVal (Vector S Bool)
-_ArrayLogical = prism (\b -> ArrayLogical b) $ \s -> case s of
+_ArrayLogical = prism ArrayLogical $ \s -> case s of
   ArrayLogical b -> Right b
   a -> Left a
 
@@ -162,22 +163,22 @@ data ScalarVal
 
 -- Prisms
 _ScalarInt :: Prism' ScalarVal Int
-_ScalarInt = prism' (\b -> ScalarInt b) $ \s -> case s of
+_ScalarInt = prism' ScalarInt $ \s -> case s of
   ScalarInt b -> Just b
   _ -> Nothing
 
 _ScalarDouble :: Prism' ScalarVal Double
-_ScalarDouble = prism' (\b -> ScalarDouble b) $ \s -> case s of
+_ScalarDouble = prism' ScalarDouble $ \s -> case s of
   ScalarDouble b -> Just b
   _ -> Nothing
 
 _ScalarText :: Prism' ScalarVal Text
-_ScalarText = prism' (\b -> ScalarText b) $ \s -> case s of
+_ScalarText = prism' ScalarText $ \s -> case s of
   ScalarText b -> Just b
   _ -> Nothing
 
 _ScalarLogical :: Prism' ScalarVal Bool
-_ScalarLogical = prism' (\b -> ScalarLogical b) $ \s -> case s of
+_ScalarLogical = prism' ScalarLogical $ \s -> case s of
   ScalarLogical b -> Just b
   _ -> Nothing
 
@@ -235,13 +236,22 @@ getResultsFromFChk content = do
   fchk <- parse' fChk content
   let fchkBlocks = fchk ^. #blocks
       energy' = fchkBlocks Map.!? "Total Energy"
-      gradient' = fchkBlocks Map.!? "Cartesian Gradient"
+      gradientBohr = (fchkBlocks Map.!? "Cartesian Gradient") ^? _Just % _Array % _ArrayDouble
       hessianContent = fchkBlocks Map.!? "Cartesian Force Constants"
 
   let hessianLTVec = hessianContent ^? _Just % _Array % _ArrayDouble
-  hessian' <- case hessianLTVec of
+  hessianBohr <- case hessianLTVec of
     Just vec -> Just . MatrixS <$> ltMat2Square vec
     Nothing -> return Nothing
+
+  -- Convert gradient from Hartree/Bohr to Hartree/Angstrom and hessian from hartree/Bohr^2 to
+  -- Hartree/Angstrom^2.
+  let gradientAngstrom = compute . Massiv.map (* (1 / bohr2Angstrom 1)) <$> gradientBohr
+      hessianAngstrom =
+        compute @S
+          . Massiv.map (* (1 / (bohr2Angstrom 1 ^ (2 :: Int))))
+          . getMatrixS
+          <$> hessianBohr
 
   return
     CalcOutput
@@ -249,8 +259,8 @@ getResultsFromFChk content = do
         energyDerivatives =
           EnergyDerivatives
             { energy = energy' ^? _Just % _Scalar % _ScalarDouble,
-              gradient = VectorS <$> gradient' ^? _Just % _Array % _ArrayDouble,
-              hessian = hessian'
+              gradient = VectorS <$> gradientAngstrom,
+              hessian = MatrixS <$> hessianAngstrom
             }
       }
 
@@ -502,7 +512,6 @@ writeFChk fchk =
          in Massiv.foldMono
               (\k -> fromMaybe mempty . fmap (blockWriter k) $ localMap Map.!? k)
               keyVec
-
       unorderedOtherBlocks =
         let localMap = Map.withoutKeys cntntBlks $ Set.fromList blockOrder
          in Map.foldlWithKey' (\acc k v -> acc <> blockWriter k v) mempty localMap

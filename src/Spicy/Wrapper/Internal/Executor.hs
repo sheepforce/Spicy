@@ -9,13 +9,11 @@
 --
 -- Provides the callers to quantum chemistry software.
 module Spicy.Wrapper.Internal.Executor
-  ( runAllCalculations,
-    runCalculation,
+  ( runCalculation,
   )
 where
 
 import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy8
-import Data.Foldable
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Optics hiding (view)
@@ -27,7 +25,6 @@ import RIO hiding
   )
 import qualified RIO.ByteString.Lazy as BL
 import qualified RIO.List as List
-import qualified RIO.Map as Map
 import RIO.Process
 import Spicy.Common
 import Spicy.Formats.FChk
@@ -49,51 +46,15 @@ logSource :: LogSource
 logSource = "Wraper Executor"
 
 ----------------------------------------------------------------------------------------------------
--- | Run all calculations of a complete molecular system on all layers. Moves top down the leftmost
--- tree first.
-runAllCalculations ::
-  (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
-  RIO env Molecule
-runAllCalculations = do
-  -- Get the molecule to process.
-  mol <- view moleculeL
-
-  -- Obtain all CalcIDs of this molecule.
-  let allCalcIDs =
-        molFoldlWithMolID
-          ( \idAcc currentMolID currentMol ->
-              let calcIDsOfCurrentMol = getCalcIDsOfMolLayer currentMolID currentMol
-               in idAcc <> calcIDsOfCurrentMol
-          )
-          Empty
-          mol
-
-  -- Fold over all CalcIDs of the molecule to resolve all calculations of the molecule.
-  molCalculated <-
-    foldl
-      ( \molCalcAcc' calcID -> do
-          molCalcAcc <- molCalcAcc'
-          molWithThisIdUpdated <- local (& moleculeL .~ molCalcAcc) $ runCalculation calcID
-          return molWithThisIdUpdated
-      )
-      (return mol)
-      allCalcIDs
-
-  return molCalculated
-  where
-    getCalcIDsOfMolLayer :: MolID -> Molecule -> Seq CalcID
-    getCalcIDsOfMolLayer molID molLayer =
-      Map.foldlWithKey'
-        (\idsAcc calcKey _ -> idsAcc |> CalcID {molID = molID, calcKey = calcKey})
-        Empty
-        (molLayer ^. #calcContext)
-
-----------------------------------------------------------------------------------------------------
 
 -- | Run a given calculation of a molecule, given by a 'CalcID'. This updates the 'CalcOutput' of
 -- this 'CalcID'.
 runCalculation ::
-  (HasWrapperConfigs env, HasLogFunc env, HasMolecule env, HasProcessContext env) =>
+  ( HasWrapperConfigs env,
+    HasLogFunc env,
+    HasMolecule env,
+    HasProcessContext env
+  ) =>
   CalcID ->
   RIO env Molecule
 runCalculation calcID = do
@@ -109,31 +70,14 @@ runCalculation calcID = do
   let calcLens = calcIDLensGen calcID
 
   -- Gather the information for this calculation.
-  mol <- view moleculeL
-  let calcContextM = mol ^? calcLens
-  calcContext <- case calcContextM of
-    Nothing ->
-      throwM $
-        MolLogicException
-          "runCalculation"
-          "Requested to perform a calculation, which does not exist."
-    Just cntxt ->
-      if isJust (cntxt ^. #output)
-        then
-          throwM $
-            MolLogicException
-              " runCalculation"
-              " Requested to perform a calculation, which has already been performed."
-        else return cntxt
+  molT <- view moleculeL
+  mol <- atomically . readTVar $ molT
+  calcContext <- maybe2MThrow (localExc "Requested to perform a cauclation, which does not exist") $ mol ^? calcLens
+  unless (isNothing $ calcContext ^. #output) . throwM . localExc $ "Requested to perform a calculation, which has already been performed."
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
-      inputFilePrefix =
-        Path.relFile
-          . replaceProblematicChars
-          $ calcContext
-            ^. #input
-              % #prefixName
+      inputFilePrefix = Path.relFile . replaceProblematicChars $ calcContext ^. #input % #prefixName
       inputFileName = inputFilePrefix <.> ".inp"
       inputFilePath = permanentDir </> inputFileName
       software = calcContext ^. #input % #software
@@ -166,7 +110,10 @@ runCalculation calcID = do
   -- Insert the output, that has been obtained for this calculation into the corresponding CalcID.
   let molUpdated = mol & calcContextL % #output ?~ calcOutput
 
+  -- Write the updated molecule to the shared variable.
   return molUpdated
+  where
+    localExc = WrapperGenericException "runCalculation"
 
 {-
 ####################################################################################################
@@ -195,14 +142,14 @@ executePsi4 calcID inputFilePath = do
   -- Obtain the Psi4 wrapper.
   psi4Wrapper <-
     view (wrapperConfigsL % #psi4) >>= \wrapper -> case wrapper of
-      Just w -> return w
+      Just w -> return . getFilePath $ w
       Nothing -> throwM $ WrapperGenericException "executePsi4" "Psi4 wrapper is not configured. Cannot execute."
 
   -- Create the calculation context lens.
   let calcLens = calcIDLensGen calcID
 
   -- Gather information for the execution of Psi4
-  mol <- view moleculeL
+  mol <- view moleculeL >>= atomically . readTVar
   let calcContextM = mol ^? calcLens
   calcContext <- case calcContextM of
     Nothing ->
@@ -247,17 +194,15 @@ executePsi4 calcID inputFilePath = do
   (exitCode, psi4Out, psi4Err) <-
     withWorkingDir (Path.toString permanentDir) $
       proc
-        psi4Wrapper
+        (Path.toString psi4Wrapper)
         psi4CmdArgs
         readProcess
 
   -- Provide some information if something went wrong.
   unless (exitCode == ExitSuccess) $ do
     logError $ "Psi4 execution terminated abnormally. Got exit code: " <> displayShow exitCode
-    logError "Psi4 error messages:"
-    mapM_ (logError . ("  " <>) . displayShow) . ByteStringLazy8.lines $ psi4Err
-    logError "Psi4 stdout messsages:"
-    mapM_ (logError . ("  " <>) . displayShow) . ByteStringLazy8.lines $ psi4Out
+    logError $ "Psi4 error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Err)
+    logError $ "Psi4 stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
 
 ----------------------------------------------------------------------------------------------------
@@ -283,7 +228,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
   -- Obtain the GDMA wrapper.
   gdmaWrapper <-
     view (wrapperConfigsL % #gdma) >>= \wrapper -> case wrapper of
-      Just w -> return w
+      Just w -> return . getFilePath $ w
       Nothing -> throwM $ WrapperGenericException "executeGDMA" "The GDMA wrapper is not configured."
 
   -- Sanity Checks.
@@ -316,7 +261,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
   -- Execute GDMA on the input file now and pipe the input file into it.
   (exitCode, gdmaOut, gdmaErr) <-
     proc
-      gdmaWrapper
+      (Path.toString gdmaWrapper)
       mempty
       (readProcess . setStdin (byteStringInput gdmaInput))
 
@@ -343,9 +288,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
           $ atoms
       multipoleMap = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
 
-  -- LOG
-  logDebug $ "Obtained multipoles from GDMA:\n" <> displayShow modelMultipoleList
-
+  -- Message if something is wrong with the number of poles expected and obtained.
   unless (List.length modelMultipoleList == List.length modelAtomKeys) $ do
     logError
       "Number of model atoms and number of multipole expansions centres obtained from GDMA\
@@ -380,7 +323,7 @@ analysePsi4 calcID = do
       calcLens = calcIDLensGen calcID
 
   -- Gather information about the run which to analyse.
-  mol <- view moleculeL
+  mol <- view moleculeL >>= atomically . readTVar
   localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
   calcContext <- case (mol ^? calcLens) of
     Just x -> return x

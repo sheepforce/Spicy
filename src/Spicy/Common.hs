@@ -16,11 +16,14 @@ module Spicy.Common
     MolLogicException (..),
     WrapperGenericException (..),
     SpicyIndirectionException (..),
+    PysisException (..),
+    IPIException (..),
 
     -- * Abstract and Generic Classes
     -- $class
     Check (..),
     PrettyPrint (..),
+    DefaultIO (..),
 
     -- * Parser Helper Functions
     -- $parserHelper
@@ -127,6 +130,10 @@ module Spicy.Common
     -- $neighbouhrList
     NeighbourList,
 
+    -- ** Sockets
+    -- $socket
+    unixSocket2Path,
+
     -- ** Massiv
     VectorS (..),
     MatrixS (..),
@@ -172,6 +179,7 @@ import qualified Data.Text.Lazy.Builder as TB
 import qualified Data.Text.Lazy.Builder.RealFloat as TB
 import Data.Yaml.Include (decodeFileWithWarnings)
 import Formatting hiding (char)
+import Network.Socket as Net
 import Optics (A_Getter, Is, Optic', (^.))
 import RIO hiding
   ( Vector,
@@ -265,8 +273,7 @@ instance Exception WrapperGenericException
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- An exception when the program control flow did a wrong turn and the information present are
+-- | An exception when the program control flow did a wrong turn and the information present are
 -- inadequate to describe the program flow.
 data SpicyIndirectionException = SpicyIndirectionException
   { functionName :: !String,
@@ -279,6 +286,28 @@ instance Show SpicyIndirectionException where
 
 instance Exception SpicyIndirectionException
 
+----------------------------------------------------------------------------------------------------
+
+-- | Pysisyphus optimiser exceptions.
+data PysisException = PysisException String
+  deriving (Eq, Show)
+
+instance Exception PysisException
+
+----------------------------------------------------------------------------------------------------
+
+-- | Problems in the communication with i-PI servers.
+data IPIException = IPIException
+  { functionName :: !String,
+    description :: !String
+  }
+
+instance Show IPIException where
+  show (IPIException f e) =
+    "IPIException in function \"" <> f <> "\": " <> e
+
+instance Exception IPIException
+
 {-
 ####################################################################################################
 -}
@@ -286,19 +315,24 @@ instance Exception SpicyIndirectionException
 -- $classDefinitions
 -- Definitions of classes used in Spicy.
 
--- |
--- A class for various data structures, which use some assumptions in Spicy. Running a check on them
+-- | A class for various data structures, which use some assumptions in Spicy. Running a check on them
 -- allows to be sure about the correctnes of their assumptions.
 class Check a where
   check :: MonadThrow m => a -> m a
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- A class for data, that can be printed nicely to a human friendly format with the purpose of logging.
--- Each line is a separate 'UTF8Builder', which allows prepending the log info string before each line.
+-- | A class for data, that can be printed nicely to a human friendly format with the purpose of
+-- logging. Each line is a separate 'UTF8Builder', which allows prepending the log info string
+-- before each line.
 class PrettyPrint a where
   prettyP :: a -> Utf8Builder
+
+----------------------------------------------------------------------------------------------------
+
+-- | A class of default values, which need to be initialised by IO.
+class DefaultIO a where
+  defIO :: MonadIO m => m a
 
 {-
 ####################################################################################################
@@ -395,109 +429,85 @@ parseJSONFile jsonPath = do
 -- $pathOperations
 -- Newtype wrappers around typed paths with JSON serialisation enabled and operations on them.
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JFilePath = JFilePath {getFilePath :: Path.AbsRelFile}
-  deriving (Generic, Show, Eq)
+  deriving (Show, Eq)
 
 instance ToJSON JFilePath where
-  toJSON path = let plainPath = getFilePath path in object ["filepath" .= Path.toString plainPath]
+  toJSON (JFilePath path) = toJSON . Path.toString $ path
 
 instance FromJSON JFilePath where
-  parseJSON = withObject "JFilePath" $ \path -> do
-    plainPath <- path .: "filepath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JFilePath $ res
+  parseJSON (String v) = return . JFilePath . Path.file . Text.unpack $ v
+  parseJSON (Object v) = fail $ "encountered Object field: " <> show v
+  parseJSON (Number _) = fail "encountered Number field"
+  parseJSON (Bool _) = fail "encountered Bool field"
+  parseJSON (Null) = fail "encountered Null field"
+  parseJSON (_) = fail "encountered Array field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
 newtype JFilePathAbs = JFilePathAbs {getFilePathAbs :: Path.AbsFile}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JFilePathAbs where
-  toJSON path =
-    let plainPath = getFilePathAbs path in object ["filepath" .= Path.toString plainPath]
+  toJSON (JFilePathAbs path) = toJSON . Path.toString $ path
 
 instance FromJSON JFilePathAbs where
-  parseJSON = withObject "JFilePath" $ \path -> do
-    plainPath <- path .: "filepath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JFilePathAbs $ res
+  parseJSON (String v) = return . JFilePathAbs . Path.absFile . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsFile', which has JSON serialisation support.
 newtype JFilePathRel = JFilePathRel {getFilePathRel :: Path.RelFile}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JFilePathRel where
-  toJSON path =
-    let plainPath = getFilePathRel path in object ["filepath" .= Path.toString plainPath]
+  toJSON (JFilePathRel path) = toJSON . Path.toString $ path
 
 instance FromJSON JFilePathRel where
-  parseJSON = withObject "JFilePath" $ \path -> do
-    plainPath <- path .: "filepath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JFilePathRel $ res
+  parseJSON (String v) = return . JFilePathRel . Path.relFile . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JDirPath = JDirPath {getDirPath :: Path.AbsRelDir}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JDirPath where
-  toJSON path = let plainPath = getDirPath path in object ["dirpath" .= Path.toString plainPath]
+  toJSON (JDirPath path) = toJSON . Path.toString $ path
 
 instance FromJSON JDirPath where
-  parseJSON = withObject "JDirPath" $ \path -> do
-    plainPath <- path .: "dirpath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JDirPath $ res
+  parseJSON (String v) = return . JDirPath . Path.dir . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JDirPathAbs = JDirPathAbs {getDirPathAbs :: Path.AbsDir}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JDirPathAbs where
-  toJSON path =
-    let plainPath = getDirPathAbs path in object ["dirpath" .= Path.toString plainPath]
+  toJSON (JDirPathAbs path) = toJSON . Path.toString $ path
 
 instance FromJSON JDirPathAbs where
-  parseJSON = withObject "JDirPath" $ \path -> do
-    plainPath <- path .: "dirpath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JDirPathAbs $ res
+  parseJSON (String v) = return . JDirPathAbs . Path.absDir . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
+-- | Wraper for the pathtype 'AbsRelFile', which has JSON serialisation support.
 newtype JDirPathRel = JDirPathRel {getDirPathRel :: Path.RelDir}
   deriving (Generic, Show, Eq)
 
 instance ToJSON JDirPathRel where
-  toJSON path =
-    let plainPath = getDirPathRel path in object ["dirpath" .= Path.toString plainPath]
+  toJSON (JDirPathRel path) = toJSON . Path.toString $ path
 
 instance FromJSON JDirPathRel where
-  parseJSON = withObject "JDirPath" $ \path -> do
-    plainPath <- path .: "dirpath"
-    case Path.parse plainPath of
-      Left err -> fail err
-      Right res -> return . JDirPathRel $ res
+  parseJSON (String v) = return . JDirPathRel . Path.relDir . Text.unpack $ v
+  parseJSON _ = fail "wrong Aeson field"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1380,11 +1390,27 @@ makeBondMatUnidirectorial bondMat =
 ====================================================================================================
 -}
 
--- $ neighbouhrList
+-- $neighbouhrList
 
 -- | A type alias for neighbourlists. Maps from an atom key to its neighbours within a certain
 -- distance.
 type NeighbourList = IntMap IntSet
+
+{-
+====================================================================================================
+-}
+
+-- $sockets
+
+-- | Get the path from a unix socket.
+unixSocket2Path :: MonadThrow m => SockAddr -> m Path.AbsRelFile
+unixSocket2Path sckt =
+  case sckt of
+    SockAddrUnix path -> return . Path.file $ path
+    SockAddrInet {} -> throwM . localExc $ "Wrong socket type given: INET"
+    SockAddrInet6 {} -> throwM . localExc $ "Wrong socket type given: INET6"
+  where
+    localExc = SpicyIndirectionException "unixSocket2Path"
 
 {-
 ====================================================================================================

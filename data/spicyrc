@@ -1,3 +1,4 @@
 psi4: /user/seeber/.spicy/psi4.sh
 nwchem: /user/seeber/.spicy/nwchem.sh
 gdma: /user/seeber/.spicy/gdma.sh
+pysisyphus: /user/seeber/.spicy/pysisyphus.sh
