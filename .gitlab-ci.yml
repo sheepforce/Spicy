@@ -24,7 +24,6 @@ before_script:
   - cachix use spicy;
   - cachix use chemix;
   - export NIXPKGS_ALLOW_UNFREE=1;
-  - export NIX_BUILD_CORES=2;
   # Make a snapshot of the nix store
   - nix path-info --all > /tmp/store-path-pre-build;
 
