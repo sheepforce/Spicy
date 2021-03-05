@@ -103,6 +103,8 @@ nixReleaseBuild:
 nixDevBuild:
   stage: build
   image: nixos/nix
+  tags:
+    - largemem
   script:
     - nix-build nix/default.nix --arg wrap false -A spicy.components.library | cachix push spicy
     - nix-build nix/default.nix --arg wrap false -A spicy.components.exes | cachix push spicy
