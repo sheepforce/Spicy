@@ -316,7 +316,6 @@ gdmaAnalysis fchkPath atoms expOrder = do
             "angstrom",
             "multipoles",
             "limit " <> (ByteStringLazy8.pack . show $ expOrder),
-            "switch 0.0",
             "delete " <> (ByteStringLazy8.pack . show $ linkReplacement),
             "start"
           ]
