@@ -18,7 +18,7 @@ in
     tools = {
       cabal = "3.4.0.0";
       hlint = "2.2.11";
-      haskell-language-server = "0.9.0.0"; # Hackage versions should be available
+      haskell-language-server = "1.0.0.0"; # Hackage versions should be available
       hpack = "0.34.3";
       ormolu = "0.1.4.1";
     };
