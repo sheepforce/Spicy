@@ -21,11 +21,13 @@ module Spicy.ONIOM.AtomicDriver
 where
 
 import Data.Default
+import qualified Data.IntMap as IntMap
 import Data.Massiv.Array as Massiv hiding (forM_, loop)
 import Data.Massiv.Array.Manifest.Vector as Massiv
 import Optics hiding (Empty, view)
 import RIO hiding
   ( view,
+    (%~),
     (.~),
     (^.),
     (^..),
@@ -171,12 +173,12 @@ geomMacroDriver ::
   RIO env ()
 geomMacroDriver = do
   -- Obtain the Pysisyphus IPI settings for communication.
+  mol <- view moleculeL >>= readTVarIO
   pysisIPI <-
-    view moleculeL >>= readTVarIO >>= \mol -> do
-      let optSettings = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation % #pysisyphus
-      case optSettings of
-        Nothing -> throw . localExc $ "Pysisyphus connection settings could not be found."
-        Just i -> return i
+    let optSettings = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation % #pysisyphus
+     in case optSettings of
+          Nothing -> throw . localExc $ "Pysisyphus connection settings could not be found."
+          Just i -> return i
 
   -- Launch a Pysisyphus server and an i-PI client for the optimisation.
   (pysisServer, pysisClient) <- providePysis
@@ -184,12 +186,13 @@ geomMacroDriver = do
   link pysisClient
 
   -- Start the loop that provides the i-PI client thread with data for the optimisation.
-  loop pysisIPI
+  let allTopAtoms = IntMap.keysSet $ mol ^. #atoms
+  loop pysisIPI allTopAtoms
   where
     localExc = SpicyIndirectionException "geomMacroDriver"
 
     -- The optimisation loop.
-    loop pysisIPI = do
+    loop pysisIPI selAtoms = do
       -- Check if the client is still runnning and expects us to provide new data.
       ipiServerWants <- atomically . takeTMVar $ pysisIPI ^. #status
       unless (ipiServerWants == Done) $ do
@@ -203,7 +206,7 @@ geomMacroDriver = do
         posData <- atomically . takeTMVar $ ipiPosOut
         posVec <- case posData ^. #coords of
           NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
-        molNewStruct <- updateMolWithPosVec posVec molOld
+        molNewStruct <- updatePositionsPosVec posVec selAtoms molOld
         atomically . writeTVar molT $ molNewStruct
 
         -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
@@ -229,7 +232,7 @@ geomMacroDriver = do
         atomically . putTMVar ipiDataIn $ ipiData
 
         -- Reiterating
-        loop pysisIPI
+        loop pysisIPI selAtoms
 
 ----------------------------------------------------------------------------------------------------
 
@@ -280,8 +283,8 @@ assignTaskToCalc molT calcID task = do
 ----------------------------------------------------------------------------------------------------
 
 -- | Polarises a layer specified by its 'MolID' with all layers hierarchically above. The resulting
--- molecule will just be the layer specified by the 'MolID'. The function assumes, that all layers
--- above already have been properly polarised.
+-- molecule will be the full system with the layer that was specified being polarised. The function
+-- assumes, that all layers above already have been properly polarised.
 maybePolariseLayer :: MonadThrow m => Molecule -> MolID -> m Molecule
 maybePolariseLayer molFull molID
   | molID == Empty = return molFull

@@ -101,7 +101,8 @@ module Spicy.Molecule
     molToPointCharges,
     getAllCalcIDsHierarchically,
     getAllMolIDsHierarchically,
-    updateMolWithPosVec,
+    updatePositionsPosVec,
+    updatePositions,
     shrinkNeighbourList,
 
     -- * Writer
