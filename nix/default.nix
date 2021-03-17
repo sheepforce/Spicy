@@ -6,22 +6,17 @@
 , pysisyphus ? pkgs.pysisyphus
 }:
 let
-  spicyrc =
-    let
-      text = pkgs.lib.generators.toYAML {} {
-        "psi4" = "${psi4}/bin/psi4";
-        "gdma" = "${gdma}/bin/gdma";
-        "pysisyphus" = "${pysisyphus}/bin/pysis";
-      };
-    in
-      pkgs.writeTextFile {
-        name = "spicyrc";
-        inherit text;
-      };
+  spicyrc = pkgs.writeTextFile {
+    name = "spicyrc";
+    text = pkgs.lib.generators.toYAML {} {
+      "psi4" = "${psi4}/bin/psi4";
+      "gdma" = "${gdma}/bin/gdma";
+      "pysisyphus" = "${pysisyphus}/bin/pysis";
+    };
+  };
 
   buildPkgs =
     if static then pkgs.pkgsCross.musl64 else pkgs;
-
 
 in buildPkgs.haskell-nix.project {
   src = buildPkgs.haskell-nix.haskellLib.cleanGit {
