@@ -105,6 +105,7 @@ module Spicy.Molecule
     updatePositions,
     shrinkNeighbourList,
     horizontalSlices,
+    gradDense2Sparse,
 
     -- * Writer
     writeXYZ,
