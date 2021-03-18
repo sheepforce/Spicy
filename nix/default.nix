@@ -3,23 +3,21 @@
 , pkgs ? import ./nixpkgs.nix { }
 , psi4 ? pkgs.psi4
 , gdma ? pkgs.gdma
+, xtb ? pkgs.xtb
 }:
 let
-  spicyrc =
-    let
-      text = pkgs.lib.generators.toYAML {} {
-        "psi4" = "${psi4}/bin/psi4";
-        "gdma" = "${gdma}/bin/gdma";
-      };
-    in
-      pkgs.writeTextFile {
-        name = "spicyrc";
-        inherit text;
-      };
+  spicyrc = pkgs.writeTextFile {
+    name = "spicyrc";
+    text = pkgs.lib.generators.toYAML {} {
+      "psi4" = "${psi4}/bin/psi4";
+      "gdma" = "${gdma}/bin/gdma";
+      "pysisyphus" = "${pysisyphus}/bin/pysis";
+      "xtb" = "${xtb}/bin/xtb"
+    };
+  };
 
   buildPkgs =
     if static then pkgs.pkgsCross.musl64 else pkgs;
-
 
 in buildPkgs.haskell-nix.project {
   src = buildPkgs.haskell-nix.haskellLib.cleanGit {
