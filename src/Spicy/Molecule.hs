@@ -104,6 +104,7 @@ module Spicy.Molecule
     updatePositionsPosVec,
     updatePositions,
     shrinkNeighbourList,
+    horizontalSlices,
 
     -- * Writer
     writeXYZ,
