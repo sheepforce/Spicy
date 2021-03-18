@@ -38,8 +38,7 @@ import Spicy.Common
 import Spicy.InputFile
 import Spicy.Molecule hiding (S)
 
--- |
--- Collector for multicentre ONIOM-N calculations.
+-- | Collector for multicentre ONIOM-N calculations.
 multicentreOniomNCollector :: (HasMolecule env, HasInputFile env) => WrapperTask -> RIO env ()
 multicentreOniomNCollector atomicTask = do
   molT <- view moleculeL
