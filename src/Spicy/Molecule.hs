@@ -111,6 +111,7 @@ module Spicy.Molecule
     shrinkNeighbourList,
     isolateMoleculeLayer,
     molID2OniomHumanID,
+    horizontalSlices,
 
     -- * Writer
     writeXYZ,

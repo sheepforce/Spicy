@@ -62,6 +62,7 @@ module Spicy.Molecule.Internal.Util
     shrinkNeighbourList,
     isolateMoleculeLayer,
     molID2OniomHumanID,
+    horizontalSlices
   )
 where
 
@@ -2641,3 +2642,19 @@ molID2OniomHumanID molID =
           (tShow depth)
           molID
    in idTree
+
+----------------------------------------------------------------------------------------------------
+
+-- | Horizontal slices through the ONIOM tree. Gets all layers of the ONIOM finger tree that are on
+-- the same depth, no matter if they are in the same branch of the tree or not. The outer sequence
+-- is the hierarchical level.
+horizontalSlices :: Molecule -> Seq (Seq Molecule)
+horizontalSlices mol =
+  let allMolIDs = getAllMolIDsHierarchically mol
+      idHierarchyGroups = groupBy (\a b -> Seq.length a == Seq.length b) allMolIDs
+      molHierarchyGroups = traverse (\molID -> getMultipleMols molID mol) idHierarchyGroups
+  in fromMaybe mempty molHierarchyGroups
+  where
+    -- Apply multiple MolID lenses to a molecule and get all results. No lens must fail.
+    getMultipleMols :: Traversable t => t MolID -> Molecule -> Maybe (t Molecule)
+    getMultipleMols ids m = traverse (\i -> m ^? molIDLensGen i) ids
