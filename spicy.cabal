@@ -1,10 +1,6 @@
 cabal-version: 1.12
 
-<<<<<<< HEAD
--- This file has been generated from package.yaml by hpack version 0.34.3.
-=======
 -- This file has been generated from package.yaml by hpack version 0.34.4.
->>>>>>> 237ba65... up-to-date spicy.cabal
 --
 -- see: https://github.com/sol/hpack
 
@@ -119,11 +115,7 @@ library
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
-<<<<<<< HEAD
     , optics >=0.4 && <0.5
-=======
-    , optics ==0.3.*
->>>>>>> 237ba65... up-to-date spicy.cabal
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
@@ -170,11 +162,7 @@ executable spicy
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
-<<<<<<< HEAD
     , optics >=0.4 && <0.5
-=======
-    , optics ==0.3.*
->>>>>>> 237ba65... up-to-date spicy.cabal
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
@@ -219,11 +207,7 @@ test-suite unittests
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
-<<<<<<< HEAD
     , optics >=0.4 && <0.5
-=======
-    , optics ==0.3.*
->>>>>>> 237ba65... up-to-date spicy.cabal
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
@@ -294,11 +278,7 @@ benchmark bench
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
-<<<<<<< HEAD
     , optics >=0.4 && <0.5
-=======
-    , optics ==0.3.*
->>>>>>> 237ba65... up-to-date spicy.cabal
     , parallel >=3.2.1.0 && <3.3
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2

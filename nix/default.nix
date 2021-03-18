@@ -3,11 +3,8 @@
 , pkgs ? import ./nixpkgs.nix { }
 , psi4 ? pkgs.psi4
 , gdma ? pkgs.gdma
-<<<<<<< HEAD
 , pysisyphus ? pkgs.pysisyphus
-=======
 , xtb ? pkgs.xtb
->>>>>>> c573a0f... Nix
 }:
 let
   spicyrc = pkgs.writeTextFile {
@@ -16,10 +13,7 @@ let
       "psi4" = "${psi4}/bin/psi4";
       "gdma" = "${gdma}/bin/gdma";
       "pysisyphus" = "${pysisyphus}/bin/pysis";
-<<<<<<< HEAD
-=======
       "xtb" = "${xtb}/bin/xtb"
->>>>>>> c573a0f... Nix
     };
   };
 

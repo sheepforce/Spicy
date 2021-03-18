@@ -206,8 +206,6 @@ instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSl
   labelOptic = lens (output :: CalcSlot -> TMVar Molecule) $ \s b -> (s {output = b} :: CalcSlot)
 
 ----------------------------------------------------------------------------------------------------
-<<<<<<< HEAD
-=======
 
 -- | The status of the i-PI server. This is not part of the protocol but there so tell a client if
 -- we can already connect and if it needs to continue delivering data.
@@ -254,4 +252,3 @@ instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k I
 
 instance (k ~ A_Lens, a ~ TMVar IPIServerStatus, b ~ a) => LabelOptic "status" k IPI IPI a b where
   labelOptic = lens (\s -> status s) $ \s b -> s {status = b}
->>>>>>> d5014cf... Setup Branch
