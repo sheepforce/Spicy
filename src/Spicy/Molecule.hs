@@ -112,6 +112,7 @@ module Spicy.Molecule
     isolateMoleculeLayer,
     molID2OniomHumanID,
     horizontalSlices,
+    gradDense2Sparse,
 
     -- * Writer
     writeXYZ,

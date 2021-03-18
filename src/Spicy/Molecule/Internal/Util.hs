@@ -63,6 +63,7 @@ module Spicy.Molecule.Internal.Util
     isolateMoleculeLayer,
     molID2OniomHumanID,
     horizontalSlices
+    gradDense2Sparse
   )
 where
 
@@ -2480,10 +2481,10 @@ getAllMolIDsHierarchically mol =
 -- and the position vector needs to match the number of atoms (for \(n\) atoms a position vector of
 -- length \(3 n\) is required). The coordinates in the vector need to be in the same (strictly
 -- ascending) order as the atoms in the 'IntSet' (always strictly ascending).
-updatePositionsPosVec :: MonadThrow m => Vector S Double ->  IntSet -> Molecule -> m Molecule
+updatePositionsPosVec :: MonadThrow m => Vector S Double -> IntSet -> Molecule -> m Molecule
 updatePositionsPosVec pos sel mol = do
   -- Associate new positions with individual atoms.
-  pos3 <- Massiv.map (VectorS . compute @S). outerSlices <$> resizeM (Sz $ IntSet.size sel :. 3) pos
+  pos3 <- Massiv.map (VectorS . compute @S) . outerSlices <$> resizeM (Sz $ IntSet.size sel :. 3) pos
   atomPosMap <- associate pos3 sel mempty
 
   -- Update all atoms with new positions.
@@ -2497,7 +2498,7 @@ updatePositionsPosVec pos sel mol = do
       | sizeV == 1 && sizeS == 1 = IntMap.insert <$> headSet <*> headVec <*> pure acc
       | otherwise =
         let newAcc = IntMap.insert <$> headSet <*> headVec <*> pure acc
-        in join $ associate tailVec <$> tailSet <*> newAcc
+         in join $ associate tailVec <$> tailSet <*> newAcc
       where
         localExc = SpicyIndirectionException "updatePositionsGeneric"
         Sz sizeV = Massiv.size vec
@@ -2507,7 +2508,6 @@ updatePositionsPosVec pos sel mol = do
         tailSet = snd <$> splitSet
         headVec = headM vec
         tailVec = Massiv.tail vec
-
 
 ----------------------------------------------------------------------------------------------------
 
@@ -2653,8 +2653,23 @@ horizontalSlices mol =
   let allMolIDs = getAllMolIDsHierarchically mol
       idHierarchyGroups = groupBy (\a b -> Seq.length a == Seq.length b) allMolIDs
       molHierarchyGroups = traverse (\molID -> getMultipleMols molID mol) idHierarchyGroups
-  in fromMaybe mempty molHierarchyGroups
+   in fromMaybe mempty molHierarchyGroups
   where
     -- Apply multiple MolID lenses to a molecule and get all results. No lens must fail.
     getMultipleMols :: Traversable t => t MolID -> Molecule -> Maybe (t Molecule)
     getMultipleMols ids m = traverse (\i -> m ^? molIDLensGen i) ids
+
+----------------------------------------------------------------------------------------------------
+
+-- | Transforms a dense gradient vector to the sparse representation as used by the corresponding
+-- atoms.
+gradDense2Sparse :: MonadThrow m => Molecule -> m (IntMap (Vector M Double))
+gradDense2Sparse mol = do
+  let atomKeys = IntMap.keysSet . IntMap.filter (not . isDummy) $ mol ^. #atoms
+  denseGrad <-
+    maybe2MThrow (localExc "Gradient transformation was requested but not gradient is available") $
+      getVectorS <$> mol ^. #energyDerivatives % #gradient
+  denseGrad3 <- toList . outerSlices <$> resizeM (Sz $ IntSet.size atomKeys :. 3) denseGrad
+  return . IntMap.fromAscList $ RIO.zip (IntSet.toAscList atomKeys) denseGrad3
+  where
+    localExc = MolLogicException "gradDense2Sparse"
