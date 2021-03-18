@@ -10,6 +10,10 @@ let
       "psi4" = "${pkgs.psi4}/bin/psi4";
       "gdma" = "${pkgs.gdma}/bin/gdma";
       "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
+<<<<<<< HEAD
+=======
+      "xtb" = "${pkgs.xtb}/bin/xtb";
+>>>>>>> c573a0f... Nix
     };
   };
 in
@@ -26,9 +30,15 @@ in
     # Some common tools can be added with the `tools` argument
     # See overlays/tools.nix for more details
     tools = {
+<<<<<<< HEAD
       cabal = "3.4.0.0";
       hlint = "3.3";
       haskell-language-server = "1.0.0.0"; # Hackage versions should be available
+=======
+      cabal = "3.2.0.0";
+      hlint = "3.3";
+      haskell-language-server = "1.0.0.0"; # See https://github.com/input-output-hk/haskell.nix/blob/master/overlays/tools.nix from time to time.
+>>>>>>> c573a0f... Nix
       hpack = "0.34.4";
       ormolu = "0.1.4.1";
     };
@@ -39,6 +49,10 @@ in
       pkgs.pysisyphus
       pkgs.psi4Unstable
       pkgs.gdma
+<<<<<<< HEAD
+=======
+      pkgs.xtb
+>>>>>>> c573a0f... Nix
     ];
 
     # Setup a runtime with QC wrappers available.
