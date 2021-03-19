@@ -371,8 +371,8 @@ posUpdateAtDepth mol pysisIPI depth atomSel
   | otherwise = do
     -- Transform all gradients and then obtain the gradients in sparse representation for the two
     -- layers of interest.
-    molWithGrad <- gradientCollector mol
-    let molHSlices = horizontalSlices molWithGrad
+    molWithEnGrad <- gradientCollector mol >>= energyCollector
+    let molHSlices = horizontalSlices molWithEnGrad
         molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
         molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
 
@@ -388,7 +388,7 @@ posUpdateAtDepth mol pysisIPI depth atomSel
         gradientsOfInterestDense = compute @U . concat' 1 $ gradientsOfInterestSparse
         forceData =
           ForceData
-            { potentialEnergy = undefined, -- Maybe use the energy of the full system here?
+            { potentialEnergy = fromMaybe 0 $ molWithEnGrad ^. #energyDerivatives % #energy,
               forces = NetVec . Massiv.toVector $ gradientsOfInterestDense,
               virial = CellVecs (T 0 0 0) (T 0 0 0) (T 0 0 0),
               optionalData = mempty
@@ -405,7 +405,7 @@ posUpdateAtDepth mol pysisIPI depth atomSel
     posVec <-
       let vecS = getNetVec $ posData ^. #coords
        in Massiv.fromVectorM Par (Sz $ VectorS.length vecS) vecS
-    molNewStruct <- updatePositionsPosVec posVec atomSel molWithGrad
+    molNewStruct <- updatePositionsPosVec posVec atomSel molWithEnGrad
 
     -- Invalidate all calculation outputs and energy derivatives.
     let molNext = flip molMap molNewStruct $ \m ->
