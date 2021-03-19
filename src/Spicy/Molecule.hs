@@ -109,6 +109,7 @@ module Spicy.Molecule
 
     -- * Writer
     writeXYZ,
+    writeXYZSimple,
     writeTXYZ,
     writeMOL2,
     writePDB,
