@@ -12,6 +12,7 @@
 -- respect to force field types, which should always be remembered when usings its results.
 module Spicy.Molecule.Internal.Writer
   ( writeXYZ,
+    writeXYZSimple,
     writeTXYZ,
     writeMOL2,
     writePDB,
@@ -73,32 +74,47 @@ writeXYZ mol = do
             bprint (stext F.% "\n") . Text.filter (not . isEndOfLine) $ m ^. #comment
 
       -- Every atom printed as a single line.
-      atomLines <- fmap (fmap snd . IntMap.toAscList) . traverse atomLineWriter $ m ^. #atoms
+      atomLines <- fmap (fmap snd . IntMap.toAscList) . traverse xyzAtomLineWriter $ m ^. #atoms
 
       let xyzFileBuilder = foldl' (<>) "" $ nAtoms : commentLine : atomLines
           xyzFile = TextLazy.toStrict . TextBuilder.toLazyText $ xyzFileBuilder
 
       return xyzFile
-      where
-        atomLineWriter :: MonadThrow m => Atom -> m TextBuilder.Builder
-        atomLineWriter a = do
-          let elementOfAtom = a ^. #element
-              isDummy' = a ^. #isDummy
-              symbolToShow = if isDummy' then "Xx" else show elementOfAtom
-          xCoord <- getVectorS (a ^. #coordinates) Massiv.!? 0
-          yCoord <- getVectorS (a ^. #coordinates) Massiv.!? 1
-          zCoord <- getVectorS (a ^. #coordinates) Massiv.!? 2
 
-          let coordF = left 20 ' ' %. fixed 12
-              atomLine =
-                bprint
-                  ((right 5 ' ' %. string) F.% coordF F.% coordF F.% coordF F.% "\n")
-                  symbolToShow
-                  xCoord
-                  yCoord
-                  zCoord
+----------------------------------------------------------------------------------------------------
 
-          return atomLine
+-- | Writes a single atom line in XYZ format.
+xyzAtomLineWriter :: MonadThrow m => Atom -> m TextBuilder.Builder
+xyzAtomLineWriter a = do
+  let elementOfAtom = a ^. #element
+      isDummy' = a ^. #isDummy
+      symbolToShow = if isDummy' then "Xx" else show elementOfAtom
+  xCoord <- getVectorS (a ^. #coordinates) Massiv.!? 0
+  yCoord <- getVectorS (a ^. #coordinates) Massiv.!? 1
+  zCoord <- getVectorS (a ^. #coordinates) Massiv.!? 2
+
+  let coordF = left 20 ' ' %. fixed 12
+      atomLine =
+        bprint
+          ((right 5 ' ' %. string) F.% coordF F.% coordF F.% coordF F.% "\n")
+          symbolToShow
+          xCoord
+          yCoord
+          zCoord
+
+  return atomLine
+
+----------------------------------------------------------------------------------------------------
+
+-- | Writes an XYZ file that only takes atoms.
+writeXYZSimple :: MonadThrow m => IntMap Atom -> m Text
+writeXYZSimple atoms = do
+  atomLines <- traverse xyzAtomLineWriter atoms
+  let xyzBuilder = foldl' (<>) header atomLines
+  return . TextLazy.toStrict . TextBuilder.toLazyText $ xyzBuilder
+  where
+    nAtoms = IntMap.size atoms
+    header = bprint (int F.% "\n") nAtoms
 
 ----------------------------------------------------------------------------------------------------
 
