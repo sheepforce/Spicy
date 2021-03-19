@@ -11,6 +11,7 @@
 module Spicy.Wrapper.IPI.Pysisyphus
   ( providePysis,
     runPysisServer,
+    runPysisServerAbstract,
   )
 where
 
@@ -85,73 +86,14 @@ runPysisServer ::
   ) =>
   RIO env ()
 runPysisServer = do
-  -- Obtain initial information
   mol <- view moleculeL >>= readTVarIO
+  let atoms = mol ^. #atoms
   optSettings <-
-    maybe2MThrow (localExc "Missing settings for pysisyphus in the calculation input") $
+    maybe2MThrow (localExc "calculation context with settings for optimiser missing") $
       mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
-  let pysisWorkDir = optSettings ^. #pysisyphus % #workDir
-      initCoordFile = optSettings ^. #pysisyphus % #initCoords
-  socketPath <- unixSocket2Path $ optSettings ^. #pysisyphus % #socketAddr
-  pysisWrapper <-
-    view wrapperConfigsL >>= \wc -> case wc ^. #pysisyphus of
-      Nothing -> throwM . localExc $ "Pysisyphus executable could not be located."
-      Just (JFilePath path) -> return path
-
-  -- Make the work directory, where pysisyphus is started, and the scratch directory, where the
-  -- socket lives.
-  liftIO $ Path.createDirectoryIfMissing True pysisWorkDir
-  let scratchDir = Path.takeDirectory socketPath
-  liftIO $ Path.createDirectoryIfMissing True scratchDir
-
-  -- LOG
-  logInfoS logSource $
-    "Pysisyphus-server companion thread. Preparing to start pysisyphus:\n"
-      <> ("  UNIX socket      : " <> displayShow socketPath <> "\n")
-      <> ("  Pysisphus wrapper: " <> displayShow (Path.toString pysisWrapper) <> "\n")
-      <> ("  Working directory: " <> path2Utf8Builder pysisWorkDir)
-
-  -- Write initial coordinates for Pysisyphus to a file at the given location.
-  initCoordFileAbs <- liftIO . Path.genericMakeAbsoluteFromCwd $ initCoordFile
-  writeXYZ mol >>= writeFileUTF8 (Path.toAbsRel initCoordFile)
-
-  logInfoS logSource $ "Wrote initial coordinates for to " <> path2Utf8Builder initCoordFileAbs
-
-  -- Construct a pysisyphus input file.
-  pysisInput <- opt2Pysis initCoordFileAbs optSettings
-
-  -- Make a working directory for Pysisyphus and write the input file to it.
-  let pysisYamlPath = pysisWorkDir </> Path.relFile "pysis_servers_spicy.yml"
-      pysisYaml = decodeUtf8Lenient . encodePretty defConfig $ pysisInput
-  writeFileUTF8 pysisYamlPath pysisYaml
-
-  -- LOG
-  logInfoS logSource $ "Wrote YAML input to " <> path2Utf8Builder pysisYamlPath
-
-  -- Build Pysis command line arguments.
-  let pysisCmdArgs = [Path.toString . Path.takeFileName $ pysisYamlPath]
-
-  -- Mark the Pysis server as ready immediately before starting it.
-  logDebugS logSource "Pysisyphus server starts and becomes ready ..."
-  (exitCode, pysisOut, pysisErr) <-
-    withWorkingDir (Path.toString pysisWorkDir) $
-      proc (Path.toString pysisWrapper) pysisCmdArgs readProcess
-  logInfoS logSource "Pysisyphus sever terminated."
-
-  -- Pysisyphus output.
-  writeFileBinary
-    (Path.toString $ pysisWorkDir </> Path.relFile "pysisyphus.out")
-    . toStrictBytes
-    $ pysisOut
-
-  -- Final check if everything went well. Then return.
-  unless (exitCode == ExitSuccess) $ do
-    logErrorS logSource $
-      "Terminated abnormally with error messages:\n"
-        <> (displayBytesUtf8 . toStrictBytes $ pysisErr)
-    throwM . PysisException $ "Pysisyphus terminated abnormally with errors."
+  runPysisServerAbstract atoms optSettings
   where
-    localExc = PysisyphusExc
+    localExc = MolLogicException "runPysisServer"
 
 ----------------------------------------------------------------------------------------------------
 
