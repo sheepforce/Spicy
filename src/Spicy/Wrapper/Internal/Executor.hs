@@ -239,6 +239,7 @@ executeXTB calcID inputFilePath = do
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       --scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
       software = calcContext ^. #input % #software
+      geomFilePath = Path.replaceExtension inputFilePath ".xyz"
       --outputFilePath = Path.replaceExtension inputFilePath ".out" -- We don't care about this with XTB - all the files have static names
 
   -- Check if this function is appropiate to execute the calculation at all.
@@ -254,6 +255,8 @@ executeXTB calcID inputFilePath = do
             <> "but this is not a XTB calculation."
         )
 
+  xyzInput <- writeXYZ mol
+  writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
   -- TODO: Write an .xyz file with the atomic coordinates
 
   -- Prepare the command line arguments to XTB.
@@ -262,9 +265,10 @@ executeXTB calcID inputFilePath = do
         WTGradient -> "--grad"
         WTHessian -> "--hess"
       xtbCmdArgs =
-        [ "--input=" <> Path.toString inputFilePath, -- TODO
-          cmdTask
-          -- TODO: Feed the input geometry here
+        [ "--input=" <> Path.toString inputFilePath,
+          "--json",
+          cmdTask,
+          Path.toString geomFilePath
           --"--parallel " <> show (calcContext ^. #input % #nProc), -- Not sure if this would work, will check later
           --"--nthread=" <> show (calcContext ^. #input % #nThreads), -- No idea how to set
           --"--scratch=" <> Path.toString scratchDir, -- No idea how to set this, or whether it is even necessary for XTB

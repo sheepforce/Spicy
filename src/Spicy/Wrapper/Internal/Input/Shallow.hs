@@ -185,6 +185,7 @@ toMolRepr ::
 toMolRepr mol program'
   | program' == Psi4 = simpleCartesianAngstrom
   | program' == Nwchem = simpleCartesianAngstrom
+  | program' == XTB = simpleCartesianAngstrom
   | otherwise =
     throwM $
       WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
@@ -211,6 +212,7 @@ toMultipoleRep ::
   m Text
 toMultipoleRep mol program'
   | program' == Psi4 = psi4Charges
+  | program' == XTB = return "" -- Placeholder; XTB will require Charges in a seperate file
   | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
   where
     localExc = WrapperGenericException "toMultipoleRep"
@@ -234,6 +236,7 @@ toMultipoleRep mol program'
 toTask :: MonadThrow m => WrapperTask -> Program -> m Text
 toTask task' program'
   | program' == Psi4 = psi4Task
+  | program' == XTB = psi4Task --XTB has no need for this text; should be done more elegantly 
   | otherwise =
     throwM $
       WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
