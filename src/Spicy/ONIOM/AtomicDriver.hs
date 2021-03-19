@@ -254,6 +254,66 @@ geomMacroDriver = do
         -- Reiterating
         loop pysisIPI selAtoms
 
+
+----------------------------------------------------------------------------------------------------
+
+-- | Select the atoms that will be optimised on this hierarchy/horizontal slice.
+-- @
+-- selection = (real atoms of all centres in this horizontal slice)
+--           - (link atoms of all centres in this horizontal slice)
+--           - (atoms that also belong to deeper layers)
+--           - (atoms that are real atoms in this layer but real parents (replaced by link atoms) in deeper layers)
+--           + (the real parents of the link atoms of this layer)
+-- @
+getOptAtomsAtDepth ::
+  -- | Full ONIOM tree, not just a sublayer
+  Molecule ->
+  -- | The depth at which to make a slice and optimise.
+  Int ->
+  -- | Atoms selected to be optimised at this depth.
+  IntSet
+getOptAtomsAtDepth mol depth =
+  ( allAtomsAtDepthS -- All "real" atoms at given depth
+      IntSet.\\ modelRealParentsS -- Minus atoms that are real partners with respect to deeper models
+      IntSet.\\ allAtomsModelS -- Minus all atoms of deeper models.
+      IntSet.\\ linkAtomsAtDepthS -- Minus all link atoms at this depth.
+  )
+    <> realRealPartnersS -- Plus all atoms in the layer above that are bound to link atoms of this layer
+  where
+    -- Obtain all non-dummy atoms that are at the given depth.
+    depthSliceMol = fromMaybe mempty $ horizontalSlices mol Seq.!? depth
+    allAtomsAtDepth =
+      IntMap.filter (not . isDummy) . foldl' (\acc m -> acc <> m ^. #atoms) mempty $ depthSliceMol
+    allAtomsAtDepthS = IntMap.keysSet allAtomsAtDepth
+    linkAtomsAtDepthS = IntMap.keysSet . IntMap.filter linkF $ allAtomsAtDepth
+
+    -- Obtain all atoms that are even deeper and belong to model systems and therefore need to be
+    -- removed from the optimisation coordinates.
+    modelSliceMol = fromMaybe mempty $ horizontalSlices mol Seq.!? (depth + 1)
+    allAtomsModel = foldl' (\acc m -> acc <> m ^. #atoms) mempty modelSliceMol
+    allAtomsModelS = IntMap.keysSet allAtomsModel
+    modelRealParentsS = getRealPartners allAtomsModel
+
+    -- Obtain the real partners one layer above of link atoms at this depth.
+    realRealPartnersS = getRealPartners allAtomsAtDepth
+
+    -- Filters to apply to remove atoms.
+    linkF = isAtomLink . isLink
+
+    -- Get real parent partner of a link atom.
+    getLinkRP :: Atom -> Maybe Int
+    getLinkRP a = a ^? #isLink % _IsLink % _2
+
+    -- Get the real partners of the link atoms in a set of atoms.
+    getRealPartners :: IntMap Atom -> IntSet
+    getRealPartners =
+      IntSet.fromList
+        . fmap snd
+        . IntMap.toList
+        . fromMaybe mempty
+        . traverse getLinkRP
+        . IntMap.filter linkF
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Perform all calculations at a given depth. Allows to get gradients or hessians on a horizontal
