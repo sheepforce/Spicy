@@ -340,6 +340,97 @@ calcAtDepth depth task = do
   forM_ calcIDDepth $ \cid -> oniomCalcDriver cid task
 
 ----------------------------------------------------------------------------------------------------
+
+-- | Do a single geometry optimisation step with a *running* pysisyphus instance at a given depth.
+-- Takes care that the gradients are all calculated and that the microcycles above have converged.
+optStepAtDepth :: Int -> RIO env ()
+optStepAtDepth depth
+  | depth < 0 = return ()
+  | depth == 0 = undefined
+  | depth > 0 = undefined
+  | otherwise = return ()
+  where
+
+----------------------------------------------------------------------------------------------------
+
+-- | Assuming all gradients are available and no calculaiton is running anymore; build the gradient
+-- of the full system and obtain a position update from the given i-PI server. Returns a molecule
+-- with new coordinates.
+posUpdateAtDepth ::
+  -- | Full molecular system, not sublayers.
+  Molecule ->
+  -- | The socket used to optimised at specified depth.
+  IPI ->
+  -- | Depth/Horizontal cut depth at which to optimise.
+  Int ->
+  -- | Atoms selected to be optimised at this layer.
+  IntSet ->
+  RIO env Molecule
+posUpdateAtDepth mol pysisIPI depth atomSel
+  | depth < 0 = return mol
+  | otherwise = do
+    -- Transform all gradients and then obtain the gradients in sparse representation for the two
+    -- layers of interest.
+    molWithGrad <- gradientCollector mol
+    let molHSlices = horizontalSlices molWithGrad
+        molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
+        molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
+
+    -- Get communication channels with the i-PI client.
+    let ipiDataIn = pysisIPI ^. #input
+        ipiPosOut = pysisIPI ^. #output
+
+    -- Construct forcedata and send to i-PI.
+    gradsAtDepth <- combineSparseGradiens molsAtDepth
+    gradsAbove <- combineSparseGradiens molsAbove
+    let gradientsSparse = gradsAtDepth <> gradsAbove
+        gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomSel
+        gradientsOfInterestDense = compute @U . concat' 1 $ gradientsOfInterestSparse
+        forceData =
+          ForceData
+            { potentialEnergy = undefined, -- Maybe use the energy of the full system here?
+              forces = NetVec . Massiv.toVector $ gradientsOfInterestDense,
+              virial = CellVecs (T 0 0 0) (T 0 0 0) (T 0 0 0),
+              optionalData = mempty
+            }
+    atomically . putTMVar ipiDataIn $ forceData
+
+    -- Wait for a response from i-PI.
+    ipiServerWants <- atomically . takeTMVar $ pysisIPI ^. #status
+    when (ipiServerWants == Done) . throwM . SpicyIndirectionException "posUpdateAtDepth" $
+      "The i-PI server must not exit by itself during optimisation loops"
+
+    -- Wait for new position data from i-PI and update all atoms of interest with it.
+    posData <- atomically . takeTMVar $ ipiPosOut
+    posVec <-
+      let vecS = getNetVec $ posData ^. #coords
+       in Massiv.fromVectorM Par (Sz $ VectorS.length vecS) vecS
+    molNewStruct <- updatePositionsPosVec posVec atomSel molWithGrad
+
+    -- Invalidate all calculation outputs and energy derivatives.
+    let molNext = flip molMap molNewStruct $ \m ->
+          m
+            & #energyDerivatives .~ def
+            & #calcContext % each % #output .~ Nothing
+
+    return molNext
+  where
+    combineSparseGradiens :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
+    combineSparseGradiens mols =
+      let sparseGrads = fmap gradDense2Sparse mols
+       in foldl'
+            ( \acc' g' -> do
+                acc <- acc'
+                g <- g'
+                pure $ acc <> g
+            )
+            (pure mempty)
+            sparseGrads
+
+{-
+====================================================================================================
+-}
+
 -- | Cleans all outputs from the molecule.
 cleanOutputs :: TVar Molecule -> STM ()
 cleanOutputs molT = do
