@@ -10,6 +10,7 @@
 -- Interaction with Pysisyphus.
 module Spicy.Wrapper.IPI.Pysisyphus
   ( providePysis,
+    providePysisAbstract,
     runPysisServer,
     runPysisServerAbstract,
   )
@@ -53,23 +54,40 @@ providePysis ::
   RIO env (Async (), Async ())
 providePysis = do
   logInfoS logSource "Starting companion threads ..."
-  molT <- view moleculeL
-  pysisIPI <-
-    readTVarIO molT >>= \mol ->
-      let maybeIPI = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation % #pysisyphus
-       in case maybeIPI of
-            Nothing -> throwM . PysisException $ "IPI connection settings missing."
-            Just ipi -> return ipi
+  mol <- view moleculeL >>= readTVarIO
+  optSettings <-
+    let maybeOpt = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
+     in maybe2MThrow (molExc "Optimisation settings missing") maybeOpt
+  let atoms = mol ^. #atoms
+      pysisIPI = optSettings ^. #pysisyphus
 
-  -- Start another thread in the backgroud, that runs Pysisyphus.
-  -- logDebugS logSource "Starting pysisyphus i-PI server ..."
-  serverThread <- async runPysisServer
+  providePysisAbstract atoms optSettings pysisIPI
+  where
+    molExc = MolLogicException "providePysis"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Provides a companion thread, that starts a pysisyphus server with the necessary input in the
+-- background and then listens for data to send to this pysisyphus server with the i-PI protocol.
+-- Returns the 'Async' value of the background thread, that runs the Pysisyphus server. When this
+-- function returns the job on spicy side should be done but Pysis might continue to run. Give it a
+-- reasonable time to finish and then use the 'Async' value to shut this thread down.
+providePysisAbstract ::
+  ( HasWrapperConfigs env,
+    HasLogFunc env,
+    HasProcessContext env
+  ) =>
+  IntMap Atom ->
+  Optimisation ->
+  IPI ->
+  RIO env (Async (), Async ())
+providePysisAbstract atoms optSettings ipiSettings = do
+  logDebugS logSource "Starting pysisyphus companion threads ..."
+
+  serverThread <- async $ runPysisServerAbstract atoms optSettings
   link serverThread
 
-  -- Start another thread that runs the client
-  -- logDebugS logSource "Starting i-PI client loop ..."
-  clientThread <- async $ ipiClient pysisIPI
-  link clientThread
+  clientThread <- async $ ipiClient ipiSettings
 
   return (serverThread, clientThread)
 
