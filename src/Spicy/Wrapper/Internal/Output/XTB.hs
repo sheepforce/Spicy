@@ -104,12 +104,13 @@ parseXTBgradient = do
         x <- skipHorizontalSpace *> double
         y <- skipHorizontalSpace *> double
         z <- skipHorizontalSpace *> double
-        name <- skipLine
+        name <- skipHorizontalSpace *> many1' (satisfy isAlpha)
+        _ <- skipLine
         return (name,x,y,z)
       parseGradients = do
-        x <- skipHorizontalSpace *> fortranDouble
-        y <- skipHorizontalSpace *> fortranDouble
-        z <- skipHorizontalSpace *> fortranDouble
+        x <- skipHorizontalSpace *> double
+        y <- skipHorizontalSpace *> double
+        z <- skipHorizontalSpace *> double
         _ <- skipLine
         return (x,y,z)
       loseStructure :: [(a,a,a)] -> [a] -- This feels like i'm begging for a memory leak
