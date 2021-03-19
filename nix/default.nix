@@ -13,7 +13,7 @@ let
       "psi4" = "${psi4}/bin/psi4";
       "gdma" = "${gdma}/bin/gdma";
       "pysisyphus" = "${pysisyphus}/bin/pysis";
-      "xtb" = "${xtb}/bin/xtb"
+      "xtb" = "${xtb}/bin/xtb";
     };
   };
 
