@@ -236,6 +236,30 @@ geomMacroDriver = do
 
 ----------------------------------------------------------------------------------------------------
 
+-- | Perform all calculations at a given depth. Allows to get gradients or hessians on a horizontal
+-- slice hierarchically.
+calcAtDepth ::
+  ( HasMolecule env,
+    HasLogFunc env,
+    HasCalcSlot env
+  ) =>
+  Int ->
+  WrapperTask ->
+  RIO env ()
+calcAtDepth depth task = do
+  molT <- view moleculeL
+  mol <- readTVarIO molT
+
+  -- Get all calculation IDs at a given depth.
+  let calcIDDepth =
+        Seq.filter (\cid -> depth == Seq.length (cid ^. #molID))
+          . getAllCalcIDsHierarchically
+          $ mol
+
+  -- Perform all calculations at the given depth.
+  forM_ calcIDDepth $ \cid -> oniomCalcDriver cid task
+
+----------------------------------------------------------------------------------------------------
 -- | Cleans all outputs from the molecule.
 cleanOutputs :: TVar Molecule -> STM ()
 cleanOutputs molT = do
