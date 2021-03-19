@@ -59,9 +59,8 @@ providePysis = do
     let maybeOpt = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
      in maybe2MThrow (molExc "Optimisation settings missing") maybeOpt
   let atoms = mol ^. #atoms
-      pysisIPI = optSettings ^. #pysisyphus
 
-  providePysisAbstract atoms optSettings pysisIPI
+  providePysisAbstract atoms optSettings
   where
     molExc = MolLogicException "providePysis"
 
@@ -79,15 +78,14 @@ providePysisAbstract ::
   ) =>
   IntMap Atom ->
   Optimisation ->
-  IPI ->
   RIO env (Async (), Async ())
-providePysisAbstract atoms optSettings ipiSettings = do
+providePysisAbstract atoms optSettings = do
   logDebugS logSource "Starting pysisyphus companion threads ..."
 
   serverThread <- async $ runPysisServerAbstract atoms optSettings
   link serverThread
 
-  clientThread <- async $ ipiClient ipiSettings
+  clientThread <- async $ ipiClient (optSettings ^. #pysisyphus)
 
   return (serverThread, clientThread)
 
