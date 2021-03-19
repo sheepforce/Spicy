@@ -142,7 +142,7 @@ instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k W
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "xtb" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens xtb $ \s b -> s {xtb = b}
-
+  
 -- Reader Classes
 class HasWrapperConfigs env where
   wrapperConfigsL :: Lens' env WrapperConfigs
