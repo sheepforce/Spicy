@@ -139,7 +139,7 @@ ipiClient ipi = do
           logDebugS logSource $ "Response from server: " <> showMsg thrdStatus
           unless (thrdStatus == "STATUS") . statusExc $ thrdStatus
           logDebugS logSource "Telling server that we have new data."
-          liftIO $ sendAll sckt "HAVEDATA"
+          liftIO . sendAll sckt . encode $ HaveData
           getRequest <- getMsg
           logDebugS logSource $ "Got response from server: " <> showMsg getRequest
           case getRequest of
@@ -148,14 +148,14 @@ ipiClient ipi = do
               atomically . putTMVar (ipi ^. #status) $ WantForces
               forceData <- atomically . takeTMVar $ inp
               logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
-              liftIO $ sendAll sckt "FORCEREADY"
+              liftIO . sendAll sckt . encode $ ForceReady
               liftIO . sendAll sckt . encode $ forceData
               logDebugS logSource "Sent energies and forces to server."
             "GETHESSIAN" -> do
               logDebugS logSource "Server wants hessian data. Preparing calculation."
               atomically . putTMVar (ipi ^. #status) $ WantHessian
               hessianData <- atomically . takeTMVar $ inp
-              liftIO $ sendAll sckt "HESSIANREADY"
+              liftIO . sendAll sckt . encode $ HessianReady
               liftIO . sendAll sckt . encode $ hessianData
               logDebugS logSource "Sent energies and hessian to server."
             string -> statusExc string
@@ -185,6 +185,7 @@ ipiClient ipi = do
     inp = ipi ^. #input
     out = ipi ^. #output
     showMsg = displayBytesUtf8 . toStrictBytes
+
     statusExc m = do
       logErrorS logSource $ "Unexpected message from i-PI server: " <> displayShow m
       throwM . localExc $ "expected STATUS message but got: " <> show m
