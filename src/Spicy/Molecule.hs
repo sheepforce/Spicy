@@ -12,6 +12,7 @@ module Spicy.Molecule
     -- ** Molecular Structure
     Element (..),
     Atom (..),
+    LinkInfo (..),
     Molecule (..),
     HasMolecule (..),
     HasDirectMolecule (..),
