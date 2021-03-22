@@ -157,10 +157,11 @@ multicentreOniomNDriver atomicTask = do
       -- Perform the current calculation on the current calculation of the molecule.
       oniomCalcDriver calcID atomicTask
 
-      -- If this was a high level original calculation transfer the multipoles to the atoms.
+      -- If this was a high level original calculation, transfer the multipoles to the atoms and
+      -- recalculate energy derivatives.
       when (calcK == ONIOMKey Original) $ do
         molWithPolOutput <- readTVarIO molT
-        molWithPolTrans <- multipoleTransfer calcID molWithPolOutput
+        molWithPolTrans <- collectorDepth (Seq.length layerID) molWithPolOutput
         atomically . writeTVar molT $ molWithPolTrans
   where
     localExc = MolLogicException "multicentreOniomNDriver"
@@ -434,16 +435,6 @@ optAtDepth depth' microOptSettings'
 
 ----------------------------------------------------------------------------------------------------
 
--- | Do microoptimisations at a given depth.
-microOptAtDepth :: (HasMolecule env, HasProcessContext env, HasLogFunc env) => Int -> RIO env ()
-microOptAtDepth depth
-  | depth < 0 = return ()
-  | otherwise = do
-    -- Obtain
-    return ()
-
-----------------------------------------------------------------------------------------------------
-
 -- | Assuming all gradients are available and no calculaiton is running anymore; build the gradient
 -- of the full system and obtain a position update from the given i-PI server. Updates the full
 -- molecule with new coordinates.
@@ -464,10 +455,7 @@ posUpdateAtDepth pysisIPI depth atomSel
 
     -- Transform all gradients and then obtain the gradients in sparse representation for the two
     -- layers of interest.
-    -- TODO - This is formally correct but should not be done. Gradients on deeper layers are not
-    -- necessary and we should not calculate them to maintain efficiency. We need a collector that
-    -- collects up to some specific depth.
-    molWithEnGrad <- gradientCollector mol >>= energyCollector
+    molWithEnGrad <- collectorDepth depth mol
     let molHSlices = horizontalSlices molWithEnGrad
         molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
         molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
