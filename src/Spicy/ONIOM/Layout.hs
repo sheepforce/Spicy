@@ -58,9 +58,13 @@ mcOniomNLayout = do
       originalMolecule
       (Seq.singleton $ inputFile ^. #model % #theoryLayer)
 
-  realMol <- case IntMap.minView (topMolWithRealChild ^. #subMol) of
+  realMolWithLinks <- case IntMap.minView (topMolWithRealChild ^. #subMol) of
     Nothing -> throwM . localExc $ "A real layer should have been constructed but could not be found"
     Just (mol, _) -> return mol
+
+  -- The real system must not have "link" atoms. They link to nowhere now. Remove the link tag from
+  -- the top layer.
+  let realMol = realMolWithLinks & #atoms % each % #isLink .~ NotLink
 
   atomically . writeTVar molT $ realMol
   where
