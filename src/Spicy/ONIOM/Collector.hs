@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.ONIOM.Collector
 -- Description : Transforming individual information from calculations to an ONIOM result.
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -90,7 +90,6 @@ multicentreOniomNCollector atomicTask = do
 -- \]
 --
 -- where \(c\) refers to the centre.
-
 energyCollector :: MonadThrow m => Molecule -> m Molecule
 energyCollector mol = do
   let subMols = mol ^. #subMol
@@ -198,8 +197,7 @@ energyCollector mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- __Use the 'multicentreOniomNCollector', which calls this collector.__
+-- | __Use the 'multicentreOniomNCollector', which calls this collector.__
 --
 -- Collector for multicentre ONIOM-n gradients. Implemented in the local ONIOM-2 formulation, that is
 -- used by 'energyCollector'. For link atoms the formulation of [A new ONIOM implementation in
@@ -366,8 +364,7 @@ gradientCollector mol = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- __Use the 'multicentreOniomNCollector', which calls this collector.__
+-- | __Use the 'multicentreOniomNCollector', which calls this collector.__
 --
 -- Multicentre ONIOMn collector for the hessian. Implemented in a local ONIOM-2 formulation, that is
 -- also used by 'energyCollector'. For link atoms, the formulation of [A new ONIOM implementation in
