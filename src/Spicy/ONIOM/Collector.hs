@@ -43,9 +43,7 @@ multicentreOniomNCollector :: HasMolecule env => RIO env ()
 multicentreOniomNCollector = do
   molT <- view moleculeL
   mol <- readTVarIO molT
-
   molEDeriv <- eDerivCollector mol
-
   atomically . writeTVar molT $ molEDeriv
 
 ----------------------------------------------------------------------------------------------------
