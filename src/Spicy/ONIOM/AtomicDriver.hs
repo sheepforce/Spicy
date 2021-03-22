@@ -22,11 +22,15 @@ where
 
 import Data.Default
 import qualified Data.IntMap as IntMap
-import Data.Massiv.Array as Massiv hiding (forM_, loop)
+import qualified Data.IntSet as IntSet
+import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
 import Data.Massiv.Array.Manifest.Vector as Massiv
+import Network.Socket
 import Optics hiding (Empty, view)
 import RIO hiding
-  ( view,
+  ( Vector,
+    lens,
+    view,
     (%~),
     (.~),
     (^.),
@@ -36,17 +40,21 @@ import RIO hiding
 import qualified RIO.Map as Map
 import RIO.Process
 import RIO.Seq (Seq (..))
+import qualified RIO.Seq as Seq
 import qualified RIO.Vector.Storable as VectorS
 import Spicy.Common
 import Spicy.Data
 import Spicy.InputFile
 import Spicy.Logger
 import Spicy.Molecule
+import Spicy.Molecule.Internal.Types (_IsLink)
 import Spicy.ONIOM.Collector
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.IPI.Protocol
 import Spicy.Wrapper.IPI.Pysisyphus
 import Spicy.Wrapper.IPI.Types
+import System.Path ((</>))
+import qualified System.Path as Path
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
 -- transered from the calculation output to the actual fields of the molecule.
@@ -234,6 +242,57 @@ geomMacroDriver = do
         -- Reiterating
         loop pysisIPI selAtoms
 
+{-
+====================================================================================================
+-}
+
+-- | A driver for geometry optimisations with microiterations. The scheme is a so called adiabatic
+-- one. Let's say we focus on a horizontal slice of the ONIOM tree, and look at all layers that are
+-- on this same hierarchy in the ONIOM layout, no matter if they are in the same branch or not.
+-- Those are optimised together by a single optimiser (pysisyphus instance). We define a coordinate
+-- system for this hierarchy, that does not influence the coordinates of atoms of any other
+-- hierarchy. These coordinates are \(q^l\) and \(\partial E_\text{model} / \partial q^l = 0\).
+-- Therefore, \(q^l\) contains the coordinates of all atoms of this horizontal slice, minus the
+-- atoms of all models one layer below and also minus the atoms that were replaced by links in the
+-- models (real parent atoms). Now, we fully converge these coordinates to a minimum. After
+-- convergence we do a single step in the model systems with coordinate system \(q^m\), which
+-- contains the coordinates of model atoms that are not part of even deeper models and not link atoms
+-- of the model layer, as well as the real parents from one layer above. In the next recursion
+-- \(q^m\) will become \(q^l\).
+geomMicroDriver ::
+  ( HasMolecule env,
+    HasInputFile env,
+    HasLogFunc env,
+    HasProcessContext env,
+    HasWrapperConfigs env,
+    HasCalcSlot env
+  ) =>
+  RIO env ()
+geomMicroDriver = do
+  -- Get intial information.
+  molT <- view moleculeL
+  mol <- readTVarIO molT
+
+  -- Setup the pysisyphus optimisation servers per horizontal slice.
+  microOptHierarchy <- setupPsysisServers mol
+
+  -- Perform the optimisations steps in a mindblowing recursion ...
+  -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
+  -- up. When converged the function will terminate.
+  optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
+
+  -- Terminate all the companion threads.
+  forM_ microOptHierarchy $ \MicroOptSetup {atomsAtDepth, ipiClientThread, ipiServerThread, pysisIPI} -> do
+    -- Stop the pysisyphus server by gracefully by writing a magic file.
+    writeFileUTF8 ((pysisIPI ^. #workDir) </> Path.relFile "converged")  mempty
+
+    -- Cancel the client and reset the communication variables to a fresh state.
+    cancel ipiClientThread
+    void . atomically . tryTakeTMVar $ pysisIPI ^. #input
+    void . atomically . tryTakeTMVar $ pysisIPI ^. #output
+    void . atomically . tryTakeTMVar $ pysisIPI ^. #status
+    undefined
+
 
 ----------------------------------------------------------------------------------------------------
 
@@ -323,34 +382,91 @@ calcAtDepth depth task = do
 
 -- | Do a single geometry optimisation step with a *running* pysisyphus instance at a given depth.
 -- Takes care that the gradients are all calculated and that the microcycles above have converged.
-optStepAtDepth :: Int -> RIO env ()
-optStepAtDepth depth
-  | depth < 0 = return ()
-  | depth == 0 = undefined
-  | depth > 0 = undefined
-  | otherwise = return ()
+optAtDepth ::
+  ( HasMolecule env,
+    HasLogFunc env,
+    HasCalcSlot env,
+    HasProcessContext env
+  ) =>
+  Int ->
+  Seq MicroOptSetup ->
+  RIO env ()
+optAtDepth depth' microOptSettings'
+  | depth' > Seq.length microOptSettings' = throwM $ MolLogicException "optStepAtDepth" "Requesting optimisation of a layer that has no microoptimisation settings"
+  | depth' < 0 = return ()
+  | otherwise = untilConvergence depth' microOptSettings'
   where
+    -- Do a single geometry optimisation step at a given depth.
+    untilConvergence ::
+      ( HasMolecule env,
+        HasLogFunc env,
+        HasCalcSlot env,
+        HasProcessContext env
+      ) =>
+      Int ->
+      Seq MicroOptSetup ->
+      RIO env ()
+    untilConvergence depth microOptSettings = do
+      -- Optimise slices above.
+      optAtDepth (depth - 1) microOptSettings
+
+      -- Optimisation of this layer.
+      -- The molecule before steps are taken.
+      molT <- view moleculeL
+      molBeforeStep <- readTVarIO molT
+      microSettingsAtDepth <-
+        maybe2MThrow (IndexOutOfBoundsException (Sz $ Seq.length microOptSettings) depth) $
+          microOptSettings Seq.!? depth
+
+      -- Calculate gradients for this slice.
+      calcAtDepth depth WTGradient
+
+      -- Do a single geometry optimisation step for this layer.
+      posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth (microSettingsAtDepth ^. #atomsAtDepth)
+
+      -- Molecule after the step has been taken. Calculate convergence in the coordinates given only
+      -- by atoms of this depth.
+      molAfterStep <- readTVarIO molT
+      let isConverged = undefined
+
+      -- Reiterate until convergence.
+      unless isConverged $ untilConvergence depth microOptSettings
+
+----------------------------------------------------------------------------------------------------
+
+-- | Do microoptimisations at a given depth.
+microOptAtDepth :: (HasMolecule env, HasProcessContext env, HasLogFunc env) => Int -> RIO env ()
+microOptAtDepth depth
+  | depth < 0 = return ()
+  | otherwise = do
+    -- Obtain
+    return ()
 
 ----------------------------------------------------------------------------------------------------
 
 -- | Assuming all gradients are available and no calculaiton is running anymore; build the gradient
--- of the full system and obtain a position update from the given i-PI server. Returns a molecule
--- with new coordinates.
+-- of the full system and obtain a position update from the given i-PI server. Updates the full
+-- molecule with new coordinates.
 posUpdateAtDepth ::
-  -- | Full molecular system, not sublayers.
-  Molecule ->
+  (HasMolecule env) =>
   -- | The socket used to optimised at specified depth.
   IPI ->
   -- | Depth/Horizontal cut depth at which to optimise.
   Int ->
   -- | Atoms selected to be optimised at this layer.
   IntSet ->
-  RIO env Molecule
-posUpdateAtDepth mol pysisIPI depth atomSel
-  | depth < 0 = return mol
+  RIO env ()
+posUpdateAtDepth pysisIPI depth atomSel
+  | depth < 0 = return ()
   | otherwise = do
+    molT <- view moleculeL
+    mol <- readTVarIO molT
+
     -- Transform all gradients and then obtain the gradients in sparse representation for the two
     -- layers of interest.
+    -- TODO - This is formally correct but should not be done. Gradients on deeper layers are not
+    -- necessary and we should not calculate them to maintain efficiency. We need a collector that
+    -- collects up to some specific depth.
     molWithEnGrad <- gradientCollector mol >>= energyCollector
     let molHSlices = horizontalSlices molWithEnGrad
         molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
@@ -393,7 +509,7 @@ posUpdateAtDepth mol pysisIPI depth atomSel
             & #energyDerivatives .~ def
             & #calcContext % each % #output .~ Nothing
 
-    return molNext
+    atomically . writeTVar molT $ molNext
   where
     combineSparseGradiens :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
     combineSparseGradiens mols =
@@ -406,6 +522,90 @@ posUpdateAtDepth mol pysisIPI depth atomSel
             )
             (pure mempty)
             sparseGrads
+
+----------------------------------------------------------------------------------------------------
+
+-- | Per slice settings for the optimisation.
+data MicroOptSetup = MicroOptSetup
+  { -- | Moving atoms for this slice
+    atomsAtDepth :: !IntSet,
+    -- | The i-PI client thread. To be killed in the end.
+    ipiClientThread :: Async (),
+    -- | Pysisyphus i-PI server thread. To be gracefully terminated when done.
+    ipiServerThread :: Async (),
+    -- | IPI communication and process settings.
+    pysisIPI :: !IPI
+  }
+
+instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atomsAtDepth" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens atomsAtDepth $ \s b -> s {atomsAtDepth = b}
+
+instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "ipiClientThread" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens ipiClientThread $ \s b -> s {ipiClientThread = b}
+
+instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "ipiServerThread" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens ipiServerThread $ \s b -> s {ipiServerThread = b}
+
+instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisIPI" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens pysisIPI $ \s b -> s {pysisIPI = b}
+
+-- | Create one Pysisyphus i-PI instance per layer that takes care of the optimisations steps at a
+-- given horizontal slice. It returns relevant optimisation settings for each layer to be used by
+-- other functions, that actually do the optimisation.
+setupPsysisServers ::
+  ( HasInputFile env,
+    HasLogFunc env,
+    HasProcessContext env,
+    HasWrapperConfigs env
+  ) =>
+  Molecule ->
+  RIO env (Seq MicroOptSetup)
+setupPsysisServers mol = do
+  -- Get directories to work in from the input file.
+  inputFile <- view inputFileL
+  let scratchDir = getDirPath $ inputFile ^. #scratch
+      permaDir = getDirPath $ inputFile ^. #permanent
+
+  -- Make per slice information.
+  let molSlices = horizontalSlices mol
+      optAtomsSelAtDepth = getOptAtomsAtDepth mol <$> Seq.fromList [0 .. Seq.length molSlices]
+      allAtoms = molFoldl (\acc m -> acc <> (m ^. #atoms)) mempty mol
+      optAtomsAtDepth = fmap (IntMap.restrictKeys allAtoms) optAtomsSelAtDepth
+
+  fstMolsAtDepth <-
+    maybe2MThrow (localExc "a slice of the molecule seems to be empty") $
+      traverse (Seq.!? 0) molSlices
+  optSettingsAtDepthRaw <-
+    maybe2MThrow (localExc "an original calculation context on some level is missing") $
+      forM fstMolsAtDepth (^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation)
+  let optSettingsAtDepth =
+        Seq.mapWithIndex
+          ( \i opt ->
+              opt
+                & #pysisyphus % #socketAddr .~ SockAddrUnix (mkScktPath scratchDir i)
+                & #pysisyphus % #workDir .~ mkPysisWorkDir permaDir i
+                & #pysisyphus % #initCoords .~ (mkPysisWorkDir permaDir i </> Path.relFile "InitCoords.xyz")
+          )
+          optSettingsAtDepthRaw
+      atomsAndSettingsAtDepth = Seq.zip optAtomsAtDepth optSettingsAtDepth
+  threadsAtDepth <- mapM (uncurry providePysisAbstract) atomsAndSettingsAtDepth
+
+  return $
+    Seq.zipWith
+      ( \(a, s) (st, ct) ->
+          MicroOptSetup
+            { atomsAtDepth = IntMap.keysSet a,
+              ipiClientThread = ct,
+              ipiServerThread = st,
+              pysisIPI = s ^. #pysisyphus
+            }
+      )
+      atomsAndSettingsAtDepth
+      threadsAtDepth
+  where
+    localExc = MolLogicException "setupPsysisServers"
+    mkScktPath sd i = Path.toString $ sd </> Path.relFile ("pysis_slice_" <> show i <> ".socket")
+    mkPysisWorkDir pd i = pd </> Path.relDir ("pysis_slice" <> show i)
 
 {-
 ====================================================================================================
