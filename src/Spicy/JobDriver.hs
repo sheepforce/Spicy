@@ -79,10 +79,10 @@ spicyExecMain = do
   tasks <- view $ inputFileL % #task
   forM_ tasks $ \t -> do
     case t of
-      Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+      Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector
       Optimise Macro -> geomMacroDriver
       Optimise Micro -> undefined
-      Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+      Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector
       MD -> do
         logError "A MD run was requested but MD is not implemented yet."
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."

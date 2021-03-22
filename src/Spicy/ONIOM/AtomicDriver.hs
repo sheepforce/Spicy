@@ -221,12 +221,12 @@ geomMacroDriver = do
         ipiData <- case ipiServerWants of
           WantForces -> do
             multicentreOniomNDriver WTGradient
-            multicentreOniomNCollector WTGradient
+            multicentreOniomNCollector
             molWithForces <- readTVarIO molT
             molToForceData molWithForces
           WantHessian -> do
             multicentreOniomNDriver WTHessian
-            multicentreOniomNCollector WTHessian
+            multicentreOniomNCollector
             molWithHessian <- readTVarIO molT
             molToHessianData molWithHessian
           Done -> do
