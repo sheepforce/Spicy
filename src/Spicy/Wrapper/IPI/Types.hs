@@ -115,12 +115,17 @@ data Status
   = NeedInit
   | Ready
   | HaveData
+  | ForceReady
+  | HessianReady
   deriving (Eq, Show)
 
+-- |
 instance Binary Status where
-  put NeedInit = putByteString "NEEDINIT"
-  put Ready = putByteString "READY"
-  put HaveData = putByteString "HAVEDATA"
+  put NeedInit = putByteString "NEEDINIT    "
+  put Ready = putByteString "READY       "
+  put HaveData = putByteString "HAVEDATA    "
+  put ForceReady = putByteString "FORCEREADY  "
+  put HessianReady = putByteString "HESSIANREADY"
 
   get = do
     msg <- getRemainingLazyByteString
@@ -128,6 +133,8 @@ instance Binary Status where
       "NEEDINIT" -> return NeedInit
       "READY" -> return Ready
       "HAVEDATA" -> return HaveData
+      "FORCEREADY" -> return ForceReady
+      "HESSIANREADY" -> return HessianReady
       _ -> fail "invalid status message"
 
 data DataRequest

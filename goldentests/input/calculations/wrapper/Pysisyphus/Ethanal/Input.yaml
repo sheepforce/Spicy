@@ -23,6 +23,5 @@ model:
       target: min
       coords: cart
       iterations: 27
-      hessianRecalc: 3
 task:
 - optimise_macro
