@@ -50,6 +50,7 @@ module Spicy.Molecule
     _SaddlePoint,
     TSOptAlg (..),
     MinOptAlg (..),
+    GeomConv (..),
 
     -- ** Energy Derivatives
     EnergyDerivatives (..),
