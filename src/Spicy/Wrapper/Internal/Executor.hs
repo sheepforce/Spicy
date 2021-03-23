@@ -484,11 +484,13 @@ analyseXTB calcID = do
       hessianPath = permanentDir </> Path.relFile "hessian"
       task' = calcContext ^. #input % #task
 
-  gradientOutput <- do
-    logDebug $ "Reading gradient file " <> path2Utf8Builder gradientPath
-    gradientContent <- readFileUTF8 $ Path.toAbsRel gradientPath
-    gradient <- parse' parseXTBgradient gradientContent
-    return . Just $ gradient
+  gradientOutput <- case task' of
+    WTEnergy -> return Nothing
+    _ -> do
+      logDebug $ "Reading gradient file " <> path2Utf8Builder gradientPath
+      gradientContent <- readFileUTF8 $ Path.toAbsRel gradientPath
+      gradient <- parse' parseXTBgradient gradientContent
+      return . Just $ gradient
 
   -- If the task was a hessian calculation, also parse the array with the hessian.
   hessianOutput <- case task' of

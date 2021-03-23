@@ -20,5 +20,4 @@ model:
       tag: electronic
       contents: [0.2,0.4]
 task:
-- energy
-# - optimise_macro
+- optimise_macro
