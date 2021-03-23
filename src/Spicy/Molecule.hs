@@ -108,6 +108,7 @@ module Spicy.Molecule
     shrinkNeighbourList,
     horizontalSlices,
     gradDense2Sparse,
+    calcGeomConv,
 
     -- * Writer
     writeXYZ,
