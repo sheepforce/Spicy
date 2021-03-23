@@ -286,7 +286,8 @@ geomMicroDriver ::
     HasLogFunc env,
     HasProcessContext env,
     HasWrapperConfigs env,
-    HasCalcSlot env
+    HasCalcSlot env,
+    HasMotion env
   ) =>
   RIO env ()
 geomMicroDriver = do
@@ -315,7 +316,6 @@ geomMicroDriver = do
     void . atomically . tryTakeTMVar $ pysisIPI ^. #input
     void . atomically . tryTakeTMVar $ pysisIPI ^. #output
     void . atomically . tryTakeTMVar $ pysisIPI ^. #status
-
 
 ----------------------------------------------------------------------------------------------------
 
@@ -409,7 +409,8 @@ optAtDepth ::
   ( HasMolecule env,
     HasLogFunc env,
     HasCalcSlot env,
-    HasProcessContext env
+    HasProcessContext env,
+    HasMotion env
   ) =>
   Int ->
   Seq MicroOptSetup ->
@@ -424,7 +425,8 @@ optAtDepth depth' microOptSettings'
       ( HasMolecule env,
         HasLogFunc env,
         HasCalcSlot env,
-        HasProcessContext env
+        HasProcessContext env,
+        HasMotion env
       ) =>
       Int ->
       Seq MicroOptSetup ->
@@ -453,6 +455,15 @@ optAtDepth depth' microOptSettings'
       geomChange <- calcGeomConv molBeforeStep molAfterStep
       let geomConvCriteria = microSettingsAtDepth ^. #geomConv
           isConverged = geomChange < geomConvCriteria
+
+      -- Update the motion environment with the progress from this step.
+      motionT <- view motionL
+      void . atomically . writeTBRQueue motionT $ Motion {
+          geomChange = geomChange,
+          molecule = Nothing,
+          outerCycle = 1, -- TODO - somehow need to count cycles.
+          microCycle = (1,1) -- TODO - somehow need to count cycles
+        }
 
       -- Reiterate until convergence. If converged calculate the final energy.
       if isConverged
