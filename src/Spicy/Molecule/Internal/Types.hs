@@ -1146,6 +1146,25 @@ data GeomConv = GeomConv
   }
   deriving (Eq, Show, Generic)
 
+-- | 'Ord' instance, that can be used to check convergence. The left side is the value and the right
+-- side the criterion.
+instance Ord GeomConv where
+  a `compare` b
+    | a == b = EQ
+    | all (== LT) allChecks = LT
+    | otherwise = GT
+    where
+      allChecks =
+        [ rmsForce a `compareMaybe` rmsForce b,
+          maxForce a `compareMaybe` maxForce b,
+          rmsDisp a `compareMaybe` rmsDisp b,
+          maxDisp a `compareMaybe` maxDisp b,
+          eDiff a `compareMaybe` eDiff b
+        ]
+      compareMaybe x y = case y of
+        Nothing -> LT
+        _ -> x `compare` y
+
 instance ToJSON GeomConv where
   toEncoding = genericToEncoding spicyJOption
 
