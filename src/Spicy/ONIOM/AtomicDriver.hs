@@ -190,13 +190,12 @@ geomMacroDriver = do
   printSpicy . renderBuilder . spicyLog optStartPrintEvn $
     spicyLogMol (HashSet.fromList [Always, Task Start]) All
 
-  -- Obtain the Pysisyphus IPI settings for communication.
+  -- Obtain the Pysisyphus IPI settings and convergence treshold for communication.
   mol <- view moleculeL >>= readTVarIO
-  pysisIPI <-
-    let optSettings = mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation % #pysisyphus
-     in case optSettings of
-          Nothing -> throw . localExc $ "Pysisyphus connection settings could not be found."
-          Just i -> return i
+  optSettings <- maybe2MThrow (localExc "Optimisation settings not found on the top layer.") $
+    mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
+  let pysisIPI = optSettings ^. #pysisyphus
+      convThresh = optSettings ^. #convergence
 
   -- Launch a Pysisyphus server and an i-PI client for the optimisation.
   (pysisServer, pysisClient) <- providePysis
@@ -205,17 +204,17 @@ geomMacroDriver = do
 
   -- Start the loop that provides the i-PI client thread with data for the optimisation.
   let allTopAtoms = IntMap.keysSet $ mol ^. #atoms
-  loop pysisIPI allTopAtoms
+  loop pysisIPI convThresh allTopAtoms
 
   -- Final logging
   optEndPrintEvn <- getCurrPrintEvn
   printSpicy . renderBuilder . spicyLog optEndPrintEvn $
     spicyLogMol (HashSet.fromList [Always, Task End]) All
   where
-    localExc = SpicyIndirectionException "geomMacroDriver"
+    localExc = MolLogicException "geomMacroDriver"
 
     -- The optimisation loop.
-    loop pysisIPI selAtoms = do
+    loop pysisIPI convThresh selAtoms = do
       -- Check if the client is still runnning and expects us to provide new data.
       ipiServerWants <- atomically . takeTMVar $ pysisIPI ^. #status
       unless (ipiServerWants == Done) $ do
@@ -230,6 +229,10 @@ geomMacroDriver = do
         posVec <- case posData ^. #coords of
           NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
         molNewStruct <- updatePositionsPosVec posVec selAtoms molOld
+
+        -- Check for convergence.
+        geomChange <- calcGeomConv molOld molNewStruct
+        let isConverged = geomChange < convThresh
         atomically . writeTVar molT $ molNewStruct
 
         -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
@@ -261,8 +264,12 @@ geomMacroDriver = do
         -- Get the molecule in the new structure with its forces or hessian.
         atomically . putTMVar ipiDataIn $ ipiData
 
+        -- If converged terminate the i-PI server by putting a "converged" file in its working
+        -- directory
+        when isConverged $ writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
+
         -- Reiterating
-        loop pysisIPI selAtoms
+        loop pysisIPI convThresh selAtoms
 
 {-
 ====================================================================================================

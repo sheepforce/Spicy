@@ -221,7 +221,8 @@ data MinOpt = MinOpt
     lineSearch :: Bool,
     minTrust :: Double,
     maxTrust :: Double,
-    trustRadius :: Double
+    trustRadius :: Double,
+    thresh :: ConvThresh
   }
 
 instance ToJSON MinOpt where
@@ -234,7 +235,8 @@ instance ToJSON MinOpt where
         lineSearch,
         minTrust,
         maxTrust,
-        trustRadius
+        trustRadius,
+        thresh
       } =
       object
         [ "type" .= optType,
@@ -244,7 +246,8 @@ instance ToJSON MinOpt where
           "line_search" .= lineSearch,
           "trust_radius" .= trustRadius,
           "trust_min" .= minTrust,
-          "trust_max" .= maxTrust
+          "trust_max" .= maxTrust,
+          "thresh" .= thresh
         ]
 
 ----------------------------------------------------------------------------------------------------
@@ -256,19 +259,30 @@ data TSOpt = TSOpt
     recalcHessian :: Maybe Int,
     minTrust :: Double,
     maxTrust :: Double,
-    trustRadius :: Double
+    trustRadius :: Double,
+    thresh :: ConvThresh
   }
 
 instance ToJSON TSOpt where
-  toJSON TSOpt {optType, maxCycles, recalcHessian, minTrust, maxTrust, trustRadius} =
+  toJSON TSOpt {optType, maxCycles, recalcHessian, minTrust, maxTrust, trustRadius, thresh} =
     object
       [ "type" .= optType,
         "max_cycles" .= maxCycles,
         "hessian_recalc" .= recalcHessian,
         "trust_radius" .= trustRadius,
         "trust_max" .= maxTrust,
-        "trust_min" .= minTrust
+        "trust_min" .= minTrust,
+        "thresh" .= thresh
       ]
+
+----------------------------------------------------------------------------------------------------
+
+-- | Convergence threshold for Pysisyphus. Server is meant to never converge. Convergence is checked
+-- by Spicy.
+data ConvThresh = Never
+
+instance ToJSON ConvThresh where
+  toJSON Never = toJSON @Text "never"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -349,7 +363,8 @@ opt2Pysis
                 lineSearch = lineSearch,
                 minTrust = minTrust,
                 maxTrust = maxTrust,
-                trustRadius = trustRadius
+                trustRadius = trustRadius,
+                thresh = Never
               }
       tsOpt =
         TSOpt
@@ -358,7 +373,8 @@ opt2Pysis
             recalcHessian = hessianRecalc,
             minTrust = minTrust,
             maxTrust = maxTrust,
-            trustRadius = trustRadius
+            trustRadius = trustRadius,
+            thresh = Never
           }
       calc addr =
         Calc
