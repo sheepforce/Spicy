@@ -64,6 +64,7 @@ module Spicy.Molecule.Internal.Util
     molID2OniomHumanID,
     horizontalSlices
     gradDense2Sparse
+    calcGeomConv
   )
 where
 
@@ -82,6 +83,7 @@ import Data.Massiv.Array as Massiv hiding
     sum,
     toList,
   )
+import qualified Data.Massiv.Array as Massiv
 import Data.Massiv.Core.Operations ()
 import Data.Maybe
 import Optics hiding (Empty, element, (:>))
@@ -2673,3 +2675,34 @@ gradDense2Sparse mol = do
   return . IntMap.fromAscList $ RIO.zip (IntSet.toAscList atomKeys) denseGrad3
   where
     localExc = MolLogicException "gradDense2Sparse"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Calculate geometry optimisation convergence criteria by comparing the molecule before and after
+-- displacement.
+calcGeomConv :: MonadThrow m => Molecule -> Molecule -> m GeomConv
+calcGeomConv molOld molNew = do
+  cOld <- compute @U . flatten <$> getCoordinatesAs3NMatrix molOld
+  cNew <- compute @U . flatten <$> getCoordinatesAs3NMatrix molNew
+  eOld <- maybe2MThrow (localExc "Energy missing") $ molOld ^. #energyDerivatives % #energy
+  eNew <- maybe2MThrow (localExc "Energy missing") $ molNew ^. #energyDerivatives % #energy
+  gOld <-
+    fmap getVectorS
+      . maybe2MThrow (localExc "gradient missing")
+      $ molOld ^. #energyDerivatives % #gradient
+  disp <- Massiv.map abs <$> (cOld .-. cNew)
+  maxForce <- Massiv.maximumM . Massiv.map abs $ gOld
+  maxDisp <- Massiv.maximumM . Massiv.map abs $ disp
+  return
+    GeomConv
+      { rmsForce = Just . rms $ gOld,
+        maxForce = Just  maxForce,
+        rmsDisp = Just . rms $ disp,
+        maxDisp = Just maxDisp,
+        eDiff = Just . abs $ eOld - eNew
+      }
+  where
+    localExc = MolLogicException "calcGeomConv"
+    rms v =
+      let Sz n = Massiv.size v
+       in sqrt . (/ fromIntegral n) . Massiv.sum . Massiv.map (** 2) $ v

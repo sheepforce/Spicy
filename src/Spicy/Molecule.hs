@@ -115,6 +115,7 @@ module Spicy.Molecule
     molID2OniomHumanID,
     horizontalSlices,
     gradDense2Sparse,
+    calcGeomConv,
 
     -- * Writer
     writeXYZ,
