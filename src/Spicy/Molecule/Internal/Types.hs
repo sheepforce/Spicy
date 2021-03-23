@@ -976,7 +976,8 @@ instance ToJSON Optimisation where
         maxTrust,
         minTrust,
         lineSearch,
-        optType
+        optType,
+        convergence
       } =
       object
         [ "coordType" .= coordType,
@@ -987,7 +988,8 @@ instance ToJSON Optimisation where
           "maxTrust" .= maxTrust,
           "minTrust" .= minTrust,
           "lineSearch" .= lineSearch,
-          "optType" .= optType
+          "optType" .= optType,
+          "convergence" .= convergence
         ]
 
 -- Lenses
@@ -1017,6 +1019,9 @@ instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "lineSearch" k Optimisation
 
 instance (k ~ A_Lens, a ~ OptType, b ~ a) => LabelOptic "optType" k Optimisation Optimisation a b where
   labelOptic = lens optType $ \s b -> s {optType = b}
+
+instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "convergence" k Optimisation Optimisation a b where
+  labelOptic = lens convergence $ \s b -> s {convergence = b}
 
 instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisyphus" k Optimisation Optimisation a b where
   labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}
