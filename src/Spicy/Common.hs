@@ -158,6 +158,18 @@ module Spicy.Common
     view,
     maybe2MThrow,
     getResOrErr,
+
+    -- * Rotating Bound Channels
+    -- $rotatingBoundChannels
+    TBRQueue,
+    newTBRQueue,
+    newTBRQueueIO,
+    readTBRQueue,
+    tryReadTBRQueue,
+    peekTBRQueue,
+    tryPeekTBRQueue,
+    writeTBRQueue,
+    getAllTBRQueue,
   )
 where
 
@@ -1737,3 +1749,88 @@ getResOrErr val = case val of
   Left exc -> do
     logError . displayShow $ exc
     throwM exc
+
+{-
+####################################################################################################
+-}
+
+-- $rotatingBoundChannels
+-- Extends bound STM channels to discard the oldest value when a new one is inserted. It is
+-- therefore a bound lossfull channel, that shifts values.
+
+newtype TBRQueue a = TBRQueue {unwrapTBQueue :: TBQueue a}
+
+----------------------------------------------------------------------------------------------------
+
+-- | Builds and returns a new instance of 'TBRQueue'
+newTBRQueue ::
+  -- | Maximum number of elements the queue can hold.
+  Natural ->
+  STM (TBRQueue a)
+newTBRQueue c = TBRQueue <$> newTBQueue c
+
+----------------------------------------------------------------------------------------------------
+
+-- | Lifted version of 'newTBRQueue'.
+newTBRQueueIO ::
+  MonadIO m =>
+  -- | Maximum number of elements the queue can hold.
+  Natural ->
+  m (TBRQueue a)
+newTBRQueueIO = atomically . newTBRQueue
+
+----------------------------------------------------------------------------------------------------
+
+-- | Read the next value from a 'TBRQueue'.
+readTBRQueue :: TBRQueue a -> STM a
+readTBRQueue = readTBQueue . unwrapTBQueue
+
+----------------------------------------------------------------------------------------------------
+
+-- | A version of 'readTBRQueue' which does not retry. Instead it returns 'Nothing' if no value is
+-- available.
+tryReadTBRQueue :: TBRQueue a -> STM (Maybe a)
+tryReadTBRQueue = tryReadTBQueue . unwrapTBQueue
+
+----------------------------------------------------------------------------------------------------
+
+-- | Get the next value from the 'TBRQueue' without removing it, retrying if the channel is empty.
+peekTBRQueue :: TBRQueue a -> STM a
+peekTBRQueue = peekTBQueue . unwrapTBQueue
+
+----------------------------------------------------------------------------------------------------
+
+-- | A version of 'peekTBRQueue' which does not retry. Instead it returns 'Nothing' if no value is
+-- available.
+tryPeekTBRQueue :: TBRQueue a -> STM (Maybe a)
+tryPeekTBRQueue = tryPeekTBQueue . unwrapTBQueue
+
+----------------------------------------------------------------------------------------------------
+
+-- | Write a value to a 'TBRQueue'; If the queue is full, it removes the oldest element and inserts
+-- the next one. The element that was removed is returned as 'Just'. If the queue was not full, the
+-- element is inserted and 'Nothing' is returned.
+writeTBRQueue :: TBRQueue a -> a -> STM (Maybe a)
+writeTBRQueue q e =
+  isFullTBQueue qU >>= \isFull ->
+    if isFull
+      then do
+        oldE <- readTBQueue qU
+        writeTBQueue qU e
+        return . Just $ oldE
+      else writeTBQueue qU e *> pure Nothing
+  where
+    qU = unwrapTBQueue q
+
+----------------------------------------------------------------------------------------------------
+
+-- | Get all elements from the queue and therefore empty it. Blocks until the queue is empty.
+getAllTBRQueue :: TBRQueue a -> STM [a]
+getAllTBRQueue q = go q mempty
+  where
+    go :: TBRQueue a -> [a] -> STM [a]
+    go q' xs = do
+      x' <- tryPeekTBRQueue q'
+      case x' of
+        Nothing -> return xs
+        Just x -> go q' (x : xs)
