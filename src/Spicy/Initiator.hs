@@ -15,6 +15,7 @@ where
 
 import Data.Char
 import qualified Data.Map as Map
+import Data.FileEmbed
 import Data.Maybe
 import Optics hiding (view)
 import RIO hiding
@@ -23,7 +24,6 @@ import RIO hiding
     (.~),
     (^.),
   )
-import RIO.List (repeat)
 import RIO.Process
 import Spicy.CmdArgs
 import Spicy.Common
@@ -84,13 +84,7 @@ inputToEnvAndRun = do
   procCntxt' <- mkDefaultProcessContext
 
   -- Construct the motion state.
-  let allMolIDs = toList $ getAllMolIDsHierarchically molecule'
-      motion' =
-        Motion
-          { outerCycle = 0,
-            innerCycles = Map.fromList $ zip allMolIDs (repeat 0)
-          }
-  motionT <- newTVarIO motion'
+  motionT <- newTBRQueueIO 100
 
   -- Create the input and output slots of the companion threads.
   -- The calculation slot, running the QC wrappers.
