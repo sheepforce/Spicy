@@ -76,6 +76,7 @@ module Spicy.Molecule.Internal.Types
     _SaddlePoint,
     TSOptAlg (..),
     MinOptAlg (..),
+    GeomConv (..),
 
     -- ** Energy Derivatives
     EnergyDerivatives (..),
@@ -941,12 +942,15 @@ data Optimisation = Optimisation
     lineSearch :: Bool,
     -- | Optimisation to either minima or saddle points.
     optType :: OptType,
+    -- | Convergence criteria.
+    convergence :: GeomConv,
     -- | Pysisyphus connection settings.
     pysisyphus :: IPI
   }
 
 instance DefaultIO Optimisation where
-  defIO =
+  defIO = do
+    defPysis <- defIO
     return
       Optimisation
         { coordType = DLC,
@@ -958,7 +962,8 @@ instance DefaultIO Optimisation where
           maxTrust = 1.0,
           lineSearch = True,
           optType = Minimum RFO,
-          pysisyphus = undefined
+          pysisyphus = defPysis,
+          convergence = def
         }
 
 instance ToJSON Optimisation where
@@ -1123,6 +1128,51 @@ instance FromJSON MinOptAlg where
 
 instance ToJSON MinOptAlg where
   toJSON RFO = toJSON @Text "rfo"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Convergence criteria of a geometry optimisation. 'Nothing' values are not checked for
+-- convergce.
+data GeomConv = GeomConv
+  { rmsForce :: Maybe Double,
+    maxForce :: Maybe Double,
+    rmsDisp :: Maybe Double,
+    maxDisp :: Maybe Double,
+    eDiff :: Maybe Double
+  }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON GeomConv where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON GeomConv where
+  parseJSON = genericParseJSON spicyJOption
+
+instance Default GeomConv where
+  def =
+    GeomConv
+      { maxForce = Just 0.00045,
+        rmsForce = Just 0.00030,
+        maxDisp = Just 0.00180,
+        rmsDisp = Just 0.00120,
+        eDiff = Just 0.00001
+      }
+
+-- Labels
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "rmsForce" k GeomConv GeomConv a b where
+  labelOptic = lens rmsForce $ \s b -> s {rmsForce = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "maxForce" k GeomConv GeomConv a b where
+  labelOptic = lens maxForce $ \s b -> s {maxForce = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "rmsDisp" k GeomConv GeomConv a b where
+  labelOptic = lens rmsDisp $ \s b -> s {rmsDisp = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "maxDisp" k GeomConv GeomConv a b where
+  labelOptic = lens maxDisp $ \s b -> s {maxDisp = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "eDiff" k GeomConv GeomConv a b where
+  labelOptic = lens eDiff $ \s b -> s {eDiff = b}
 
 {-
 ====================================================================================================

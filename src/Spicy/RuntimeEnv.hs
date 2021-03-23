@@ -51,8 +51,9 @@ data SpicyEnv = SpicyEnv
     -- | Configuration files with Maps of environment variables
     --   to set before launching a program.
     wrapperConfigs :: !WrapperConfigs,
-    -- | Contains optimisation counters, MD counters and so on.
-    motion :: !(TVar Motion),
+    -- | Counters, quantifiers and history of the motion. It can hold the history with an upper
+    -- bound of steps.
+    motion :: !(TBRQueue Motion),
     -- | A logging function for RIO.
     logFunc :: !LogFunc,
     -- | A process context for RIO.
@@ -66,7 +67,7 @@ data SpicyEnv = SpicyEnv
 
 -- Lenses
 instance (k ~ A_Lens, a ~ TVar Molecule, b ~ a) => LabelOptic "molecule" k SpicyEnv SpicyEnv a b where
-  labelOptic = lens molecule $ \s b -> s {molecule = b}
+  labelOptic = lens (molecule :: SpicyEnv -> TVar Molecule) $ \s b -> (s {molecule = b} :: SpicyEnv)
 
 instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "calculation" k SpicyEnv SpicyEnv a b where
   labelOptic = lens calculation $ \s b -> s {calculation = b}
@@ -74,7 +75,7 @@ instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "calculation" k SpicyE
 instance (k ~ A_Lens, a ~ WrapperConfigs, b ~ a) => LabelOptic "wrapperConfigs" k SpicyEnv SpicyEnv a b where
   labelOptic = lens wrapperConfigs $ \s b -> s {wrapperConfigs = b}
 
-instance (k ~ A_Lens, a ~ TVar Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
+instance (k ~ A_Lens, a ~ TBRQueue Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
   labelOptic = lens motion $ \s b -> s {motion = b}
 
 instance (k ~ A_Lens, a ~ LogFunc, b ~ a) => LabelOptic "logFunc" k SpicyEnv SpicyEnv a b where
@@ -165,21 +166,33 @@ instance HasWrapperConfigs WrapperConfigs where
 data Motion = Motion
   { -- | The counter of outer optimisation steps (whole system as one with transformed gradients).
     outerCycle :: Int,
-    -- | The counter for inner optimisation cycles on each 'MolID' of the 'Molecule' separately.
-    innerCycles :: Map MolID Int
+    -- | Geometry changes from the previous step.
+    geomChange :: GeomConv,
+    -- | Counter for microiterations. If they are not used, this must be 'Nothing'. Contains the
+    -- depth of the current cycle and the cycle counter at that depth.
+    microCycle :: (Int, Int),
+    -- | The current 'Molecule' might be saved at this step. Be aware that this potentially becomes
+    -- very very memory demanding.
+    molecule :: Maybe Molecule
   }
-  deriving (Show, Generic)
+  deriving (Generic)
 
 -- Reader classes.
 class HasMotion env where
-  motionL :: Lens' env (TVar Motion)
+  motionL :: Lens' env (TBRQueue Motion)
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "outerCycle" k Motion Motion a b where
   labelOptic = lens outerCycle $ \s b -> s {outerCycle = b}
 
-instance (k ~ A_Lens, a ~ Map MolID Int, b ~ a) => LabelOptic "innerCycles" k Motion Motion a b where
-  labelOptic = lens innerCycles $ \s b -> s {innerCycles = b}
+instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "geomChange" k Motion Motion a b where
+  labelOptic = lens geomChange $ \s b -> s {geomChange = b}
+
+instance (k ~ A_Lens, a ~ (Int, Int), b ~ a) => LabelOptic "microCycle" k Motion Motion a b where
+  labelOptic = lens microCycle $ \s b -> s {microCycle = b}
+
+instance (k ~ A_Lens, a ~ Maybe Molecule, b ~ a) => LabelOptic "molecule" k Motion Motion a b where
+  labelOptic = lens (molecule :: Motion -> Maybe Molecule) $ \s b -> (s {molecule = b} :: Motion)
 
 ----------------------------------------------------------------------------------------------------
 
