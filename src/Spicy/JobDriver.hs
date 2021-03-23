@@ -54,7 +54,8 @@ spicyExecMain ::
     HasLogFunc env,
     HasWrapperConfigs env,
     HasProcessContext env,
-    HasCalcSlot env
+    HasCalcSlot env,
+    HasMotion env
   ) =>
   RIO env ()
 spicyExecMain = do
@@ -81,7 +82,7 @@ spicyExecMain = do
     case t of
       Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector
       Optimise Macro -> geomMacroDriver
-      Optimise Micro -> undefined
+      Optimise Micro -> geomMicroDriver
       Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector
       MD -> do
         logError "A MD run was requested but MD is not implemented yet."
