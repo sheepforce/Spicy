@@ -47,6 +47,7 @@ spicyExecMain ::
     HasProcessContext env,
     HasCalcSlot env,
     HasOutputter env
+    HasMotion env
   ) =>
   RIO env ()
 spicyExecMain = do
@@ -121,7 +122,7 @@ spicyExecMain = do
         printSpicy . renderBuilder . spicyLog energyEndPrintEnv $
           spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
       Optimise Macro -> geomMacroDriver
-      Optimise Micro -> undefined
+      Optimise Micro -> geomMicroDriver
       Frequency -> do
         -- Logging.
         hessStartPrintEnv <- getCurrPrintEvn

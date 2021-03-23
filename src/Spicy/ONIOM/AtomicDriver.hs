@@ -17,6 +17,7 @@ module Spicy.ONIOM.AtomicDriver
   ( oniomCalcDriver,
     multicentreOniomNDriver,
     geomMacroDriver,
+    geomMicroDriver
   )
 where
 
