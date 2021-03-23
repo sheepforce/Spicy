@@ -303,16 +303,18 @@ geomMicroDriver = do
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
 
   -- Terminate all the companion threads.
-  forM_ microOptHierarchy $ \MicroOptSetup {atomsAtDepth, ipiClientThread, ipiServerThread, pysisIPI} -> do
-    -- Stop the pysisyphus server by gracefully by writing a magic file.
-    writeFileUTF8 ((pysisIPI ^. #workDir) </> Path.relFile "converged")  mempty
+  forM_ microOptHierarchy $ \MicroOptSetup {ipiClientThread, ipiServerThread, pysisIPI} -> do
+    -- Stop the pysisyphus server by gracefully by writing a magic file. Wait and then kill the
+    -- thread if it hasn't stopped yet.
+    writeFileUTF8 ((pysisIPI ^. #workDir) </> Path.relFile "converged") mempty
+    threadDelay 1000000
+    cancel ipiServerThread
 
     -- Cancel the client and reset the communication variables to a fresh state.
     cancel ipiClientThread
     void . atomically . tryTakeTMVar $ pysisIPI ^. #input
     void . atomically . tryTakeTMVar $ pysisIPI ^. #output
     void . atomically . tryTakeTMVar $ pysisIPI ^. #status
-    undefined
 
 
 ----------------------------------------------------------------------------------------------------
@@ -448,10 +450,14 @@ optAtDepth depth' microOptSettings'
       -- Molecule after the step has been taken. Calculate convergence in the coordinates given only
       -- by atoms of this depth.
       molAfterStep <- readTVarIO molT
-      let isConverged = undefined
+      geomChange <- calcGeomConv molBeforeStep molAfterStep
+      let geomConvCriteria = microSettingsAtDepth ^. #geomConv
+          isConverged = geomChange < geomConvCriteria
 
-      -- Reiterate until convergence.
-      unless isConverged $ untilConvergence depth microOptSettings
+      -- Reiterate until convergence. If converged calculate the final energy.
+      if isConverged
+        then calcAtDepth depth WTGradient
+        else untilConvergence depth microOptSettings
 
 ----------------------------------------------------------------------------------------------------
 
@@ -542,7 +548,9 @@ data MicroOptSetup = MicroOptSetup
     -- | Pysisyphus i-PI server thread. To be gracefully terminated when done.
     ipiServerThread :: Async (),
     -- | IPI communication and process settings.
-    pysisIPI :: !IPI
+    pysisIPI :: !IPI,
+    -- | Geometry convergence.
+    geomConv :: GeomConv
   }
 
 instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atomsAtDepth" k MicroOptSetup MicroOptSetup a b where
@@ -556,6 +564,9 @@ instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "ipiServerThread" k Mic
 
 instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisIPI" k MicroOptSetup MicroOptSetup a b where
   labelOptic = lens pysisIPI $ \s b -> s {pysisIPI = b}
+
+instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "geomConv" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens geomConv $ \s b -> s {geomConv = b}
 
 -- | Create one Pysisyphus i-PI instance per layer that takes care of the optimisations steps at a
 -- given horizontal slice. It returns relevant optimisation settings for each layer to be used by
@@ -600,12 +611,13 @@ setupPsysisServers mol = do
 
   return $
     Seq.zipWith
-      ( \(a, s) (st, ct) ->
+      ( \(a, os) (st, ct) ->
           MicroOptSetup
             { atomsAtDepth = IntMap.keysSet a,
               ipiClientThread = ct,
               ipiServerThread = st,
-              pysisIPI = s ^. #pysisyphus
+              pysisIPI = os ^. #pysisyphus,
+              geomConv = os ^. #convergence
             }
       )
       atomsAndSettingsAtDepth
