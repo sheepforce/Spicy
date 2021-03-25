@@ -217,9 +217,7 @@ geomMacroDriver = do
           NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
         molNewStruct <- updatePositionsPosVec posVec selAtoms molOld
 
-        -- Check for convergence.
-        geomChange <- calcGeomConv molOld molNewStruct
-        let isConverged = geomChange < convThresh
+        -- Expose the new geometry to the runtime environment.
         atomically . writeTVar molT $ molNewStruct
 
         -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
@@ -246,6 +244,9 @@ geomMacroDriver = do
 
         -- If converged terminate the i-PI server by putting a "converged" file in its working
         -- directory
+        molNewWithEDerivs <- readTVarIO molT
+        geomChange <- calcGeomConv molOld molNewWithEDerivs
+        let isConverged = geomChange < convThresh
         when isConverged $ writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
 
         -- Reiterating
