@@ -113,6 +113,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
         p
           & #socketAddr .~ (Net.SockAddrUnix . Path.toString $ pysisSocket)
           & #workDir .~ Path.toAbsRel pysisDir
+          & #initCoords .~ Path.toAbsRel (pysisDir </> Path.relFile "InitCoords.xyz")
   let calcOriginal =
         CalcInput
           { task = WTEnergy,
