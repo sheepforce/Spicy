@@ -2682,24 +2682,24 @@ gradDense2Sparse mol = do
 -- displacement.
 calcGeomConv :: MonadThrow m => Molecule -> Molecule -> m GeomConv
 calcGeomConv molOld molNew = do
+  let eOld = molOld ^. #energyDerivatives % #energy
+      eNew = molNew ^. #energyDerivatives % #energy
   cOld <- compute @U . flatten <$> getCoordinatesAs3NMatrix molOld
   cNew <- compute @U . flatten <$> getCoordinatesAs3NMatrix molNew
-  eOld <- maybe2MThrow (localExc "Energy missing") $ molOld ^. #energyDerivatives % #energy
-  eNew <- maybe2MThrow (localExc "Energy missing") $ molNew ^. #energyDerivatives % #energy
-  gOld <-
+  gNew <-
     fmap getVectorS
       . maybe2MThrow (localExc "gradient missing")
-      $ molOld ^. #energyDerivatives % #gradient
+      $ molNew ^. #energyDerivatives % #gradient
   disp <- Massiv.map abs <$> (cOld .-. cNew)
-  maxForce <- Massiv.maximumM . Massiv.map abs $ gOld
+  maxForce <- Massiv.maximumM . Massiv.map abs $ gNew
   maxDisp <- Massiv.maximumM . Massiv.map abs $ disp
   return
     GeomConv
-      { rmsForce = Just . rms $ gOld,
+      { rmsForce = Just . rms $ gNew,
         maxForce = Just  maxForce,
         rmsDisp = Just . rms $ disp,
         maxDisp = Just maxDisp,
-        eDiff = Just . abs $ eOld - eNew
+        eDiff = (-) <$> eOld <*> eNew
       }
   where
     localExc = MolLogicException "calcGeomConv"
