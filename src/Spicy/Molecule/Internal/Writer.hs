@@ -114,7 +114,7 @@ writeXYZSimple atoms = do
   return . TextLazy.toStrict . TextBuilder.toLazyText $ xyzBuilder
   where
     nAtoms = IntMap.size atoms
-    header = bprint (int F.% "\n") nAtoms
+    header = bprint (int F.% "\n\n") nAtoms
 
 ----------------------------------------------------------------------------------------------------
 
