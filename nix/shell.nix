@@ -8,14 +8,15 @@ let
     let version = "dev";
         pname = "pysisyphus";
     in pkgs.python3Packages.callPackage /home/phillip/Dokumente/Git/pysisyphus/nix/pysisyphus.nix {
-         orca =null;
-         turbomole =null;
-         gaussian =null;
+         orca = null;
+         turbomole = null;
+         gaussian = null;
          gamess-us = null;
-         cfour =null;
-         molpro =null;
-         mopac =null;
-         };
+         cfour = null;
+         molpro = null;
+         mopac = null;
+         psi4 = null;
+       };
 
   # Spicy runtime configuration setup.
   spicyrc = pkgs.writeTextFile {
