@@ -33,5 +33,5 @@ model:
       selection: [2,6,7]
       deeperLayer: []
 task:
-- optimise
+- optimise_macro
 - energy
