@@ -162,8 +162,12 @@ multicentreOniomNDriver atomicTask = do
       -- recalculate energy derivatives.
       when (calcK == ONIOMKey Original) $ do
         molWithPolOutput <- readTVarIO molT
-        molWithPolTrans <- collectorDepth (Seq.length layerID) molWithPolOutput
+        layerWithPolTrans <- getMolByID molWithPolOutput layerID >>= multipoleTransfer
+        let molWithPolTrans = molWithPolOutput & layerLens .~ layerWithPolTrans
         atomically . writeTVar molT $ molWithPolTrans
+
+  -- After full traversal collect all results.
+  multicentreOniomNCollector
   where
     localExc = MolLogicException "multicentreOniomNDriver"
 
@@ -224,12 +228,10 @@ geomMacroDriver = do
         ipiData <- case ipiServerWants of
           WantForces -> do
             multicentreOniomNDriver WTGradient
-            multicentreOniomNCollector
             molWithForces <- readTVarIO molT
             molToForceData molWithForces
           WantHessian -> do
             multicentreOniomNDriver WTHessian
-            multicentreOniomNCollector
             molWithHessian <- readTVarIO molT
             molToHessianData molWithHessian
           Done -> do

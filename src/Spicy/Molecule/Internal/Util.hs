@@ -61,7 +61,8 @@ module Spicy.Molecule.Internal.Util
     shrinkNeighbourList,
     horizontalSlices,
     gradDense2Sparse,
-    calcGeomConv
+    calcGeomConv,
+    multipoleTransfer
   )
 where
 
@@ -2652,7 +2653,7 @@ calcGeomConv molOld molNew = do
   return
     GeomConv
       { rmsForce = Just . rms $ gNew,
-        maxForce = Just  maxForce,
+        maxForce = Just maxForce,
         rmsDisp = Just . rms $ disp,
         maxDisp = Just maxDisp,
         eDiff = (-) <$> eOld <*> eNew
@@ -2662,3 +2663,28 @@ calcGeomConv molOld molNew = do
     rms v =
       let Sz n = Massiv.size v
        in sqrt . (/ fromIntegral n) . Massiv.sum . Massiv.map (** 2) $ v
+
+----------------------------------------------------------------------------------------------------
+
+-- | Multipole transfer from an 'Original' calculation output to the atoms of the layer.
+multipoleTransfer :: MonadThrow m => Molecule -> m Molecule
+multipoleTransfer mol = do
+  -- Obtain multipoles as by the calculation output.
+  mPolesOut <-
+    maybe2MThrow (localExc "No multipoles available from output") $
+      mol ^? #calcContext % ix (ONIOMKey Original) % #output % _Just % #multipoles
+
+  -- Check if all multipoles, that are necessary are available.
+  unless (IntMap.keysSet atomsNeedingPoles == IntMap.keysSet mPolesOut) . throwM . localExc $
+    "Mismatch between available and required multipoles"
+
+  -- Update the atoms with the multipoles from the output.
+  let updatedAtomsWithPoles = IntMap.intersectionWith (\a p -> a & #multipoles .~ p)
+        atomsNeedingPoles mPolesOut
+      allAtomsUpdated = updatedAtomsWithPoles `IntMap.union` atoms
+  return $ mol & #atoms .~ allAtomsUpdated
+  where
+    atoms = mol ^. #atoms
+    atomsNeedingPoles =
+      IntMap.filter (\a -> not $ (isAtomLink . isLink $ a) || isDummy a) atoms
+    localExc = MolLogicException "multipoleTransfer"
