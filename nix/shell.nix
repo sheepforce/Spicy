@@ -3,13 +3,27 @@ let
   pkgs = import ./nixpkgs.nix {};
   hsPkgs = import ./default.nix { wrap = false; };
 
+  # Pysisyphus development version.
+  pysisyphusDev =
+    let version = "dev";
+        pname = "pysisyphus";
+    in pkgs.python3Packages.callPackage /home/phillip/Dokumente/Git/pysisyphus/nix/pysisyphus.nix {
+         orca =null;
+         turbomole =null;
+         gaussian =null;
+         gamess-us = null;
+         cfour =null;
+         molpro =null;
+         mopac =null;
+         };
+
   # Spicy runtime configuration setup.
   spicyrc = pkgs.writeTextFile {
     name = "spicyrc";
     text = pkgs.lib.generators.toYAML {} {
       "psi4" = "${pkgs.psi4}/bin/psi4";
       "gdma" = "${pkgs.gdma}/bin/gdma";
-      "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
+      "pysisyphus" = "${pysisyphusDev}/bin/pysis";
     };
   };
 in
@@ -36,7 +50,7 @@ in
     # Some you may need to get some other way.
     buildInputs = [
       pkgs.llvm_9
-      pkgs.pysisyphus
+      pysisyphusDev
       pkgs.psi4Unstable
       pkgs.gdma
     ];
