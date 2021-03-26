@@ -6,7 +6,7 @@ molecule {
 }
 
 set {
-  basis cc-pvdz
+  basis def2-svp
   {{#has_nopenshells}}
   reference rhf
   {{/has_nopenshells}}
@@ -14,7 +14,7 @@ set {
 
 {{{ multipoles }}}
 
-o, wfn = {{ task }}("ccsd", return_wfn = True)
+o, wfn = {{ task }}("bp86", return_wfn = True)
 fchk(wfn, "{{ prefix }}.fchk" )
 {{#doHessian}}
 np.array(o)
