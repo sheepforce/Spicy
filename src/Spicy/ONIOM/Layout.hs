@@ -103,10 +103,10 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
   template <- readFileUTF8 . getFilePath $ tl ^. #templateFile
   opt <- optSettings <$> defIO
   let calcInheritOld = parentMol ^? #calcContext % ix (ONIOMKey Original) % #input
-      childComment = textDisplay $ "Layer" <> molID2OniomHumandID (parentID |> childKey)
+      childComment = textDisplay $ "Layer" <> molID2OniomHumandID (Seq.drop 1 $ parentID |> childKey)
       childID = parentID |> childKey
       pysisSocket = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relFile "pysis.socket"
-      pysisDir = dirByIDAndCalc workDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"
+      pysisDir = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"
   pysis <-
     defIO >>= \p ->
       return $
