@@ -1,7 +1,7 @@
 permanent: Tests/permanent
 scratch: Tests/scratch
 molecule:
-  path: goldentests/input/molecules/TriTBuEthanal.mol2
+  path: goldentests/input/molecules/Dimethylpropanal.mol2
   fileType: mol2
 model:
   theoryLayer:
