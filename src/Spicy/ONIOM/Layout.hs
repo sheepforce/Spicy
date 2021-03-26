@@ -104,7 +104,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
       childComment = "Layer" <> molID2OniomHumanID (parentID |> childKey)
       childID = parentID |> childKey
       pysisSocket = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relFile "pysis.socket"
-      pysisDir = dirByIDAndCalc workDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"
+      pysisDir = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"
   pysis <-
     defIO >>= \p ->
       return $
