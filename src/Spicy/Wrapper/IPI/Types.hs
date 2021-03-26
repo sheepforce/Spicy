@@ -53,7 +53,7 @@ data IPI = IPI
     -- | Working directory of the process.
     workDir :: Path.AbsRelDir,
     -- | The path to a coordinate file, used to initialise the i-PI server with coordinates.
-    initCoords :: Path.AbsRelFile,
+    initCoords :: Path.AbsFile,
     -- | The status of the i-PI server.
     status :: TMVar DataRequest
   }
@@ -91,7 +91,7 @@ instance (k ~ A_Lens, a ~ TMVar PosData, b ~ a) => LabelOptic "output" k IPI IPI
 instance (k ~ A_Lens, a ~ Path.AbsRelDir, b ~ a) => LabelOptic "workDir" k IPI IPI a b where
   labelOptic = lens workDir $ \s b -> s {workDir = b}
 
-instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
+instance (k ~ A_Lens, a ~ Path.AbsFile, b ~ a) => LabelOptic "initCoords" k IPI IPI a b where
   labelOptic = lens initCoords $ \s b -> s {initCoords = b}
 
 instance (k ~ A_Lens, a ~ TMVar DataRequest, b ~ a) => LabelOptic "status" k IPI IPI a b where
