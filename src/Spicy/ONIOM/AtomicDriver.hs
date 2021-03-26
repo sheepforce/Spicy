@@ -604,8 +604,7 @@ setupPsysisServers ::
 setupPsysisServers mol = do
   -- Get directories to work in from the input file.
   inputFile <- view inputFileL
-  let scratchDir = getDirPath $ inputFile ^. #scratch
-      permaDir = getDirPath $ inputFile ^. #permanent
+  scratchDirAbs <- liftIO . Path.dynamicMakeAbsoluteFromCwd . getDirPath $ inputFile ^. #scratch
 
   -- Make per slice information.
   let molSlices = horizontalSlices mol
@@ -623,9 +622,9 @@ setupPsysisServers mol = do
         Seq.mapWithIndex
           ( \i opt ->
               opt
-                & #pysisyphus % #socketAddr .~ SockAddrUnix (mkScktPath scratchDir i)
-                & #pysisyphus % #workDir .~ mkPysisWorkDir permaDir i
-                & #pysisyphus % #initCoords .~ (mkPysisWorkDir permaDir i </> Path.relFile "InitCoords.xyz")
+                & #pysisyphus % #socketAddr .~ SockAddrUnix (mkScktPath scratchDirAbs i)
+                & #pysisyphus % #workDir .~ Path.toAbsRel (mkPysisWorkDir scratchDirAbs i)
+                & #pysisyphus % #initCoords .~ (mkPysisWorkDir scratchDirAbs i </> Path.relFile "InitCoords.xyz")
           )
           optSettingsAtDepthRaw
       atomsAndSettingsAtDepth = Seq.zip optAtomsAtDepth optSettingsAtDepth
