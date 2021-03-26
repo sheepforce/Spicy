@@ -71,7 +71,7 @@ runCalculation calcID = do
 
   -- Gather the information for this calculation.
   molT <- view moleculeL
-  mol <- atomically . readTVar $ molT
+  mol <- readTVarIO molT
   calcContext <- maybe2MThrow (localExc "Requested to perform a cauclation, which does not exist") $ mol ^? calcLens
   unless (isNothing $ calcContext ^. #output) . throwM . localExc $ "Requested to perform a calculation, which has already been performed."
 
@@ -149,7 +149,7 @@ executePsi4 calcID inputFilePath = do
   let calcLens = calcIDLensGen calcID
 
   -- Gather information for the execution of Psi4
-  mol <- view moleculeL >>= atomically . readTVar
+  mol <- view moleculeL >>= readTVarIO
   let calcContextM = mol ^? calcLens
   calcContext <- case calcContextM of
     Nothing ->
@@ -323,9 +323,9 @@ analysePsi4 calcID = do
       calcLens = calcIDLensGen calcID
 
   -- Gather information about the run which to analyse.
-  mol <- view moleculeL >>= atomically . readTVar
+  mol <- view moleculeL >>= readTVarIO
   localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
-  calcContext <- case (mol ^? calcLens) of
+  calcContext <- case mol ^? calcLens of
     Just x -> return x
     Nothing ->
       throwM $
