@@ -108,9 +108,9 @@ parseXTBgradient = do
         _ <- skipLine
         return (name,x,y,z)
       parseGradients = do
-        x <- skipHorizontalSpace *> double
-        y <- skipHorizontalSpace *> double
-        z <- skipHorizontalSpace *> double
+        x <- skipHorizontalSpace *> (double <|> fortranDouble)
+        y <- skipHorizontalSpace *> (double <|> fortranDouble)
+        z <- skipHorizontalSpace *> (double <|> fortranDouble)
         _ <- skipLine
         return (x,y,z)
       loseStructure :: [(a,a,a)] -> [a] -- This feels like i'm begging for a memory leak
@@ -124,11 +124,11 @@ skipLine = pack <$> manyTill (notChar '\n') (char '\n')
 
 -- | Haskell's 'read' and attoparsec's 'double' don't recognize the format
 -- for fortran's double precision numbers, i.e. 1.00D-03. This parser is a
--- workaround for this issue. This could move to Spicy.Common later?
+-- workaround for this issue.
 fortranDouble :: Parser Double
 fortranDouble = do
   raw <- fmap replaceD . unpack <$> takeWhile (not.isSpace)
-  case readMaybe raw of -- Is there a readMaybe for Text? Then we could skip the intermediate string 
+  case readMaybe raw of
     Just aDouble -> pure aDouble
     Nothing -> fail "Failed to read Fortran real!"
   where
