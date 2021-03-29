@@ -32,6 +32,7 @@ import Spicy.Logger
 import Spicy.Molecule
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.Shallow
+import Spicy.Wrapper.Internal.Input.XTB
 import Spicy.Wrapper.Internal.Output.GDMA
 import Spicy.Wrapper.Internal.Output.Generic
 import Spicy.Wrapper.Internal.Output.XTB
@@ -241,6 +242,7 @@ executeXTB calcID inputFilePath = do
       software = calcContext ^. #input % #software
       geomFilePath = Path.replaceExtension inputFilePath ".xyz"
       --outputFilePath = Path.replaceExtension inputFilePath ".out" -- We don't care about this with XTB - all the files have static names
+      pcFile = xtbMultipoleFilename calcContext
 
   -- Check if this function is appropiate to execute the calculation at all.
   unless (software == XTB) $ do
@@ -255,9 +257,16 @@ executeXTB calcID inputFilePath = do
             <> "but this is not a XTB calculation."
         )
 
+  -- Write the .xyz coordinate input file
+  logDebug "Writing .xyz file..."
   xyzInput <- writeXYZ mol
   writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
-  -- TODO: Write an .xyz file with the atomic coordinates
+
+  -- Write the .pc point charge (embedding) file
+  -- The user needs to specify a {{ Multipoles }} in the input, which will point to this
+  logDebug "Writing .pc file..."
+  pcInput <- xtbMultipoleRepresentation mol
+  writeFileUTF8 (Path.toAbsRel $ permanentDir </> pcFile) pcInput
 
   -- Prepare the command line arguments to XTB.
   let cmdTask = case calcContext ^. #input % #task of

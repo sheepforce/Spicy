@@ -34,6 +34,7 @@ import qualified RIO.Text.Lazy as Text
   )
 import Spicy.Common
 import Spicy.Molecule
+import Spicy.Wrapper.Internal.Input.XTB
 import qualified System.Path as Path
 import Text.Mustache
 
@@ -120,7 +121,7 @@ translate2Input mol calcID = do
         WTHessian -> True
         _ -> False
   contextMolecule <- toMolRepr molContext program'
-  contextMultipoles <- toMultipoleRep molContext program'
+  contextMultipoles <- toMultipoleRep molContext calcContext program'
   contextTask <- toTask task' program'
   let context =
         object
@@ -207,12 +208,14 @@ toMultipoleRep ::
   -- | The __current__ 'Molecule' layer for which to perform the calculation. The multipoles must
   -- therefore already be present and multipole centres must be marked as Dummy atoms.
   Molecule ->
+  -- | The context of the calculation for which to generate the representation. 
+  CalcContext ->
   -- | The 'Program' for which the representation shall be generated.
   Program ->
   m Text
-toMultipoleRep mol program'
+toMultipoleRep mol calc program'
   | program' == Psi4 = psi4Charges
-  | program' == XTB = return "" -- Placeholder; XTB will require Charges in a seperate file
+  | program' == XTB = return . path2Text $ xtbMultipoleFilename calc
   | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
   where
     localExc = WrapperGenericException "toMultipoleRep"
