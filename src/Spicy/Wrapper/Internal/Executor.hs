@@ -291,10 +291,9 @@ executeXTB calcID inputFilePath = do
           "--json",
           cmdTask,
           Path.toString geomFilePath
-          --"--parallel " <> show (calcContext ^. #input % #nProc), -- Not sure if this would work, will check later
-          --"--nthread=" <> show (calcContext ^. #input % #nThreads), -- No idea how to set
+          --"--parallel " <> show (calcContext ^. #input % #nProc),
+          --"--nthread=" <> show (calcContext ^. #input % #nThreads),
           --"--scratch=" <> Path.toString scratchDir, -- No idea how to set this, or whether it is even necessary for XTB
-          --"--prefix=" <> (calcContext ^. #input % #prefixName), -- XTB supports something similar, but not for all output files?
         ]
 
   -- Debug logging before execution of XTB.

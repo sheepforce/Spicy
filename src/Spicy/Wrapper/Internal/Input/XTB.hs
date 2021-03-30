@@ -1,3 +1,14 @@
+-- |
+-- Module      : Spicy.Wrapper.Internal.Input.XTB
+-- Description : Support for system calls to XTB.
+-- Copyright   : Phillip Seeber, 2021
+-- License     : GPL-3
+-- Maintainer  : phillip.seeber@uni-jena.de
+-- Stability   : experimental
+-- Portability : POSIX, Windows
+--
+-- Provides methods to generate XTB inputs including electronic embedding.
+
 module Spicy.Wrapper.Internal.Input.XTB
   (
     xtbMultipoleFilename,
@@ -13,6 +24,7 @@ import qualified Data.Massiv.Array as Massiv
 
 import Spicy.Molecule.Internal.Types
 import Spicy.Molecule.Internal.Multipoles
+import Spicy.Molecule.Internal.Util
 import Spicy.Common
 
 import Optics
@@ -49,3 +61,21 @@ xtbMultipoleFilename :: CalcContext -> Path.RelFile
 xtbMultipoleFilename calcContext =
   let inputFilePrefix = Path.relFile . replaceProblematicChars $ calcContext ^. #input % #prefixName
   in inputFilePrefix <.> ".pc"
+
+-- | Generate the XTB xcontrol detailed input file. XTB will still need the coordinates in a separate file.
+xtbInput :: 
+  (MonadThrow m) =>
+  Molecule ->
+  CalcID ->
+  m Text
+xtbInput mol calcID = do
+  (calcContext,molContext) <- mol `getCalcByID` calcID
+  unless (calcContext ^. #input % #software == XTB) $ throwM (WrapperGenericException "xtbInput" "Attempted to generate XTB input for non-XTB calculation")
+  let xtbCharge = tShow 1 --TODO
+  return $
+    "$chrg " <> xtbCharge <> "\n" <>
+    "$spin " <> "\n" <> --Refers to nOpenshells, despite the name
+    "$gfn\n" <>
+    " method=2" <> -- TODO: let the user set this
+    "$embedding\n" <>
+    " input=" --TODO: filepath
