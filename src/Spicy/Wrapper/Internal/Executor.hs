@@ -228,6 +228,11 @@ executeXTB calcID inputFilePath = do
 
   -- Gather information for the execution of XTB
   mol <- view moleculeL >>= atomically . readTVar
+
+  -- The layer to be calculated
+  let thisID = molID calcID
+  thisMol <- getMolByID mol thisID
+
   let calcContextM = mol ^? calcLens
   calcContext <- case calcContextM of
     Nothing ->
@@ -259,13 +264,21 @@ executeXTB calcID inputFilePath = do
 
   -- Write the .xyz coordinate input file
   logDebug "Writing .xyz file..."
-  xyzInput <- writeXYZ mol
+  let
+    realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ thisMol ^. #atoms
+    realMol =
+      thisMol
+        & #atoms Optics.%~ flip IntMap.restrictKeys realAtomInds
+        & #fragment % each % #atoms Optics.%~ IntSet.intersection realAtomInds
+        & #bonds Optics.%~ flip cleanBondMatByAtomInds realAtomInds
+        & #subMol .~ mempty
+  xyzInput <- writeXYZ realMol
   writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
 
   -- Write the .pc point charge (embedding) file
   -- The user needs to specify a {{ Multipoles }} in the input, which will point to this
   logDebug "Writing .pc file..."
-  pcInput <- xtbMultipoleRepresentation mol
+  pcInput <- xtbMultipoleRepresentation thisMol
   writeFileUTF8 (Path.toAbsRel $ permanentDir </> pcFile) pcInput
 
   -- Prepare the command line arguments to XTB.

@@ -215,6 +215,7 @@ toMultipoleRep ::
   m Text
 toMultipoleRep mol calc program'
   | program' == Psi4 = psi4Charges
+  -- For XTB: Instead, write the path to the multipole file
   | program' == XTB = return . path2Text $ xtbMultipoleFilename calc
   | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
   where
