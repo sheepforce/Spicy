@@ -27,6 +27,8 @@ import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
 import Data.Massiv.Array.Manifest.Vector as Massiv
 import Data.Text.IO as TIO
+import Formatting hiding ((%))
+import qualified Formatting as F
 import Network.Socket
 import Optics hiding (Empty, view)
 import RIO hiding
@@ -438,7 +440,6 @@ optAtDepth depth' microOptSettings'
       Seq MicroOptSetup ->
       RIO env ()
     untilConvergence depth microOptSettings = do
-      traceM $ "Entered microoptimisations at depth " <> tShow depth
       -- Optimise slices above.
       optAtDepth (depth - 1) microOptSettings
 
@@ -451,12 +452,10 @@ optAtDepth depth' microOptSettings'
           microOptSettings Seq.!? depth
 
       -- Do a single geometry optimisation step for this layer.
-      traceM "Doing position update of slice."
       posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth (microSettingsAtDepth ^. #atomsAtDepth)
 
       -- Calculate gradients in the new geometry and collect results up to current optimisation
       -- depth.
-      traceM "Calculating new gradients at depth."
       calcAtDepth depth WTGradient
       molAfterStep <- readTVarIO molT
       collectorDepth depth molAfterStep >>= atomically . writeTVar molT
@@ -472,33 +471,69 @@ optAtDepth depth' microOptSettings'
       xyzHist <- writeXYZ molAfterStepGrad
       liftIO . appendFile "OptHist.xyz" $ xyzHist
 
-      -- DEBUG
-      traceM $
-        "Convergence:\n\
-        \  RMS Force: "
-          <> tShow (geomChange ^. #rmsForce)
-          <> "\n\
-             \  Max Force: "
-          <> tShow (geomChange ^. #maxForce)
-          <> "\n\
-             \  RMS Displ: "
-          <> tShow (geomChange ^. #rmsDisp)
-          <> "\n\
-             \  Max Displ: "
-          <> tShow (geomChange ^. #maxDisp)
-          <> "\n\
-             \  DEnergy  : "
-          <> tShow (geomChange ^. #eDiff)
-
       -- Update the motion environment with the progress from this step.
       motionT <- view motionL
-      void . atomically . writeTBRQueue motionT $
-        Motion
-          { geomChange = geomChange,
-            molecule = Nothing,
-            outerCycle = 1, -- TODO - somehow need to count cycles.
-            microCycle = (1, 1) -- TODO - somehow need to count cycles
-          }
+      motionHist <- readTVarIO motionT
+      let newMotion = case motionHist of
+            Empty ->
+              Motion
+                { geomChange = geomChange,
+                  molecule = Nothing,
+                  outerCycle = 1,
+                  microCycle = (depth, 1)
+                }
+            _ :|> Motion {outerCycle, microCycle} ->
+              Motion
+                { geomChange = geomChange,
+                  molecule = Nothing,
+                  outerCycle = outerCycle,
+                  microCycle =
+                    if fst microCycle == depth
+                      then (depth, snd microCycle + 1)
+                      else (depth, 1)
+                }
+          nextMotion = motionHist |> newMotion
+      atomically . writeTVar motionT $ nextMotion
+      {- ORMOLU_DISABLE -}
+      logInfo $ display (
+          let cntr =  center @Text 16 ' '
+          in sformat
+               (cntr F.% " | " F.%
+                cntr F.% " | " F.%
+                cntr F.% " | " F.%
+                cntr F.% " | " F.%
+                cntr F.% " | " F.%
+                cntr F.% " | " F.%
+                cntr F.% "\n")
+                "Step"
+                "Total Energy"
+                "Delta E"
+                "Max Force"
+                "RMS Force"
+                "Max Disp"
+                "RMS Disp"
+        ) <> display (
+          let fForm = left 16 ' ' F.%. fixed 8
+              nForm = left 3 ' ' F.%. int
+              fstCol = (left 16 ' ' F.%. "(" F.% nForm F.% ", (" F.% nForm F.% "," F.% nForm F.% ")")
+          in sformat
+               (fstCol F.% " | " F.%
+                fForm F.% " | " F.%
+                fForm F.% " | " F.%
+                fForm F.% " | " F.%
+                fForm F.% " | " F.%
+                fForm F.% " | " F.%
+                fForm F.% "\n"
+               )
+               (newMotion ^. #outerCycle) (newMotion ^. #microCycle % _1) (newMotion ^. #microCycle % _2)
+               (fromMaybe 0 $ molAfterStepGrad ^. #energyDerivatives % #energy)
+               (fromMaybe 0 $ geomChange ^. #eDiff)
+               (fromMaybe 0 $ geomChange ^. #maxForce)
+               (fromMaybe 0 $ geomChange ^. #rmsForce)
+               (fromMaybe 0 $ geomChange ^. #maxDisp)
+               (fromMaybe 0 $ geomChange ^. #rmsDisp)
+        )
+      {- ORMOLU_ENABLE -}
 
       -- Reiterate until convergence. If converged calculate the final energy.
       if isConverged
@@ -562,7 +597,6 @@ posUpdateAtDepth pysisIPI depth atomSel
     posVec <-
       let vecS = getNetVec $ posData ^. #coords
        in Massiv.fromVectorM Par (Sz $ VectorS.length vecS) vecS
-    traceM $ "got position vector from pysis: " <> (tShow $ posVec)
     molNewStruct <- updatePositionsPosVec posVec atomSel molWithEnGrad
 
     -- Invalidate calculation outputs and energy derivatives for layers, whose atoms may have moved

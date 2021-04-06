@@ -52,7 +52,7 @@ data SpicyEnv = SpicyEnv
     wrapperConfigs :: !WrapperConfigs,
     -- | Counters, quantifiers and history of the motion. It can hold the history with an upper
     -- bound of steps.
-    motion :: !(TBRQueue Motion),
+    motion :: !(TVar (Seq Motion)),
     -- | A logging function for RIO.
     logFunc :: !LogFunc,
     -- | A process context for RIO.
@@ -72,7 +72,7 @@ instance (k ~ A_Lens, a ~ InputFile, b ~ a) => LabelOptic "calculation" k SpicyE
 instance (k ~ A_Lens, a ~ WrapperConfigs, b ~ a) => LabelOptic "wrapperConfigs" k SpicyEnv SpicyEnv a b where
   labelOptic = lens wrapperConfigs $ \s b -> s {wrapperConfigs = b}
 
-instance (k ~ A_Lens, a ~ TBRQueue Motion, b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
+instance (k ~ A_Lens, a ~ TVar (Seq Motion), b ~ a) => LabelOptic "motion" k SpicyEnv SpicyEnv a b where
   labelOptic = lens motion $ \s b -> s {motion = b}
 
 instance (k ~ A_Lens, a ~ LogFunc, b ~ a) => LabelOptic "logFunc" k SpicyEnv SpicyEnv a b where
@@ -166,7 +166,7 @@ data Motion = Motion
 
 -- Reader classes.
 class HasMotion env where
-  motionL :: Lens' env (TBRQueue Motion)
+  motionL :: Lens' env (TVar (Seq Motion))
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "outerCycle" k Motion Motion a b where
