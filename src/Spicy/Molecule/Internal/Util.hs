@@ -371,10 +371,6 @@ isAtomLink IsLink {} = True
 
 ----------------------------------------------------------------------------------------------------
 
--- |
-
-----------------------------------------------------------------------------------------------------
-
 -- | This reindexes all structures in a 'Molecule' with predefined counting scheme. This means
 -- counting of 'Atom's will start at 0 and be consecutive. This also influences bonds in '_#bonds'
 -- and layers in '_#subMol'. Link atoms will be taken care of.
@@ -2659,7 +2655,7 @@ calcGeomConv molOld molNew = do
         maxForce = Just maxForce,
         rmsDisp = Just . rms $ disp,
         maxDisp = Just maxDisp,
-        eDiff = (-) <$> eOld <*> eNew
+        eDiff = (-) <$> eNew <*> eOld
       }
   where
     localExc = MolLogicException "calcGeomConv"
