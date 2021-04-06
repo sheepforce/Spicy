@@ -183,10 +183,11 @@ eDerivTransfer oniomKey mol =
 -- | Get the energy derivatives of the current layer from the given calculation key.
 getEDeriv :: MonadThrow m => CalcK -> Molecule -> m EnergyDerivatives
 getEDeriv oniomKey mol =
-  maybe2MThrow (localExc "Energy derivatives for the calculation key could not be found.") $
+  maybe2MThrow localExc $
     mol ^? #calcContext % ix oniomKey % #output % _Just % #energyDerivatives
   where
-    localExc = MolLogicException "getEDeriv"
+    localExc = MolLogicException "getEDeriv" $
+      "Energy derivatives for the calculation key " <> show oniomKey <> " could not be found."
 
 ----------------------------------------------------------------------------------------------------
 

@@ -17,7 +17,7 @@ module Spicy.ONIOM.AtomicDriver
   ( oniomCalcDriver,
     multicentreOniomNDriver,
     geomMacroDriver,
-    geomMicroDriver
+    geomMicroDriver,
   )
 where
 
@@ -26,6 +26,7 @@ import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
 import Data.Massiv.Array.Manifest.Vector as Massiv
+import Data.Text.IO as TIO
 import Network.Socket
 import Optics hiding (Empty, view)
 import RIO hiding
@@ -196,8 +197,9 @@ geomMacroDriver = do
 
   -- Obtain the Pysisyphus IPI settings and convergence treshold for communication.
   mol <- view moleculeL >>= readTVarIO
-  optSettings <- maybe2MThrow (localExc "Optimisation settings not found on the top layer.") $
-    mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
+  optSettings <-
+    maybe2MThrow (localExc "Optimisation settings not found on the top layer.") $
+      mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
   let pysisIPI = optSettings ^. #pysisyphus
       convThresh = optSettings ^. #convergence
 
@@ -308,6 +310,9 @@ geomMicroDriver = do
 
   -- Setup the pysisyphus optimisation servers per horizontal slice.
   microOptHierarchy <- setupPsysisServers mol
+
+  -- Now do a full ONIOM single point calculation. We require initial gradients on all layers.
+  multicentreOniomNDriver WTGradient
 
   -- Perform the optimisations steps in a mindblowing recursion ...
   -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
@@ -429,7 +434,17 @@ optAtDepth ::
 optAtDepth depth' microOptSettings'
   | depth' > Seq.length microOptSettings' = throwM $ MolLogicException "optStepAtDepth" "Requesting optimisation of a layer that has no microoptimisation settings"
   | depth' < 0 = return ()
-  | otherwise = untilConvergence depth' microOptSettings'
+  | otherwise = do
+    molT <- view moleculeL
+
+    -- Make sure we enter the optimisations at this depth with a gradient.
+    calcAtDepth depth' WTGradient
+    molWG <- readTVarIO molT
+    molWGCollected <- collectorDepth depth' molWG
+    atomically . writeTVar molT $ molWGCollected
+
+    -- Optimise this layer until convergence.
+    untilConvergence depth' microOptSettings'
   where
     -- Do a single geometry optimisation step at a given depth.
     untilConvergence ::
@@ -443,6 +458,7 @@ optAtDepth depth' microOptSettings'
       Seq MicroOptSetup ->
       RIO env ()
     untilConvergence depth microOptSettings = do
+      traceM $ "Entered microoptimisations at depth " <> tShow depth
       -- Optimise slices above.
       optAtDepth (depth - 1) microOptSettings
 
@@ -454,27 +470,55 @@ optAtDepth depth' microOptSettings'
         maybe2MThrow (IndexOutOfBoundsException (Sz $ Seq.length microOptSettings) depth) $
           microOptSettings Seq.!? depth
 
-      -- Calculate gradients for this slice.
-      calcAtDepth depth WTGradient
-
       -- Do a single geometry optimisation step for this layer.
+      traceM "Doing position update of slice."
       posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth (microSettingsAtDepth ^. #atomsAtDepth)
+
+      -- Calculate gradients in the new geometry and collect results up to current optimisation
+      -- depth.
+      traceM "Calculating new gradients at depth."
+      calcAtDepth depth WTGradient
+      molAfterStep <- readTVarIO molT
+      collectorDepth depth molAfterStep >>= atomically . writeTVar molT
 
       -- Molecule after the step has been taken. Calculate convergence in the coordinates given only
       -- by atoms of this depth.
-      molAfterStep <- readTVarIO molT
-      geomChange <- calcGeomConv molBeforeStep molAfterStep
+      molAfterStepGrad <- readTVarIO molT
+      geomChange <- calcGeomConv molBeforeStep molAfterStepGrad
       let geomConvCriteria = microSettingsAtDepth ^. #geomConv
           isConverged = geomChange < geomConvCriteria
 
+      -- Write History file.
+      xyzHist <- writeXYZ molAfterStepGrad
+      liftIO . appendFile "OptHist.xyz" $ xyzHist
+
+      -- DEBUG
+      traceM $
+        "Convergence:\n\
+        \  RMS Force: "
+          <> tShow (geomChange ^. #rmsForce)
+          <> "\n\
+             \  Max Force: "
+          <> tShow (geomChange ^. #maxForce)
+          <> "\n\
+             \  RMS Displ: "
+          <> tShow (geomChange ^. #rmsDisp)
+          <> "\n\
+             \  Max Displ: "
+          <> tShow (geomChange ^. #maxDisp)
+          <> "\n\
+             \  DEnergy  : "
+          <> tShow (geomChange ^. #eDiff)
+
       -- Update the motion environment with the progress from this step.
       motionT <- view motionL
-      void . atomically . writeTBRQueue motionT $ Motion {
-          geomChange = geomChange,
-          molecule = Nothing,
-          outerCycle = 1, -- TODO - somehow need to count cycles.
-          microCycle = (1,1) -- TODO - somehow need to count cycles
-        }
+      void . atomically . writeTBRQueue motionT $
+        Motion
+          { geomChange = geomChange,
+            molecule = Nothing,
+            outerCycle = 1, -- TODO - somehow need to count cycles.
+            microCycle = (1, 1) -- TODO - somehow need to count cycles
+          }
 
       -- Reiterate until convergence. If converged calculate the final energy.
       if isConverged
@@ -518,11 +562,12 @@ posUpdateAtDepth pysisIPI depth atomSel
     let gradientsSparse = gradsAtDepth <> gradsAbove
         gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomSel
         gradientsOfInterestDense = compute @U . concat' 1 $ gradientsOfInterestSparse
+        forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
         forceData =
           ForceData
             { potentialEnergy = fromMaybe 0 $ molWithEnGrad ^. #energyDerivatives % #energy,
-              forces = NetVec . Massiv.toVector $ gradientsOfInterestDense,
-              virial = CellVecs (T 0 0 0) (T 0 0 0) (T 0 0 0),
+              forces = NetVec . Massiv.toVector $ forcesBohr,
+              virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
               optionalData = mempty
             }
     atomically . putTMVar ipiDataIn $ forceData
@@ -537,16 +582,20 @@ posUpdateAtDepth pysisIPI depth atomSel
     posVec <-
       let vecS = getNetVec $ posData ^. #coords
        in Massiv.fromVectorM Par (Sz $ VectorS.length vecS) vecS
+    traceM $ "got position vector from pysis: " <> (tShow $ posVec)
     molNewStruct <- updatePositionsPosVec posVec atomSel molWithEnGrad
 
-    -- Invalidate all calculation outputs and energy derivatives.
-    let molNext = flip molMap molNewStruct $ \m ->
-          m
-            & #energyDerivatives .~ def
-            & #calcContext % each % #output .~ Nothing
+    -- Invalidate calculation outputs and energy derivatives for layers, whose atoms may have moved
+    -- (>= current depth).
+    let molNext = flip molMapWithMolID molNewStruct $ \i m ->
+          if Seq.length i >= depth
+            then m & #energyDerivatives .~ def & #calcContext % each % #output .~ Nothing
+            else m
 
     atomically . writeTVar molT $ molNext
   where
+    convertA2B v = v / (angstrom2Bohr 1)
+
     combineSparseGradiens :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
     combineSparseGradiens mols =
       let sparseGrads = fmap gradDense2Sparse mols
