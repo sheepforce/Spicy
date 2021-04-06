@@ -84,7 +84,7 @@ inputToEnvAndRun = do
   procCntxt' <- mkDefaultProcessContext
 
   -- Construct the motion state.
-  motionT <- newTBRQueueIO 100
+  motionT <- newTVarIO mempty
 
   -- Create the input and output slots of the companion threads.
   -- The calculation slot, running the QC wrappers.
