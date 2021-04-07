@@ -93,7 +93,7 @@ collectorDepth depth molecule
       -- system and assign the high level calculation output as the true energy of this model.
       -- Otherwise collect deeper layes first.
       if IntMap.null modelCentres || currDepth >= depth
-        then eDerivTransfer (ONIOMKey Original) mol >>= multipoleTransformation modelCentres
+        then eDerivTransfer (ONIOMKey Original) mol >>= multipoleTransformation IntMap.empty
         else do
           -- Recursion into deeper layers happens first. The collector works bottom up.
           modelsCollected <- mapM (go (currDepth + 1)) modelCentres
@@ -117,7 +117,9 @@ collectorDepth depth molecule
           -- Collect the multipoles.
           molMPoles <- multipoleTransformation modelCentres mol
 
-          return $ molMPoles & #energyDerivatives .~ eDerivs
+          return $ molMPoles
+            & #energyDerivatives .~ eDerivs
+            & #subMol .~ modelsCollected
 
 ----------------------------------------------------------------------------------------------------
 
