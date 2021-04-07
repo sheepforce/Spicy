@@ -622,9 +622,9 @@ posUpdateAtDepth pysisIPI depth atomSel
     molNewStruct <- updatePositionsPosVec posVec atomSel molWithEnGrad
 
     -- Invalidate calculation outputs and energy derivatives for layers, whose atoms may have moved
-    -- (>= current depth).
+    -- (<= current depth).
     let molNext = flip molMapWithMolID molNewStruct $ \i m ->
-          if Seq.length i >= depth
+          if Seq.length i <= depth
             then m & #energyDerivatives .~ def & #calcContext % each % #output .~ Nothing
             else m
 
@@ -746,12 +746,12 @@ cleanOutputs molT = do
 
 ----------------------------------------------------------------------------------------------------
 
--- | Cleans all outputs from the molecule.
+-- | Cleans the output of a single calculation.
 cleanOutputOfCalc :: TVar Molecule -> CalcID -> STM ()
 cleanOutputOfCalc molT calcID = do
   mol <- readTVar molT
-  let molWithEmptyOutputs = molMap (& calcLens % #output .~ def) mol
-  writeTVar molT molWithEmptyOutputs
+  let molWithEmptyOutput = mol & calcLens % #output .~ def
+  writeTVar molT molWithEmptyOutput
   where
     calcLens = calcIDLensGen calcID
 
