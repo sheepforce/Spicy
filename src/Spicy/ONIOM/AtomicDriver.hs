@@ -251,7 +251,7 @@ geomMacroDriver = do
         -- If converged terminate the i-PI server by putting a "converged" file in its working
         -- directory
         molNewWithEDerivs <- readTVarIO molT
-        geomChange <- calcGeomConv molOld molNewWithEDerivs
+        geomChange <- calcGeomConv (IntMap.keysSet $ molOld ^. #atoms) molOld molNewWithEDerivs
         let isConverged = geomChange < convThresh
         when isConverged $ writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
 
@@ -450,9 +450,10 @@ optAtDepth depth' microOptSettings'
       microSettingsAtDepth <-
         maybe2MThrow (IndexOutOfBoundsException (Sz $ Seq.length microOptSettings) depth) $
           microOptSettings Seq.!? depth
+      let atomDepthSelection = microSettingsAtDepth ^. #atomsAtDepth
 
       -- Do a single geometry optimisation step for this layer.
-      posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth (microSettingsAtDepth ^. #atomsAtDepth)
+      posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth atomDepthSelection
 
       -- Calculate gradients in the new geometry and collect results up to current optimisation
       -- depth.
@@ -463,7 +464,7 @@ optAtDepth depth' microOptSettings'
       -- Molecule after the step has been taken. Calculate convergence in the coordinates given only
       -- by atoms of this depth.
       molAfterStepGrad <- readTVarIO molT
-      geomChange <- calcGeomConv molBeforeStep molAfterStepGrad
+      geomChange <- calcGeomConv atomDepthSelection molBeforeStep molAfterStepGrad
       let geomConvCriteria = microSettingsAtDepth ^. #geomConv
           isConverged = geomChange < geomConvCriteria
 
@@ -536,8 +537,9 @@ optAtDepth depth' microOptSettings'
       {- ORMOLU_ENABLE -}
 
       -- Reiterate until convergence. If converged calculate the final energy.
-      if isConverged
-        then calcAtDepth depth WTGradient
+      -- TODO -- Of course everything converges after just two cycles ... ;)
+      if newMotion ^. #microCycle % _2 == 2 -- isConverged
+        then return ()
         else untilConvergence depth microOptSettings
 
 ----------------------------------------------------------------------------------------------------
