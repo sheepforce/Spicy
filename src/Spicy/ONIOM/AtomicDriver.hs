@@ -41,6 +41,7 @@ import RIO hiding
     (^..),
     (^?),
   )
+import qualified RIO.Directory as Dir
 import qualified RIO.HashSet as HashSet
 import qualified RIO.Map as Map
 import RIO.Process
@@ -60,6 +61,7 @@ import Spicy.Wrapper.IPI.Pysisyphus
 import Spicy.Wrapper.IPI.Types
 import System.Path ((</>))
 import qualified System.Path as Path
+import qualified System.Path.Directory as Path
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
 -- transered from the calculation output to the actual fields of the molecule.
@@ -321,18 +323,27 @@ geomMicroDriver = do
   traceM "Finished microoptimisation"
 
   -- Terminate all the companion threads.
-  forM_ microOptHierarchy $ \MicroOptSetup {ipiClientThread, ipiServerThread, pysisIPI} -> do
-    -- Stop the pysisyphus server by gracefully by writing a magic file. Wait and then kill the
-    -- thread if it hasn't stopped yet.
-    writeFileUTF8 ((pysisIPI ^. #workDir) </> Path.relFile "converged") mempty
-    threadDelay 1000000
-    cancel ipiServerThread
+  forM_ microOptHierarchy $ \MicroOptSetup {atomsAtDepth, ipiClientThread, ipiServerThread, pysisIPI} -> do
+    -- Stop the pysisyphus server by gracefully by writing a magic file. Send once more gradients
+    -- (dummy values more or less ...) to finish nicely and then reset all connections.
+    let convFile = (pysisIPI ^. #workDir) </> Path.relFile "converged"
+    writeFileUTF8 convFile mempty
+    atomically . putTMVar (pysisIPI ^. #input) $ dummyForces atomsAtDepth
 
     -- Cancel the client and reset the communication variables to a fresh state.
     cancel ipiClientThread
+    traceM "Cancelled ipi client thread"
     void . atomically . tryTakeTMVar $ pysisIPI ^. #input
     void . atomically . tryTakeTMVar $ pysisIPI ^. #output
     void . atomically . tryTakeTMVar $ pysisIPI ^. #status
+  where
+    dummyForces sel =
+      ForceData
+        { potentialEnergy = 0,
+          forces = NetVec . VectorS.fromListN (3 * IntSet.size sel) $ [0 ..],
+          virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+          optionalData = mempty
+        }
 
 ----------------------------------------------------------------------------------------------------
 
@@ -437,8 +448,7 @@ optAtDepth depth' microOptSettings'
   | depth' < 0 = return ()
   | otherwise = do
     logInfo $ "Starting optimisation on layer " <> display depth'
-    initMol <- view moleculeL >>= readTVarIO
-    untilConvergence initMol depth' microOptSettings'
+    untilConvergence depth' microOptSettings'
     logInfo $ "Finished optimisation of layer " <> display depth'
   where
     -- Do a single geometry optimisation step at a given depth.
@@ -449,11 +459,10 @@ optAtDepth depth' microOptSettings'
         HasProcessContext env,
         HasMotion env
       ) =>
-      Molecule ->
       Int ->
       Seq MicroOptSetup ->
       RIO env ()
-    untilConvergence prevMol depth microOptSettings = do
+    untilConvergence depth microOptSettings = do
       -- Initial information.
       molT <- view moleculeL
       motionT <- view motionL
@@ -471,25 +480,57 @@ optAtDepth depth' microOptSettings'
       -- next geometry update.
       calcAtDepth depth WTGradient
       molSliceOutput <- readTVarIO molT
-      molBeforeStep <- collectorDepth depth molSliceOutput
-      atomically . writeTVar molT $ molBeforeStep
+      molPreStep <- collectorDepth depth molSliceOutput
+      atomically . writeTVar molT $ molPreStep
 
-      -- Calculate geometry convergence. Checks against the molecule before the displacement of the
-      -- last cycle.
-      geomChange <- calcGeomConv atomDepthSelection prevMol molBeforeStep
+      {-
+            -- Calculate geometry convergence. Checks against the molecule before the displacement of the
+            -- last cycle.
+            -- geomChange <- calcGeomConv atomDepthSelection prevMol molBeforeStep
 
+            -- DEBUG - Print convergence info:
+      {- ORMOLU_DISABLE -}{- ORMOLU_DISABLE_START
+            traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
+            traceM $
+              "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n" <>
+              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #eDiff) <>
+              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsForce) <>
+              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsDisp) <>
+              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #maxForce) <>
+              (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
+      ORMOLU_DISABLE_END -}{- ORMOLU_ENABLE -}
+
+            -- Write History file. DEBUG
+            xyzHist <- writeXYZ molPreStep
+            liftIO . appendFile "OptHist.xyz" $ xyzHist
+            -}
+
+      -- Calculate a new geometry displacement step.
+      posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth atomDepthSelection
+      molPostStep <- readTVarIO molT
+
+      -- Check with the gradients from the pre-step molecule and the displacements between both if
+      -- we were converged.
+      geomConv <- calcGeomConv atomDepthSelection molPreStep molPostStep
+      let isConverged = geomConv < geomConvCriteria
+
+      -- Write History file. DEBUG
+      xyzHist <- writeXYZ molPreStep
+      liftIO . appendFile "OptHist.xyz" $ xyzHist
+
+      -- Print convergence
       -- Update the motion info.
       let newMotion = case motionHist of
             Empty ->
               Motion
-                { geomChange = geomChange,
+                { geomChange = geomConv,
                   molecule = Nothing,
                   outerCycle = 0,
                   microCycle = (depth, 0)
                 }
             _ :|> Motion {outerCycle, microCycle} ->
               Motion
-                { geomChange = geomChange,
+                { geomChange = geomConv,
                   molecule = Nothing,
                   outerCycle = outerCycle,
                   microCycle =
@@ -499,72 +540,20 @@ optAtDepth depth' microOptSettings'
                 }
           nextMotion = motionHist |> newMotion
       atomically . writeTVar motionT $ nextMotion
-
-      -- DEBUG - Print convergence info:
-      {- ORMOLU_DISABLE -}
+      traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
       traceM $
-        "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n" <>
-        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #eDiff) <>
-        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #rmsForce) <>
-        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #rmsDisp) <>
-        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxForce) <>
-        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
-      {- ORMOLU_ENABLE -}
+        "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #eDiff)
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #rmsForce)
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #rmsDisp)
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #maxForce)
+          <> (sformat (fixed 6) . fromMaybe 0 $ geomConv ^. #maxDisp)
 
-      -- Write History file. DEBUG
-      xyzHist <- writeXYZ molBeforeStep
-      liftIO . appendFile "OptHist.xyz" $ xyzHist
-
-      -- If the iterations have not converged yet, do a geometry update and enter the next cycle.
-      -- Otherwise be happy that we have a converged geometry with gradients. :)
-      unless (newMotion ^. #microCycle % _2 == 2) $ do
-        -- TODO - Of course we converge after two cycles ... ;)
-        -- unless (geomChange < geomConvCriteria) $ do
-        posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth atomDepthSelection
-        untilConvergence molBeforeStep depth microOptSettings
-
-{-
-{- ORMOLU_DISABLE -}{- ORMOLU_DISABLE_START
-      logInfo $ display (
-          let cntr =  center @Text 16 ' '
-          in sformat
-               (cntr F.% " | " F.%
-                cntr F.% " | " F.%
-                cntr F.% " | " F.%
-                cntr F.% " | " F.%
-                cntr F.% " | " F.%
-                cntr F.% " | " F.%
-                cntr F.% "\n")
-                "Step"
-                "Total Energy"
-                "Delta E"
-                "Max Force"
-                "RMS Force"
-                "Max Disp"
-                "RMS Disp"
-        ) <> display (
-          let fForm = left 16 ' ' F.%. fixed 8
-              nForm = left 3 ' ' F.%. int
-              fstCol = (left 16 ' ' F.%. "(" F.% nForm F.% ", (" F.% nForm F.% "," F.% nForm F.% ")")
-          in sformat
-               (fstCol F.% " | " F.%
-                fForm F.% " | " F.%
-                fForm F.% " | " F.%
-                fForm F.% " | " F.%
-                fForm F.% " | " F.%
-                fForm F.% " | " F.%
-                fForm F.% "\n"
-               )
-               (newMotion ^. #outerCycle) (newMotion ^. #microCycle % _1) (newMotion ^. #microCycle % _2)
-               (fromMaybe 0 $ molAfterStepGrad ^. #energyDerivatives % #energy)
-               (fromMaybe 0 $ geomChange ^. #eDiff)
-               (fromMaybe 0 $ geomChange ^. #maxForce)
-               (fromMaybe 0 $ geomChange ^. #rmsForce)
-               (fromMaybe 0 $ geomChange ^. #maxDisp)
-               (fromMaybe 0 $ geomChange ^. #rmsDisp)
-        )
-ORMOLU_DISABLE_END -}{- ORMOLU_ENABLE -}
-      -}
+      -- If we are converged (pre step gradient was small and step displacement was small), return
+      -- the pre-step molecule. Otherwise continue to optimise.
+      if isConverged -- || (newMotion ^. #microCycle % _2 == 2) --
+        then atomically . writeTVar molT $ molPreStep
+        else untilConvergence depth microOptSettings
 
 ----------------------------------------------------------------------------------------------------
 
