@@ -2680,7 +2680,8 @@ gradDense2Sparse mol = do
 
 -- | Calculate geometry optimisation convergence criteria by comparing the molecule before and after
 -- displacement. A selection must be specified, which atoms are optimised. Gradients and
--- displacements will be checked only for those.
+-- displacements will be checked only for those. The gradients are checked before displacement, the
+-- displacement is checked between old and new.
 calcGeomConv :: MonadThrow m => IntSet -> Molecule -> Molecule -> m GeomConv
 calcGeomConv sel molOld molNew = do
   let eOld = molOld ^. #energyDerivatives % #energy
@@ -2690,15 +2691,15 @@ calcGeomConv sel molOld molNew = do
       selAtomsNew = flip IntMap.restrictKeys sel $ molNew ^. #atoms
   cOld <- fmap (compute @U) . concatM 1 . fmap getVectorS $ selAtomsOld ^.. each % #coordinates
   cNew <- fmap (compute @U) . concatM 1 . fmap getVectorS $ selAtomsNew ^.. each % #coordinates
-  gNewIM <- flip IntMap.restrictKeys sel <$> gradDense2Sparse molNew
-  gNew <- fmap (compute @U) . concatM 1  $ gNewIM
+  gOldIM <- flip IntMap.restrictKeys sel <$> gradDense2Sparse molOld
+  gOld <- fmap (compute @U) . concatM 1  $ gOldIM
 
   disp <- Massiv.map abs <$> (cOld .-. cNew)
-  maxForce <- Massiv.maximumM . Massiv.map abs $ gNew
+  maxForce <- Massiv.maximumM . Massiv.map abs $ gOld
   maxDisp <- Massiv.maximumM . Massiv.map abs $ disp
   return
     GeomConv
-      { rmsForce = Just . rms $ gNew,
+      { rmsForce = Just . rms $ gOld,
         maxForce = Just maxForce,
         rmsDisp = Just . rms $ disp,
         maxDisp = Just maxDisp,
