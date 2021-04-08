@@ -2647,15 +2647,15 @@ calcGeomConv sel molOld molNew = do
       selAtomsNew = flip IntMap.restrictKeys sel $ molNew ^. #atoms
   cOld <- fmap (compute @U) . concatM 1 . fmap getVectorS $ selAtomsOld ^.. each % #coordinates
   cNew <- fmap (compute @U) . concatM 1 . fmap getVectorS $ selAtomsNew ^.. each % #coordinates
-  gOldIM <- flip IntMap.restrictKeys sel <$> gradDense2Sparse molOld
-  gOld <- fmap (compute @U) . concatM 1  $ gOldIM
+  gNewIM <- flip IntMap.restrictKeys sel <$> gradDense2Sparse molNew
+  gNew <- fmap (compute @U) . concatM 1  $ gNewIM
 
   disp <- Massiv.map abs <$> (cOld .-. cNew)
-  maxForce <- Massiv.maximumM . Massiv.map abs $ gOld
+  maxForce <- Massiv.maximumM . Massiv.map abs $ gNew
   maxDisp <- Massiv.maximumM . Massiv.map abs $ disp
   return
     GeomConv
-      { rmsForce = Just . rms $ gOld,
+      { rmsForce = Just . rms $ gNew,
         maxForce = Just maxForce,
         rmsDisp = Just . rms $ disp,
         maxDisp = Just maxDisp,
