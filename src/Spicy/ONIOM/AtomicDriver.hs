@@ -472,65 +472,63 @@ optAtDepth depth' microOptSettings'
           microOptSettings Seq.!? depth
       let atomDepthSelection = microSettingsAtDepth ^. #atomsAtDepth
           geomConvCriteria = microSettingsAtDepth ^. #geomConv
+          ipiDataIn = microSettingsAtDepth ^. #pysisIPI % #input
+          ipiPosOut = microSettingsAtDepth ^. #pysisIPI % #output
+          ipiStatusVar = microSettingsAtDepth ^. #pysisIPI % #status
 
-      -- Optimise slices above.
+      -- Obtain the molecule before the step.
+      molPreStep <- readTVarIO molT
+
+      -- Obtain a new geometry from Pysisyphus (ignores the status for now).
+      void . atomically . takeTMVar $ ipiStatusVar
+      posVec <- do
+        d <- atomically . takeTMVar $ ipiPosOut
+        let v = getNetVec $ d ^. #coords
+        Massiv.fromVectorM Par (Sz $ VectorS.length v) v
+      molNewCoords <- updatePositionsPosVec posVec atomDepthSelection molPreStep
+      atomically . writeTVar molT $ molNewCoords
+
+      -- Optimise the layers above. -- TODO - does this order make sense? The gradients above could
+      -- be invalid now?
       optAtDepth (depth - 1) microOptSettings
 
-      -- Calculate a new gradient for this slice to check convergence and have gradients for the
-      -- next geometry update.
+      -- Calculate forces in the new geometry for the current layer only.
       calcAtDepth depth WTGradient
-      molSliceOutput <- readTVarIO molT
-      molPreStep <- collectorDepth depth molSliceOutput
-      atomically . writeTVar molT $ molPreStep
+      molPostStep <- readTVarIO molT >>= collectorDepth depth
+      atomically . writeTVar molT $ molPostStep
 
-      {-
-            -- Calculate geometry convergence. Checks against the molecule before the displacement of the
-            -- last cycle.
-            -- geomChange <- calcGeomConv atomDepthSelection prevMol molBeforeStep
+      -- Construct force data, that we send to i-PI for this slice and send it.
+      let molHSlices = horizontalSlices molPostStep
+          molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
+          molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
+      gradsAtDepth <- combineSparseGradients molsAtDepth
+      gradsAbove <- combineSparseGradients molsAbove
+      let gradientsSparse = gradsAtDepth <> gradsAbove
+          gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomDepthSelection
+          gradientsOfInterestDense = compute @U . concat' 1 $ gradientsOfInterestSparse
+          forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
+          forceData =
+            ForceData
+              { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
+                forces = NetVec . Massiv.toVector $ forcesBohr,
+                virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+                optionalData = mempty
+              }
+      atomically . putTMVar ipiDataIn $ forceData
 
-            -- DEBUG - Print convergence info:
-      {- ORMOLU_DISABLE -}{- ORMOLU_DISABLE_START
-            traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
-            traceM $
-              "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n" <>
-              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #eDiff) <>
-              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsForce) <>
-              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsDisp) <>
-              (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #maxForce) <>
-              (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
-      ORMOLU_DISABLE_END -}{- ORMOLU_ENABLE -}
-
-            -- Write History file. DEBUG
-            xyzHist <- writeXYZ molPreStep
-            liftIO . appendFile "OptHist.xyz" $ xyzHist
-            -}
-
-      -- Calculate a new geometry displacement step.
-      posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth atomDepthSelection
-      molPostStep <- readTVarIO molT
-
-      -- Check with the gradients from the pre-step molecule and the displacements between both if
-      -- we were converged.
-      geomConv <- calcGeomConv atomDepthSelection molPreStep molPostStep
-      let isConverged = geomConv < geomConvCriteria
-
-      -- Write History file. DEBUG
-      xyzHist <- writeXYZ molPreStep
-      liftIO . appendFile "OptHist.xyz" $ xyzHist
-
-      -- Print convergence
-      -- Update the motion info.
+      -- Calculate geometry convergence and update the motion environment.
+      geomChange <- calcGeomConv (IntMap.keysSet $ molPreStep ^. #atoms) molPreStep molPostStep
       let newMotion = case motionHist of
             Empty ->
               Motion
-                { geomChange = geomConv,
+                { geomChange = geomChange,
                   molecule = Nothing,
                   outerCycle = 0,
                   microCycle = (depth, 0)
                 }
             _ :|> Motion {outerCycle, microCycle} ->
               Motion
-                { geomChange = geomConv,
+                { geomChange = geomChange,
                   molecule = Nothing,
                   outerCycle = outerCycle,
                   microCycle =
@@ -543,90 +541,25 @@ optAtDepth depth' microOptSettings'
       traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
       traceM $
         "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #eDiff)
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #rmsForce)
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #rmsDisp)
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomConv ^. #maxForce)
-          <> (sformat (fixed 6) . fromMaybe 0 $ geomConv ^. #maxDisp)
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #eDiff)
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsForce)
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsDisp)
+          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #maxForce)
+          <> (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
 
-      -- If we are converged (pre step gradient was small and step displacement was small), return
-      -- the pre-step molecule. Otherwise continue to optimise.
-      if isConverged -- || (newMotion ^. #microCycle % _2 == 2) --
-        then atomically . writeTVar molT $ molPreStep
+      -- Write history file
+      xyzHist <- writeXYZ molPostStep
+      liftIO . appendFile "OptHist.xyz" $ xyzHist
+
+      -- Decide if to do more iterations.
+      if geomChange < geomConvCriteria
+        then return ()
         else untilConvergence depth microOptSettings
 
-----------------------------------------------------------------------------------------------------
-
--- | Assuming all gradients are available and no calculaiton is running anymore; build the gradient
--- of the full system and obtain a position update from the given i-PI server. Updates the full
--- molecule with new coordinates.
-posUpdateAtDepth ::
-  (HasMolecule env) =>
-  -- | The socket used to optimised at specified depth.
-  IPI ->
-  -- | Depth/Horizontal cut depth at which to optimise.
-  Int ->
-  -- | Atoms selected to be optimised at this layer.
-  IntSet ->
-  RIO env ()
-posUpdateAtDepth pysisIPI depth atomSel
-  | depth < 0 = return ()
-  | otherwise = do
-    molT <- view moleculeL
-    mol <- readTVarIO molT
-
-    -- Transform all gradients and then obtain the gradients in sparse representation for the two
-    -- layers of interest.
-    molWithEnGrad <- collectorDepth depth mol
-    let molHSlices = horizontalSlices molWithEnGrad
-        molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
-        molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
-
-    -- Get communication channels with the i-PI client.
-    let ipiDataIn = pysisIPI ^. #input
-        ipiPosOut = pysisIPI ^. #output
-
-    -- Construct forcedata and send to i-PI.
-    gradsAtDepth <- combineSparseGradiens molsAtDepth
-    gradsAbove <- combineSparseGradiens molsAbove
-    let gradientsSparse = gradsAtDepth <> gradsAbove
-        gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomSel
-        gradientsOfInterestDense = compute @U . concat' 1 $ gradientsOfInterestSparse
-        forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
-        forceData =
-          ForceData
-            { potentialEnergy = fromMaybe 0 $ molWithEnGrad ^. #energyDerivatives % #energy,
-              forces = NetVec . Massiv.toVector $ forcesBohr,
-              virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
-              optionalData = mempty
-            }
-    atomically . putTMVar ipiDataIn $ forceData
-
-    -- Wait for a response from i-PI.
-    ipiServerWants <- atomically . takeTMVar $ pysisIPI ^. #status
-    when (ipiServerWants == Done) . throwM . SpicyIndirectionException "posUpdateAtDepth" $
-      "The i-PI server must not exit by itself during optimisation loops"
-
-    -- Wait for new position data from i-PI and update all atoms of interest with it.
-    posData <- atomically . takeTMVar $ ipiPosOut
-    posVec <-
-      let vecS = getNetVec $ posData ^. #coords
-       in Massiv.fromVectorM Par (Sz $ VectorS.length vecS) vecS
-    molNewStruct <- updatePositionsPosVec posVec atomSel molWithEnGrad
-
-    -- Invalidate calculation outputs and energy derivatives for layers, whose atoms may have moved
-    -- (<= current depth).
-    let molNext = flip molMapWithMolID molNewStruct $ \i m ->
-          if Seq.length i <= depth
-            then m & #energyDerivatives .~ def & #calcContext % each % #output .~ Nothing
-            else m
-
-    atomically . writeTVar molT $ molNext
-  where
+    -- Conversion of gradients from Angstrom to Bohr.
     convertA2B v = v / (angstrom2Bohr 1)
-
-    combineSparseGradiens :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
-    combineSparseGradiens mols =
+    combineSparseGradients :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
+    combineSparseGradients mols =
       let sparseGrads = fmap gradDense2Sparse mols
        in foldl'
             ( \acc' g' -> do
@@ -636,6 +569,11 @@ posUpdateAtDepth pysisIPI depth atomSel
             )
             (pure mempty)
             sparseGrads
+
+----------------------------------------------------------------------------------------------------
+
+
+
 
 ----------------------------------------------------------------------------------------------------
 
