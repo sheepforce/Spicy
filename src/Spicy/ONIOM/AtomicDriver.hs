@@ -313,13 +313,12 @@ geomMicroDriver = do
   -- Setup the pysisyphus optimisation servers per horizontal slice.
   microOptHierarchy <- setupPsysisServers mol
 
-  -- Now do a full ONIOM single point calculation. We require initial gradients on all layers.
-  multicentreOniomNDriver WTGradient
-
   -- Perform the optimisations steps in a mindblowing recursion ...
   -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
   -- up. When converged the function will terminate.
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
+
+  traceM "Finished microoptimisation"
 
   -- Terminate all the companion threads.
   forM_ microOptHierarchy $ \MicroOptSetup {ipiClientThread, ipiServerThread, pysisIPI} -> do
@@ -437,16 +436,10 @@ optAtDepth depth' microOptSettings'
   | depth' > Seq.length microOptSettings' = throwM $ MolLogicException "optStepAtDepth" "Requesting optimisation of a layer that has no microoptimisation settings"
   | depth' < 0 = return ()
   | otherwise = do
-    molT <- view moleculeL
-
-    -- Make sure we enter the optimisations at this depth with a gradient.
-    calcAtDepth depth' WTGradient
-    molWG <- readTVarIO molT
-    molWGCollected <- collectorDepth depth' molWG
-    atomically . writeTVar molT $ molWGCollected
-
-    -- Optimise this layer until convergence.
-    untilConvergence depth' microOptSettings'
+    logInfo $ "Starting optimisation on layer " <> display depth'
+    initMol <- view moleculeL >>= readTVarIO
+    untilConvergence initMol depth' microOptSettings'
+    logInfo $ "Finished optimisation of layer " <> display depth'
   where
     -- Do a single geometry optimisation step at a given depth.
     untilConvergence ::
@@ -456,52 +449,43 @@ optAtDepth depth' microOptSettings'
         HasProcessContext env,
         HasMotion env
       ) =>
+      Molecule ->
       Int ->
       Seq MicroOptSetup ->
       RIO env ()
-    untilConvergence depth microOptSettings = do
-      -- Optimise slices above.
-      optAtDepth (depth - 1) microOptSettings
-
-      -- Optimisation of this layer.
-      -- The molecule before steps are taken.
+    untilConvergence prevMol depth microOptSettings = do
+      -- Initial information.
       molT <- view moleculeL
-      molBeforeStep <- readTVarIO molT
+      motionT <- view motionL
+      motionHist <- readTVarIO motionT
       microSettingsAtDepth <-
         maybe2MThrow (IndexOutOfBoundsException (Sz $ Seq.length microOptSettings) depth) $
           microOptSettings Seq.!? depth
       let atomDepthSelection = microSettingsAtDepth ^. #atomsAtDepth
+          geomConvCriteria = microSettingsAtDepth ^. #geomConv
 
-      -- Do a single geometry optimisation step for this layer.
-      posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth atomDepthSelection
+      -- Optimise slices above.
+      optAtDepth (depth - 1) microOptSettings
 
-      -- Calculate gradients in the new geometry and collect results up to current optimisation
-      -- depth.
+      -- Calculate a new gradient for this slice to check convergence and have gradients for the
+      -- next geometry update.
       calcAtDepth depth WTGradient
-      molAfterStep <- readTVarIO molT
-      collectorDepth depth molAfterStep >>= atomically . writeTVar molT
+      molSliceOutput <- readTVarIO molT
+      molBeforeStep <- collectorDepth depth molSliceOutput
+      atomically . writeTVar molT $ molBeforeStep
 
-      -- Molecule after the step has been taken. Calculate convergence in the coordinates given only
-      -- by atoms of this depth.
-      molAfterStepGrad <- readTVarIO molT
-      geomChange <- calcGeomConv atomDepthSelection molBeforeStep molAfterStepGrad
-      let geomConvCriteria = microSettingsAtDepth ^. #geomConv
-          isConverged = geomChange < geomConvCriteria
+      -- Calculate geometry convergence. Checks against the molecule before the displacement of the
+      -- last cycle.
+      geomChange <- calcGeomConv atomDepthSelection prevMol molBeforeStep
 
-      -- Write History file.
-      xyzHist <- writeXYZ molAfterStepGrad
-      liftIO . appendFile "OptHist.xyz" $ xyzHist
-
-      -- Update the motion environment with the progress from this step.
-      motionT <- view motionL
-      motionHist <- readTVarIO motionT
+      -- Update the motion info.
       let newMotion = case motionHist of
             Empty ->
               Motion
                 { geomChange = geomChange,
                   molecule = Nothing,
-                  outerCycle = 1,
-                  microCycle = (depth, 1)
+                  outerCycle = 0,
+                  microCycle = (depth, 0)
                 }
             _ :|> Motion {outerCycle, microCycle} ->
               Motion
@@ -515,7 +499,32 @@ optAtDepth depth' microOptSettings'
                 }
           nextMotion = motionHist |> newMotion
       atomically . writeTVar motionT $ nextMotion
+
+      -- DEBUG - Print convergence info:
       {- ORMOLU_DISABLE -}
+      traceM $
+        "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n" <>
+        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #eDiff) <>
+        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #rmsForce) <>
+        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #rmsDisp) <>
+        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxForce) <>
+        (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
+      {- ORMOLU_ENABLE -}
+
+      -- Write History file. DEBUG
+      xyzHist <- writeXYZ molBeforeStep
+      liftIO . appendFile "OptHist.xyz" $ xyzHist
+
+      -- If the iterations have not converged yet, do a geometry update and enter the next cycle.
+      -- Otherwise be happy that we have a converged geometry with gradients. :)
+      unless (newMotion ^. #microCycle % _2 == 2) $ do
+        -- TODO - Of course we converge after two cycles ... ;)
+        -- unless (geomChange < geomConvCriteria) $ do
+        posUpdateAtDepth (microSettingsAtDepth ^. #pysisIPI) depth atomDepthSelection
+        untilConvergence molBeforeStep depth microOptSettings
+
+{-
+{- ORMOLU_DISABLE -}{- ORMOLU_DISABLE_START
       logInfo $ display (
           let cntr =  center @Text 16 ' '
           in sformat
@@ -554,13 +563,8 @@ optAtDepth depth' microOptSettings'
                (fromMaybe 0 $ geomChange ^. #maxDisp)
                (fromMaybe 0 $ geomChange ^. #rmsDisp)
         )
-      {- ORMOLU_ENABLE -}
-
-      -- Reiterate until convergence. If converged calculate the final energy.
-      -- TODO -- Of course everything converges after just two cycles ... ;)
-      if newMotion ^. #microCycle % _2 == 2 -- isConverged
-        then return ()
-        else untilConvergence depth microOptSettings
+ORMOLU_DISABLE_END -}{- ORMOLU_ENABLE -}
+      -}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -657,7 +661,9 @@ data MicroOptSetup = MicroOptSetup
     -- | IPI communication and process settings.
     pysisIPI :: !IPI,
     -- | Geometry convergence.
-    geomConv :: GeomConv
+    geomConv :: GeomConv,
+    -- | Does any of the layers in this slice use electronic embedding?
+    electronicEmbedding :: Bool
   }
 
 instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atomsAtDepth" k MicroOptSetup MicroOptSetup a b where
@@ -674,6 +680,9 @@ instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisIPI" k MicroOptSetup M
 
 instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "geomConv" k MicroOptSetup MicroOptSetup a b where
   labelOptic = lens geomConv $ \s b -> s {geomConv = b}
+
+instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "electronicEmbedding" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens electronicEmbedding $ \s b -> s {electronicEmbedding = b}
 
 -- | Create one Pysisyphus i-PI instance per layer that takes care of the optimisations steps at a
 -- given horizontal slice. It returns relevant optimisation settings for each layer to be used by
@@ -696,6 +705,7 @@ setupPsysisServers mol = do
       optAtomsSelAtDepth = getOptAtomsAtDepth mol <$> Seq.fromList [0 .. Seq.length molSlices]
       allAtoms = molFoldl (\acc m -> acc <> (m ^. #atoms)) mempty mol
       optAtomsAtDepth = fmap (IntMap.restrictKeys allAtoms) optAtomsSelAtDepth
+  eeSlices <- traverse anyUsesEE molSlices
 
   fstMolsAtDepth <-
     maybe2MThrow (localExc "a slice of the molecule seems to be empty") $
@@ -712,18 +722,20 @@ setupPsysisServers mol = do
                 & #pysisyphus % #initCoords .~ (mkPysisWorkDir scratchDirAbs i </> Path.relFile "InitCoords.xyz")
           )
           optSettingsAtDepthRaw
-      atomsAndSettingsAtDepth = Seq.zip optAtomsAtDepth optSettingsAtDepth
-  threadsAtDepth <- mapM (uncurry providePysisAbstract) atomsAndSettingsAtDepth
+      atomsAndSettingsAtDepth' = Seq.zip optAtomsAtDepth optSettingsAtDepth
+      atomsAndSettingsAtDepth = Seq.zip eeSlices atomsAndSettingsAtDepth'
+  threadsAtDepth <- mapM (uncurry providePysisAbstract) atomsAndSettingsAtDepth'
 
   return $
     Seq.zipWith
-      ( \(a, os) (st, ct) ->
+      ( \(emb, (a, os)) (st, ct) ->
           MicroOptSetup
             { atomsAtDepth = IntMap.keysSet a,
               ipiClientThread = ct,
               ipiServerThread = st,
               pysisIPI = os ^. #pysisyphus,
-              geomConv = os ^. #convergence
+              geomConv = os ^. #convergence,
+              electronicEmbedding = emb
             }
       )
       atomsAndSettingsAtDepth
@@ -732,6 +744,17 @@ setupPsysisServers mol = do
     localExc = MolLogicException "setupPsysisServers"
     mkScktPath sd i = Path.toString $ sd </> Path.relFile ("pysis_slice_" <> show i <> ".socket")
     mkPysisWorkDir pd i = pd </> Path.relDir ("pysis_slice" <> show i)
+
+    usesEE :: MonadThrow m => Molecule -> m Bool
+    usesEE m =
+      let embSettings = m ^? #calcContext % ix (ONIOMKey Original) % #input % #embedding
+       in case embSettings of
+            Nothing -> throwM $ MolLogicException "setupPsysisServers" "embedding settings for layer not found"
+            Just Mechanical -> return False
+            Just (Electronic _) -> return True
+
+    anyUsesEE :: (MonadThrow m, Traversable f) => f Molecule -> m Bool
+    anyUsesEE m = RIO.any (== True) <$> traverse usesEE m
 
 {-
 ====================================================================================================
