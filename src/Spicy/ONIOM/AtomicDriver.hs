@@ -273,7 +273,7 @@ geomMacroDriver = do
         -- If converged terminate the i-PI server by putting a "converged" file in its working
         -- directory
         molNewWithEDerivs <- readTVarIO molT
-        geomChange <- calcGeomConv (IntMap.keysSet $ molOld ^. #atoms) molNewWithEDerivs molOld
+        geomChange <- calcGeomConv (IntMap.keysSet $ molOld ^. #atoms) molOld molNewWithEDerivs
         let isConverged = geomChange < convThresh
         when isConverged $ writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
 
