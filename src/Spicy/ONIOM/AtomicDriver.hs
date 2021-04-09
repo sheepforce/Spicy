@@ -26,9 +26,6 @@ import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
 import Data.Massiv.Array.Manifest.Vector as Massiv
-import Data.Text.IO as TIO
-import Formatting hiding ((%))
-import qualified Formatting as F
 import Network.Socket
 import Optics hiding (Empty, view)
 import RIO hiding
@@ -318,8 +315,6 @@ geomMicroDriver = do
   -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
   -- up. When converged the function will terminate.
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
-
-  traceM "Finished microoptimisation"
 
   -- Terminate all the companion threads.
   forM_ microOptHierarchy $ \MicroOptSetup {atomsAtDepth, ipiClientThread, pysisIPI} -> do
