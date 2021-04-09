@@ -2648,7 +2648,7 @@ calcGeomConv sel molOld molNew = do
   cOld <- fmap (compute @U) . concatM 1 . fmap getVectorS $ selAtomsOld ^.. each % #coordinates
   cNew <- fmap (compute @U) . concatM 1 . fmap getVectorS $ selAtomsNew ^.. each % #coordinates
   gNewIM <- flip IntMap.restrictKeys sel <$> gradDense2Sparse molNew
-  gNew <- fmap (compute @U) . concatM 1  $ gNewIM
+  gNew <- fmap (compute @U) . concatM 1 $ gNewIM
 
   disp <- Massiv.map abs <$> (cOld .-. cNew)
   maxForce <- Massiv.maximumM . Massiv.map abs $ gNew

@@ -41,7 +41,6 @@ import RIO hiding
     (^..),
     (^?),
   )
-import qualified RIO.Directory as Dir
 import qualified RIO.Map as Map
 import RIO.Process
 import RIO.Seq (Seq (..))
@@ -60,7 +59,6 @@ import Spicy.Wrapper.IPI.Pysisyphus
 import Spicy.Wrapper.IPI.Types
 import System.Path ((</>))
 import qualified System.Path as Path
-import qualified System.Path.Directory as Path
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
 -- transered from the calculation output to the actual fields of the molecule.
@@ -303,7 +301,7 @@ geomMicroDriver = do
   traceM "Finished microoptimisation"
 
   -- Terminate all the companion threads.
-  forM_ microOptHierarchy $ \MicroOptSetup {atomsAtDepth, ipiClientThread, ipiServerThread, pysisIPI} -> do
+  forM_ microOptHierarchy $ \MicroOptSetup {atomsAtDepth, ipiClientThread, pysisIPI} -> do
     -- Stop the pysisyphus server by gracefully by writing a magic file. Send once more gradients
     -- (dummy values more or less ...) to finish nicely and then reset all connections.
     let convFile = (pysisIPI ^. #workDir) </> Path.relFile "converged"
@@ -312,7 +310,6 @@ geomMicroDriver = do
 
     -- Cancel the client and reset the communication variables to a fresh state.
     cancel ipiClientThread
-    traceM "Cancelled ipi client thread"
     void . atomically . tryTakeTMVar $ pysisIPI ^. #input
     void . atomically . tryTakeTMVar $ pysisIPI ^. #output
     void . atomically . tryTakeTMVar $ pysisIPI ^. #status
@@ -468,8 +465,12 @@ optAtDepth depth' microOptSettings'
       molNewCoords <- updatePositionsPosVec posVec atomDepthSelection molPreStep
       atomically . writeTVar molT $ molNewCoords
 
-      -- Optimise the layers above. -- TODO - does this order make sense? The gradients above could
-      -- be invalid now?
+      -- Recalculate the gradients above. The position update may invalidate the old ones.
+      forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
+      molInvalidG <- readTVarIO molT
+      unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
+
+      -- Optimise the layers above.
       optAtDepth (depth - 1) microOptSettings
 
       -- Calculate forces in the new geometry for the current layer only.
@@ -497,7 +498,7 @@ optAtDepth depth' microOptSettings'
       atomically . putTMVar ipiDataIn $ forceData
 
       -- Calculate geometry convergence and update the motion environment.
-      geomChange <- calcGeomConv (IntMap.keysSet $ molPreStep ^. #atoms) molPreStep molPostStep
+      geomChange <- calcGeomConv atomDepthSelection molPreStep molPostStep
       let newMotion = case motionHist of
             Empty ->
               Motion
@@ -537,6 +538,7 @@ optAtDepth depth' microOptSettings'
         else untilConvergence depth microOptSettings
 
     -- Conversion of gradients from Angstrom to Bohr.
+    allAbove d = if d >= 0 then [0 .. d - 1] else []
     convertA2B v = v / (angstrom2Bohr 1)
     combineSparseGradients :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
     combineSparseGradients mols =
@@ -552,11 +554,6 @@ optAtDepth depth' microOptSettings'
 
 ----------------------------------------------------------------------------------------------------
 
-
-
-
-----------------------------------------------------------------------------------------------------
-
 -- | Per slice settings for the optimisation.
 data MicroOptSetup = MicroOptSetup
   { -- | Moving atoms for this slice
@@ -568,9 +565,7 @@ data MicroOptSetup = MicroOptSetup
     -- | IPI communication and process settings.
     pysisIPI :: !IPI,
     -- | Geometry convergence.
-    geomConv :: GeomConv,
-    -- | Does any of the layers in this slice use electronic embedding?
-    electronicEmbedding :: Bool
+    geomConv :: GeomConv
   }
 
 instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atomsAtDepth" k MicroOptSetup MicroOptSetup a b where
@@ -587,9 +582,6 @@ instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisIPI" k MicroOptSetup M
 
 instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "geomConv" k MicroOptSetup MicroOptSetup a b where
   labelOptic = lens geomConv $ \s b -> s {geomConv = b}
-
-instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "electronicEmbedding" k MicroOptSetup MicroOptSetup a b where
-  labelOptic = lens electronicEmbedding $ \s b -> s {electronicEmbedding = b}
 
 -- | Create one Pysisyphus i-PI instance per layer that takes care of the optimisations steps at a
 -- given horizontal slice. It returns relevant optimisation settings for each layer to be used by
@@ -612,7 +604,6 @@ setupPsysisServers mol = do
       optAtomsSelAtDepth = getOptAtomsAtDepth mol <$> Seq.fromList [0 .. Seq.length molSlices]
       allAtoms = molFoldl (\acc m -> acc <> (m ^. #atoms)) mempty mol
       optAtomsAtDepth = fmap (IntMap.restrictKeys allAtoms) optAtomsSelAtDepth
-  eeSlices <- traverse anyUsesEE molSlices
 
   fstMolsAtDepth <-
     maybe2MThrow (localExc "a slice of the molecule seems to be empty") $
@@ -629,20 +620,18 @@ setupPsysisServers mol = do
                 & #pysisyphus % #initCoords .~ (mkPysisWorkDir scratchDirAbs i </> Path.relFile "InitCoords.xyz")
           )
           optSettingsAtDepthRaw
-      atomsAndSettingsAtDepth' = Seq.zip optAtomsAtDepth optSettingsAtDepth
-      atomsAndSettingsAtDepth = Seq.zip eeSlices atomsAndSettingsAtDepth'
-  threadsAtDepth <- mapM (uncurry providePysisAbstract) atomsAndSettingsAtDepth'
+      atomsAndSettingsAtDepth = Seq.zip optAtomsAtDepth optSettingsAtDepth
+  threadsAtDepth <- mapM (uncurry providePysisAbstract) atomsAndSettingsAtDepth
 
   return $
     Seq.zipWith
-      ( \(emb, (a, os)) (st, ct) ->
+      ( \(a, os) (st, ct) ->
           MicroOptSetup
             { atomsAtDepth = IntMap.keysSet a,
               ipiClientThread = ct,
               ipiServerThread = st,
               pysisIPI = os ^. #pysisyphus,
-              geomConv = os ^. #convergence,
-              electronicEmbedding = emb
+              geomConv = os ^. #convergence
             }
       )
       atomsAndSettingsAtDepth
@@ -651,17 +640,6 @@ setupPsysisServers mol = do
     localExc = MolLogicException "setupPsysisServers"
     mkScktPath sd i = Path.toString $ sd </> Path.relFile ("pysis_slice_" <> show i <> ".socket")
     mkPysisWorkDir pd i = pd </> Path.relDir ("pysis_slice" <> show i)
-
-    usesEE :: MonadThrow m => Molecule -> m Bool
-    usesEE m =
-      let embSettings = m ^? #calcContext % ix (ONIOMKey Original) % #input % #embedding
-       in case embSettings of
-            Nothing -> throwM $ MolLogicException "setupPsysisServers" "embedding settings for layer not found"
-            Just Mechanical -> return False
-            Just (Electronic _) -> return True
-
-    anyUsesEE :: (MonadThrow m, Traversable f) => f Molecule -> m Bool
-    anyUsesEE m = RIO.any (== True) <$> traverse usesEE m
 
 {-
 ====================================================================================================
