@@ -7,7 +7,13 @@ let
   pysisyphusDev =
     let version = "dev";
         pname = "pysisyphus";
-    in pkgs.python3Packages.callPackage /home/phillip/Dokumente/Git/pysisyphus/nix/pysisyphus.nix {
+        repo = pkgs.fetchFromGitHub {
+          owner = "eljost";
+          repo = "pysisyphus";
+          rev = "dce5dbab2da30b78d4e11f96bf100281802dfa61";
+          sha256 = "10n4353a72q0h955092yr638fkxk3l03ibp0q5arhqfrf8619z85";
+        };
+    in pkgs.python3Packages.callPackage "${repo}/nix/pysisyphus.nix" {
          orca = null;
          turbomole = null;
          gaussian = null;
