@@ -519,6 +519,7 @@ optAtDepth depth' microOptSettings'
                 }
           nextMotion = motionHist |> newMotion
       atomically . writeTVar motionT $ nextMotion
+      {-
       traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
       traceM $
         "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
@@ -531,6 +532,7 @@ optAtDepth depth' microOptSettings'
       -- Write history file
       xyzHist <- writeXYZ molPostStep
       liftIO . appendFile "OptHist.xyz" $ xyzHist
+      -}
 
       -- Decide if to do more iterations.
       if geomChange < geomConvCriteria
