@@ -69,13 +69,18 @@ xtbInput ::
   CalcID ->
   m Text
 xtbInput mol calcID = do
-  (calcContext,molContext) <- mol `getCalcByID` calcID
-  unless (calcContext ^. #input % #software == XTB) $ throwM (WrapperGenericException "xtbInput" "Attempted to generate XTB input for non-XTB calculation")
-  let xtbCharge = tShow 1 --TODO
+  (calcContext,_) <- mol `getCalcByID` calcID
+  let calcInput = calcContext ^. #input
+  unless (calcInput ^. #software == XTB) . throwM $ WrapperGenericException "xtbInput" "Attempted to generate XTB input for non-XTB calculation"
+  let mxtbSpec = calcInput ^. #qMMMSpec ^? _QM
+  xtbSpec <- maybe (throwM $ WrapperGenericException "xtbInput" "Not a QM calculation") return mxtbSpec
+  let xtbCharge = tShow . charge $ xtbSpec
+      xtbMult = tShow . mult $ xtbSpec
+      xtbPermaDir = tShow $ calcInput ^. #permaDir
   return $
     "$chrg " <> xtbCharge <> "\n" <>
-    "$spin " <> "\n" <> --Refers to nOpenshells, despite the name
+    "$spin " <> xtbMult <> "\n" <> --Refers to nOpenshells, despite the name
     "$gfn\n" <>
     " method=2" <> -- TODO: let the user set this
     "$embedding\n" <>
-    " input=" --TODO: filepath
+    " input=" <> xtbPermaDir <> tShow (xtbMultipoleFilename calcContext)
