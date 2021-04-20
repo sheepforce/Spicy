@@ -5,7 +5,7 @@ molecule:
   fileType: mol2
 model:
   theoryLayer:
-    templateFile: goldentests/input/calculations/wrapper/XTB/oniom2-ee/outer.xtb
+    templateFile: goldentests/input/calculations/wrapper/XTB/Ethanal/oniom2-ee/outer.xtb
     program:
       tag: xtb
       contents: gfntwo
@@ -20,7 +20,7 @@ model:
     mult: 1
     selection: [1,2,3,4,5,6,7]
     deeperLayer:
-    - templateFile: goldentests/input/calculations/wrapper/XTB/oniom2-ee/inner.xtb
+    - templateFile: goldentests/input/calculations/wrapper/XTB/Ethanal/oniom2-ee/inner.xtb
       program:
         tag: xtb
         contents: gfntwo

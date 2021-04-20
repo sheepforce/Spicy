@@ -11,7 +11,7 @@ model:
       contents: gfnzero
     charge: 0
     mult: 1
-    templateFile: goldentests/input/calculations/wrapper/XTB/Ethanal/Template.xtb
+    templateFile: goldentests/input/calculations/wrapper/XTB/Ethanal/GFN0/Template.xtb
     execution:
       nProcesses: 1
       nThreads: 8

@@ -5,13 +5,13 @@ molecule:
   fileType: mol2
 model:
   theoryLayer:
-    name: GFN2-xTB
+    name: GFN1-xTB
     program:
       tag: xtb
-      contents: gfntwo
+      contents: gfnone
     charge: 0
     mult: 1
-    templateFile: goldentests/input/calculations/wrapper/XTB/Ethanal/Template.xtb
+    templateFile: goldentests/input/calculations/wrapper/XTB/Ethanal/GFN1/Template.xtb
     execution:
       nProcesses: 1
       nThreads: 8
