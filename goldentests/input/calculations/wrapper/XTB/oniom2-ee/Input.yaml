@@ -1,0 +1,40 @@
+permanent: Tests/permanent
+scratch: Tests/scratch
+molecule:
+  path: goldentests/input/molecules/Ethanal.mol2
+  fileType: mol2
+model:
+  theoryLayer:
+    templateFile: goldentests/input/calculations/wrapper/XTB/oniom2-ee/outer.xtb
+    program:
+      tag: xtb
+      contents: gfntwo
+    name: outer
+    embedding:
+      tag: mechanical
+    execution:
+      nProcesses: 1
+      nThreads: 8
+      memory: 5000
+    charge: 0
+    mult: 1
+    selection: [1,2,3,4,5,6,7]
+    deeperLayer:
+    - templateFile: goldentests/input/calculations/wrapper/XTB/oniom2-ee/inner.xtb
+      program:
+        tag: xtb
+        contents: gfntwo
+      name: inner
+      embedding:
+        tag: electronic
+        contents: []
+      execution:
+        nProcesses: 1
+        nThreads: 8
+        memory: 5000
+      charge: 0
+      mult: 1
+      selection: [2,6,7]
+      deeperLayer: []
+task:
+- optimise_macro
