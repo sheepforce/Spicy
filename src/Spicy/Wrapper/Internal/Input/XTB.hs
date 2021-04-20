@@ -12,7 +12,8 @@
 module Spicy.Wrapper.Internal.Input.XTB
   (
     xtbMultipoleFilename,
-    xtbMultipoleRepresentation
+    xtbMultipoleRepresentation,
+    xtbInput
   ) where
 
 -- XTB extra input files for embedding. May become obsolete with the C API later
@@ -71,16 +72,28 @@ xtbInput ::
 xtbInput mol calcID = do
   (calcContext,_) <- mol `getCalcByID` calcID
   let calcInput = calcContext ^. #input
-  unless (calcInput ^. #software == XTB) . throwM $ WrapperGenericException "xtbInput" "Attempted to generate XTB input for non-XTB calculation"
-  let mxtbSpec = calcInput ^. #qMMMSpec ^? _QM
-  xtbSpec <- maybe (throwM $ WrapperGenericException "xtbInput" "Not a QM calculation") return mxtbSpec
-  let xtbCharge = tShow . charge $ xtbSpec
-      xtbMult = tShow . mult $ xtbSpec
-      xtbPermaDir = tShow $ calcInput ^. #permaDir
-  return $
-    "$chrg " <> xtbCharge <> "\n" <>
-    "$spin " <> xtbMult <> "\n" <> --Refers to nOpenshells, despite the name
-    "$gfn\n" <>
-    " method=2" <> -- TODO: let the user set this
-    "$embedding\n" <>
-    " input=" <> xtbPermaDir <> tShow (xtbMultipoleFilename calcContext)
+      software = calcInput ^. #software
+  case software of
+    XTB gfn -> do
+      let mxtbSpec = calcInput ^. #qMMMSpec ^? _QM
+      xtbSpec <- maybe (throwM $ WrapperGenericException "xtbInput" "Not a QM calculation") return mxtbSpec
+      let xtbCharge = tShow . charge $ xtbSpec
+          xtbMult = mult xtbSpec
+          xtbNOshells = tShow $ xtbMult - 1
+          xtbPcFile = path2Text $ {-getDirPathAbs (calcInput ^. #permaDir) Path.</>-} xtbMultipoleFilename calcContext
+      return $
+        "$chrg " <> xtbCharge <> "\n" <>
+        "$spin " <> xtbNOshells <> "\n" <> --Refers to nOpenshells, despite the name
+        "$gfn\n" <>
+        " method=" <> renderGFN gfn <> "\n" <>
+        "$embedding\n" <>
+        " input=" <> xtbPcFile <> "\n"
+    _ -> throwM $ WrapperGenericException "xtbInput" "Attempted to generate XTB input for non-XTB calculation"
+
+-- | Convert the enumeration type representation to the digit expected by XTB. 
+renderGFN ::
+  GFN ->
+  Text
+renderGFN GFNZero = "0"
+renderGFN GFNOne = "1"
+renderGFN GFNTwo = "2"

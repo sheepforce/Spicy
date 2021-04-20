@@ -183,13 +183,11 @@ toMolRepr ::
   Program ->
   -- | Molecule representation in the program format.
   m Text
-toMolRepr mol program'
-  | program' == Psi4 = simpleCartesianAngstrom
-  | program' == Nwchem = simpleCartesianAngstrom
-  | program' == XTB = simpleCartesianAngstrom
-  | otherwise =
-    throwM $
-      WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
+toMolRepr mol program' = case program' of
+  Psi4 -> simpleCartesianAngstrom
+  Nwchem -> simpleCartesianAngstrom
+  XTB _ -> simpleCartesianAngstrom
+  --_ -> throwM $ WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
   where
     realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ mol ^. #atoms
     realMol =
@@ -213,11 +211,11 @@ toMultipoleRep ::
   -- | The 'Program' for which the representation shall be generated.
   Program ->
   m Text
-toMultipoleRep mol calc program'
-  | program' == Psi4 = psi4Charges
+toMultipoleRep mol calc program' = case program' of
+  Psi4 -> psi4Charges
   -- For XTB: Instead, write the path to the multipole file
-  | program' == XTB = return . path2Text $ xtbMultipoleFilename calc
-  | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
+  XTB _ -> return . path2Text $ xtbMultipoleFilename calc
+  _ -> throwM . localExc $ "No multipole representation available for wrapper."
   where
     localExc = WrapperGenericException "toMultipoleRep"
 
@@ -238,12 +236,10 @@ toMultipoleRep mol calc program'
 
 -- | Generates a "task" string specific for computational chemistry 'Program'.
 toTask :: MonadThrow m => WrapperTask -> Program -> m Text
-toTask task' program'
-  | program' == Psi4 = psi4Task
-  | program' == XTB = psi4Task --XTB has no need for this text; should be done more elegantly 
-  | otherwise =
-    throwM $
-      WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
+toTask task' program' = case program' of
+  Psi4 -> psi4Task
+  XTB _ -> psi4Task --XTB has no need for this text; should be done more elegantly 
+  _ -> throwM $ WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
   where
     psi4Task = case task' of
       WTEnergy -> return "energy"

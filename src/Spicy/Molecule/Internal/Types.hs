@@ -93,6 +93,7 @@ module Spicy.Molecule.Internal.Types
 
     -- ** Programs
     Program (..),
+    GFN(..),
 
     -- * Local Helper Types
     FragmentAtomInfo (..),
@@ -1408,13 +1409,29 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 data Program
   = Psi4
   | Nwchem
-  | XTB
+  | XTB GFN
   deriving (Eq, Show, Generic)
 
 instance ToJSON Program where
   toEncoding = genericToEncoding spicyJOption
 
 instance FromJSON Program where
+  parseJSON = genericParseJSON spicyJOption
+
+----------------------------------------------------------------------------------------------------
+
+-- | Version of the GFN-Hamiltonian in XTB calculations.
+data GFN
+  = GFNZero
+  | GFNOne
+  | GFNTwo
+  deriving (Eq, Show, Generic)
+-- FF hamiltonian still to do
+
+instance ToJSON GFN where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON GFN where
   parseJSON = genericParseJSON spicyJOption
 
 {-

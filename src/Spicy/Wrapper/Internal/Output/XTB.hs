@@ -23,8 +23,8 @@ import qualified Data.Massiv.Array as VM
 data RawXTB = RawXTB
   { totalEnergy :: Double,
     partialCharges :: Vector Double,
-    atomicDipoles :: Vector (Vector Double),
-    atomicQuadrupoles :: Vector (Vector Double)
+    atomicDipoles :: Maybe (Vector (Vector Double)),
+    atomicQuadrupoles :: Maybe (Vector (Vector Double))
   }
   deriving (Generic,Show)
 
@@ -32,16 +32,22 @@ instance FromJSON RawXTB where
   parseJSON = withObject "xtbout" $ \o -> RawXTB
     <$> o .: "total energy"
     <*> o .: "partial charges"
-    <*> o .: "atomic dipole moments"
-    <*> o .: "atomic quadrupole moments"
+    -- The following are not present in GFN0 and GFN1
+    <*> o .:? "atomic dipole moments"
+    <*> o .:? "atomic quadrupole moments"
 
 orderPoles :: MonadThrow m => RawXTB -> m [CMultipoles]
 orderPoles RawXTB{..} = do
   -- Sanity check: Do we have information for every atom?
-  let mmono = fmap CMonopole partialCharges
-  mdi <- sequenceA $ mkDipole <$> atomicDipoles
-  mquad <- sequenceA $ mkQuadrupole <$> atomicQuadrupoles
-  return . V.toList $ V.zipWith3 CMultipoles (Just <$> mmono) (Just <$> mdi) (Just <$> mquad)
+  let mmono = CMonopole <$> partialCharges
+      blank = V.replicate (RIO.length partialCharges) Nothing
+  mdi <- case atomicDipoles of
+    Just vDipoles -> sequenceA $ fmap pure . mkDipole <$> vDipoles
+    Nothing -> return blank
+  mquad <- case atomicQuadrupoles of
+    Just vQuadrupoles -> sequenceA $ fmap pure . mkQuadrupole <$> vQuadrupoles
+    Nothing -> return $ V.replicate (RIO.length partialCharges) Nothing
+  return . V.toList $ V.zipWith3 CMultipoles (Just <$> mmono) mdi mquad
   where
     (!??) :: MonadThrow m => Vector a -> Int -> m a
     v !?? i = case v V.!? i of

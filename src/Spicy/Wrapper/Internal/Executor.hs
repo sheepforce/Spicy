@@ -90,7 +90,10 @@ runCalculation calcID = do
   liftIO $ Dir.createDirectoryIfMissing True scratchDir
 
   -- Write the input file for the calculation to its permanent directory.
-  wrapperInputFile <- translate2Input mol calcID
+  wrapperInputFile <- case software of
+    Psi4 -> translate2Input mol calcID
+    Nwchem -> undefined
+    XTB _ -> xtbInput mol calcID
   writeFileUTF8 (Path.toAbsRel inputFilePath) wrapperInputFile
 
   -- Logging about the Wrapper execution.
@@ -100,13 +103,13 @@ runCalculation calcID = do
   case software of
     Psi4 -> executePsi4 calcID inputFilePath
     Nwchem -> undefined
-    XTB -> executeXTB calcID inputFilePath
+    XTB _ -> executeXTB calcID inputFilePath
 
   -- Parse the output, that has been produced by the wrapper.
   calcOutput <- case software of
     Psi4 -> analysePsi4 calcID
     Nwchem -> undefined
-    XTB -> analyseXTB calcID
+    XTB _ -> analyseXTB calcID
 
   -- Print logging information about the output obtained.
   -- mapM_ logInfo . hShow $ calcOutput
@@ -250,7 +253,10 @@ executeXTB calcID inputFilePath = do
       pcFile = xtbMultipoleFilename calcContext
 
   -- Check if this function is appropiate to execute the calculation at all.
-  unless (software == XTB) $ do
+  let isXTB x = case x of
+        XTB _ -> True
+        _ -> False
+  unless (isXTB software) $ do
     logError
       "A calculation should be done with the XTB driver function,\
       \ but the calculation is not a XTB calculation."
@@ -287,11 +293,12 @@ executeXTB calcID inputFilePath = do
         WTGradient -> "--grad"
         WTHessian -> "--hess"
       xtbCmdArgs =
-        [ "--input=" <> Path.toString inputFilePath,
-          "--json",
+        [ "--json",
           cmdTask,
-          Path.toString geomFilePath
-          --"--parallel " <> show (calcContext ^. #input % #nProc),
+          Path.toString geomFilePath,
+          "--input", -- This...
+          Path.toString inputFilePath -- And this need to be separate, for reasons unknown to mankind.
+          --"--parallel " <> show (calcContext ^. #input % #nProc), -- Do via processContext
           --"--nthread=" <> show (calcContext ^. #input % #nThreads),
           --"--scratch=" <> Path.toString scratchDir, -- No idea how to set this, or whether it is even necessary for XTB
         ]
@@ -306,10 +313,6 @@ executeXTB calcID inputFilePath = do
         (Path.toString xtbWrapper)
         xtbCmdArgs
         readProcess
-
-  -- Aside: I don't think XTB supports a separate scratch directory.
-  -- It might be better for production use to run everything in the
-  -- scratch, then manually copy everything to the permanent directory
 
   -- Provide some information if something went wrong.
   unless (exitCode == ExitSuccess) $ do
