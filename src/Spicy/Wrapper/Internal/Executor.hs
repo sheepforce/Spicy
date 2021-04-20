@@ -14,6 +14,7 @@ module Spicy.Wrapper.Internal.Executor
 where
 
 import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy8
+import qualified Data.Map as Map
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Optics hiding (view)
@@ -282,7 +283,6 @@ executeXTB calcID inputFilePath = do
   writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
 
   -- Write the .pc point charge (embedding) file
-  -- The user needs to specify a {{ Multipoles }} in the input, which will point to this
   logDebug "Writing .pc file..."
   pcInput <- xtbMultipoleRepresentation thisMol
   writeFileUTF8 (Path.toAbsRel $ permanentDir </> pcFile) pcInput
@@ -298,16 +298,18 @@ executeXTB calcID inputFilePath = do
           Path.toString geomFilePath,
           "--input", -- This...
           Path.toString inputFilePath -- And this need to be separate, for reasons unknown to mankind.
-          --"--parallel " <> show (calcContext ^. #input % #nProc), -- Do via processContext
-          --"--nthread=" <> show (calcContext ^. #input % #nThreads),
-          --"--scratch=" <> Path.toString scratchDir, -- No idea how to set this, or whether it is even necessary for XTB
+          --"--parallel " <> show (calcContext ^. #input % #nProc),
+          --"--scratch=" <> Path.toString scratchDir, -- XTB may not be capable of this
         ]
+
+  let nThreads = calcContext ^. #input % #nThreads
 
   -- Debug logging before execution of XTB.
   logDebug $ "Starting XTB with command line arguments: " <> displayShow xtbCmdArgs
 
   -- Launch the XTB process and read its stdout and stderr.
   (exitCode, xtbOut, xtbErr) <-
+    withModifyEnvVars (Map.insert "OMP_NUM_THREADS" (tShow nThreads <> ",1")) .
     withWorkingDir (Path.toString permanentDir) $
       proc
         (Path.toString xtbWrapper)
