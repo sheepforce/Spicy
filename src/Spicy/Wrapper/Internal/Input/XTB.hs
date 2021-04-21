@@ -74,9 +74,9 @@ xtbInput mol calcID = do
   case software of
     XTB gfn -> do
       let mxtbSpec = calcInput ^. #qMMMSpec ^? _QM
-      xtbSpec <- maybe (throwM $ WrapperGenericException "xtbInput" "Not a QM calculation") return mxtbSpec
-      let xtbCharge = tShow . charge $ xtbSpec
-          xtbMult = mult xtbSpec
+      xtbSpec <- maybe2MThrow (WrapperGenericException "xtbInput" "Not a QM calculation") mxtbSpec
+      let xtbCharge = tShow $ xtbSpec ^. #charge
+          xtbMult = xtbSpec ^. #mult
           xtbNOshells = tShow $ xtbMult - 1
           xtbPcFile = path2Text $ {-getDirPathAbs (calcInput ^. #permaDir) Path.</>-} xtbMultipoleFilename calcContext
       return $

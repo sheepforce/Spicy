@@ -240,21 +240,17 @@ executeXTB calcID inputFilePath = do
   mol <- view moleculeL >>= atomically . readTVar
 
   -- The layer to be calculated
-  let thisID = molID calcID
+  let thisID = calcID ^. #molID
   thisMol <- getMolByID mol thisID
 
-  let calcContextM = mol ^? calcLens
-  calcContext <- case calcContextM of
-    Nothing ->
-      throwM $
-        MolLogicException
-          "runCalculation"
-          "Requested to perform a calculation which does not exist."
-    Just cntxt -> return cntxt
+  calcContext <-
+    maybe2MThrow
+      (MolLogicException "runCalculation" "Requested to perform a calculation which does not exist.")
+      (mol ^? calcLens)
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       --scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
-      software = calcContext ^. #input % #software
+      thisSoftware = calcContext ^. #input % #software
       geomFilePath = Path.replaceExtension inputFilePath ".xyz"
       pcFile = xtbMultipoleFilename calcContext
 
@@ -262,7 +258,7 @@ executeXTB calcID inputFilePath = do
   let isXTB x = case x of
         XTB _ -> True
         _ -> False
-  unless (isXTB software) $ do
+  unless (isXTB thisSoftware) $ do
     logError
       "A calculation should be done with the XTB driver function,\
       \ but the calculation is not a XTB calculation."
@@ -502,13 +498,10 @@ analyseXTB calcID = do
   -- Gather information about the run which to analyse.
   mol <- view moleculeL >>= atomically . readTVar
   localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
-  calcContext <- case mol ^? calcLens of
-    Just x -> return x
-    Nothing ->
-      throwM $
-        MolLogicException
-          "analyseXTB"
-          "Requested to analyze a Calculation, which does not exist."
+  calcContext <-
+    maybe2MThrow
+      (MolLogicException "analyseXTB" "Requested to analyze a Calculation, which does not exist.")
+      (mol ^? calcLens)
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       jsonPath = permanentDir </> Path.relFile "xtbout" <.> ".json"
