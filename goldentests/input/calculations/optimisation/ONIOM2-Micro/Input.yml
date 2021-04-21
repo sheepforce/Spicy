@@ -1,0 +1,55 @@
+permanent: Tests/permanent
+scratch: Tests/scratch
+molecule:
+  path: goldentests/input/molecules/Ethanal.mol2
+  fileType: mol2
+model:
+  theoryLayer:
+    templateFile: goldentests/input/calculations/optimisation/ONIOM2-Micro/hf.psi
+    program: psi4
+    name: HF/STO-3G
+    embedding:
+      tag: mechanical
+    execution:
+      nProcesses: 1
+      nThreads: 8
+      memory: 5000
+    charge: 0
+    mult: 1
+    selection:
+      -  1
+      -  2
+      -  3
+      -  4
+      -  5
+      -  6
+      -  7
+    optimisation:
+      coords: cart
+      conv:
+        rmsForce: null
+        maxForce: 0.03
+        rmsDisp: 0.0005
+        maxDisp: 0.001
+        eDiff: 0.00001
+    deeperLayer:
+    - templateFile: goldentests/input/calculations/optimisation/ONIOM2-Micro/hf.psi
+      program: psi4
+      name: HF/STO3G
+      embedding:
+        tag: mechanical
+      execution:
+        nProcesses: 1
+        nThreads: 8
+        memory: 5000
+      charge: 0
+      mult: 1
+      selection:
+        - 2
+        - 6
+        - 7
+      optimisation:
+        coords: cart
+      deeperLayer: []
+task:
+- optimise_micro
