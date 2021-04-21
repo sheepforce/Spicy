@@ -529,7 +529,7 @@ analyseXTB calcID = do
 
   -- Get multipoles from the output json.
   logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
-  rawXTBout <- parseXTBout . fromStrictBytes =<< readFileBinary (Path.toString jsonPath)
+  rawXTBout <- readXTBout =<< readFileBinary (Path.toString jsonPath)
   modelMultipoleList <- xtbMultipoles rawXTBout
 
   let atoms = localMol ^. #atoms

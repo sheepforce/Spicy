@@ -9,7 +9,7 @@
 --
 -- Provides methods to parse the output of the xtb program suite.
 module Spicy.Wrapper.Internal.Output.XTB
-  ( parseXTBout,
+  ( readXTBout,
     xtbMultipoles,
     parseXTBgradient,
     parseXTBhessian,
@@ -20,8 +20,7 @@ where
 import Data.Aeson
 import Data.Attoparsec.Text
 import qualified Data.Massiv.Array as VM
-import RIO hiding (takeWhile)
-import qualified RIO.ByteString.Lazy as BL
+import RIO
 import RIO.Char
 import qualified RIO.Vector as V
 import Spicy.Common
@@ -104,8 +103,8 @@ orderPoles RawXTB {..} = do
           }
 
 -- | Parse the JSON file that XTB can be made to write.
-parseXTBout :: MonadThrow m => BL.ByteString -> m RawXTB
-parseXTBout = maybe (throwM $ ParserException "parseXTBout") return . decode
+readXTBout :: MonadThrow m => ByteString -> m RawXTB
+readXTBout = maybe2MThrow (ParserException "parseXTBout") . decode . fromStrictBytes
 
 -- | Get the spherical multipoles from the raw (cartesian) xtb output.
 xtbMultipoles :: MonadThrow m => RawXTB -> m [Multipoles]
