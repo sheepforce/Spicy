@@ -30,6 +30,8 @@ module Spicy.Common
     parse',
     nextParse,
     skipHorizontalSpace,
+    skipLine,
+    fortranDouble,
     maybeOption,
     parseYamlFile,
     parseJSONFile,
@@ -373,6 +375,26 @@ skipHorizontalSpace = do
 -- Make a parser optional and wrap it in a 'Maybe'.
 maybeOption :: Parser a -> Parser (Maybe a)
 maybeOption p = option Nothing (Just <$> p)
+
+----------------------------------------------------------------------------------------------------
+
+-- | Skip the rest of the line.
+skipLine :: Parser ()
+skipLine = () <$ manyTill (satisfy $ not . isEndOfLine) endOfLine
+
+----------------------------------------------------------------------------------------------------
+
+-- | Haskell's 'read' and attoparsec's 'double' don't recognize the format
+-- for fortran's double precision numbers, i.e. 1.00D-03. This parser is a
+-- workaround for this issue.
+fortranDouble :: Parser Double
+fortranDouble = do
+  prefix <- double
+  _ <- char 'd' <|> char 'D'
+  mexp <- optional $ signed decimal
+  case mexp of
+    Nothing -> return prefix
+    Just (n::Int) -> return $ prefix * 10^n
 
 ----------------------------------------------------------------------------------------------------
 

@@ -23,7 +23,6 @@ import qualified Data.Massiv.Array as VM
 import RIO hiding (takeWhile)
 import qualified RIO.ByteString.Lazy as BL
 import RIO.Char
-import RIO.Text hiding (takeWhile)
 import qualified RIO.Vector as V
 import Spicy.Common
 import Spicy.Math.Spherical
@@ -40,17 +39,22 @@ data RawXTB = RawXTB
   deriving (Generic, Show)
 
 instance FromJSON RawXTB where
-  parseJSON = withObject "xtbout" $ \o ->
-    RawXTB
-      <$> o .: "total energy"
-      <*> o .: "partial charges"
-      -- The following are not present in GFN0 and GFN1
-      <*> o .:? "atomic dipole moments"
-      <*> o .:? "atomic quadrupole moments"
+  parseJSON = withObject "xtbout" $ \o -> do
+    energy <- o .: "total energy"
+    pCharges <- o .: "partial charges"
+    -- The following are not present in GFN0 and GFN1
+    aDipoles <- o .:? "atomic dipole moments"
+    aQuadrupoles <- o .:? "atomic quadrupole moments"
+    return
+      RawXTB
+        { totalEnergy = energy,
+          partialCharges = pCharges,
+          atomicDipoles = aDipoles,
+          atomicQuadrupoles = aQuadrupoles
+        }
 
 orderPoles :: MonadThrow m => RawXTB -> m [CMultipoles]
 orderPoles RawXTB {..} = do
-  -- Sanity check: Do we have information for every atom?
   let mmono = CMonopole <$> partialCharges
       blank = V.replicate (RIO.length partialCharges) Nothing
   mdi <- case atomicDipoles of
@@ -139,22 +143,6 @@ parseXTBgradient = do
     loseStructure :: [(a, a, a)] -> [a] -- This feels like i'm begging for a memory leak
     loseStructure [] = []
     loseStructure ((x, y, z) : xs) = x : y : z : loseStructure xs
-
--- | Utility: Skip the rest of the line.
-skipLine :: Parser Text
-skipLine = pack <$> manyTill (notChar '\n') (char '\n')
-
--- | Haskell's 'read' and attoparsec's 'double' don't recognize the format
--- for fortran's double precision numbers, i.e. 1.00D-03. This parser is a
--- workaround for this issue.
-fortranDouble :: Parser Double
-fortranDouble = do
-  raw <- fmap replaceD . unpack <$> takeWhile (not . isSpace)
-  case readMaybe raw of
-    Just aDouble -> pure aDouble
-    Nothing -> fail "Failed to read Fortran real!"
-  where
-    replaceD c = if c == 'D' then 'E' else c
 
 -- | Parse the xtb hessian file into a matrix representation.
 parseXTBhessian :: Parser (MatrixS Double)
