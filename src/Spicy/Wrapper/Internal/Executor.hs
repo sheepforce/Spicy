@@ -14,9 +14,9 @@ module Spicy.Wrapper.Internal.Executor
 where
 
 import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy8
-import qualified Data.Map as Map
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
+import qualified Data.Map as Map
 import Optics hiding (view)
 import RIO hiding
   ( view,
@@ -213,6 +213,12 @@ executePsi4 calcID inputFilePath = do
     logError $ "Psi4 stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
 
+-- | Run a given xtb calculation on an input file.
+--
+-- Unlike other software, xtb does not seem to support the use of a dedicated
+-- scratch directory. Hence, all files are kept in the permanent directory.
+-- This function also takes care of writing additional input files for
+-- the geometry and embedding.
 executeXTB ::
   (HasWrapperConfigs env, HasMolecule env, HasLogFunc env, HasProcessContext env) =>
   -- | ID of the calculation to perform.
@@ -250,7 +256,6 @@ executeXTB calcID inputFilePath = do
       --scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
       software = calcContext ^. #input % #software
       geomFilePath = Path.replaceExtension inputFilePath ".xyz"
-      --outputFilePath = Path.replaceExtension inputFilePath ".out" -- We don't care about this with XTB - all the files have static names
       pcFile = xtbMultipoleFilename calcContext
 
   -- Check if this function is appropiate to execute the calculation at all.
@@ -271,14 +276,13 @@ executeXTB calcID inputFilePath = do
 
   -- Write the .xyz coordinate input file
   logDebug "Writing .xyz file..."
-  let
-    realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ thisMol ^. #atoms
-    realMol =
-      thisMol
-        & #atoms Optics.%~ flip IntMap.restrictKeys realAtomInds
-        & #fragment % each % #atoms Optics.%~ IntSet.intersection realAtomInds
-        & #bonds Optics.%~ flip cleanBondMatByAtomInds realAtomInds
-        & #subMol .~ mempty
+  let realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ thisMol ^. #atoms
+      realMol =
+        thisMol
+          & #atoms Optics.%~ flip IntMap.restrictKeys realAtomInds
+          & #fragment % each % #atoms Optics.%~ IntSet.intersection realAtomInds
+          & #bonds Optics.%~ flip cleanBondMatByAtomInds realAtomInds
+          & #subMol .~ mempty
   xyzInput <- writeXYZ realMol
   writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
 
@@ -299,7 +303,6 @@ executeXTB calcID inputFilePath = do
           "--input", -- This...
           Path.toString inputFilePath -- And this need to be separate, for reasons unknown to mankind.
           --"--parallel " <> show (calcContext ^. #input % #nProc),
-          --"--scratch=" <> Path.toString scratchDir, -- XTB may not be capable of this
         ]
 
   let nThreads = calcContext ^. #input % #nThreads
@@ -309,9 +312,9 @@ executeXTB calcID inputFilePath = do
 
   -- Launch the XTB process and read its stdout and stderr.
   (exitCode, xtbOut, xtbErr) <-
-    withModifyEnvVars (Map.insert "OMP_NUM_THREADS" (tShow nThreads <> ",1")) .
-    withWorkingDir (Path.toString permanentDir) $
-      proc
+    withModifyEnvVars (Map.insert "OMP_NUM_THREADS" (tShow nThreads <> ",1"))
+      . withWorkingDir (Path.toString permanentDir)
+      $ proc
         (Path.toString xtbWrapper)
         xtbCmdArgs
         readProcess
@@ -484,6 +487,9 @@ analysePsi4 calcID = do
   where
     localExcp = WrapperGenericException "analysePsi4"
 
+-- | Analyse the output of an xtb calculation. Unlike Psi4, xtb output file names
+-- are independent of the input (unless explicitly specified). This function
+-- is not reliant on gdma either.
 analyseXTB ::
   (HasLogFunc env, HasMolecule env) =>
   CalcID ->
@@ -501,7 +507,7 @@ analyseXTB calcID = do
     Nothing ->
       throwM $
         MolLogicException
-          "runCalculation" -- Shouldn't this be analyzeXTB?
+          "analyseXTB"
           "Requested to analyze a Calculation, which does not exist."
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
@@ -510,6 +516,7 @@ analyseXTB calcID = do
       hessianPath = permanentDir </> Path.relFile "hessian"
       task' = calcContext ^. #input % #task
 
+  -- If required, get the gradient from the respective output file.
   gradientOutput <- case task' of
     WTEnergy -> return Nothing
     _ -> do
@@ -532,22 +539,23 @@ analyseXTB calcID = do
   rawXTBout <- parseXTBout . fromStrictBytes =<< readFileBinary (Path.toString jsonPath)
   modelMultipoleList <- xtbMultipoles rawXTBout
 
-  -- How does the input to xtb work? Does it contain Link/Dummy atoms that need to be filtered?
   let atoms = localMol ^. #atoms
       modelAtomKeys =
         IntSet.toAscList
-        . IntMap.keysSet
-        . IntMap.filter (not . isAtomLink . isLink)
-        . IntMap.filter (\a -> not $ a ^. #isDummy)
-        $ atoms
+          . IntMap.keysSet
+          . IntMap.filter (not . isAtomLink . isLink)
+          . IntMap.filter (\a -> not $ a ^. #isDummy)
+          $ atoms
       multipoles = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
-      enDeriv = EnergyDerivatives
-        (pure.totalEnergy $ rawXTBout)
-        gradientOutput
-        hessianOutput
-      calcOutput = CalcOutput
-        enDeriv
-        multipoles
+      enDeriv =
+        EnergyDerivatives
+          (pure . totalEnergy $ rawXTBout)
+          gradientOutput
+          hessianOutput
+      calcOutput =
+        CalcOutput
+          enDeriv
+          multipoles
   return calcOutput
   where
     localExcp = WrapperGenericException "analyseXTB"

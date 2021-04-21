@@ -1,43 +1,55 @@
+-- |
+-- Module      : Spicy.Wrapper.Internal.Output.XTB
+-- Description : Support for reading XTB output.
+-- Copyright   : Phillip Seeber, Sebastian Seidenath, 2021
+-- License     : GPL-3
+-- Maintainer  : phillip.seeber@uni-jena.de
+-- Stability   : experimental
+-- Portability : POSIX, Windows
+--
+-- Provides methods to parse the output of the xtb program suite.
 module Spicy.Wrapper.Internal.Output.XTB
   ( parseXTBout,
     xtbMultipoles,
     parseXTBgradient,
     parseXTBhessian,
-    RawXTB(..)
+    RawXTB (..),
   )
 where
 
+import Data.Aeson
+import Data.Attoparsec.Text
+import qualified Data.Massiv.Array as VM
 import RIO hiding (takeWhile)
+import qualified RIO.ByteString.Lazy as BL
 import RIO.Char
 import RIO.Text hiding (takeWhile)
-import qualified RIO.ByteString.Lazy as BL
 import qualified RIO.Vector as V
-import Spicy.Math.Spherical
 import Spicy.Common
+import Spicy.Math.Spherical
 import Spicy.Molecule.Internal.Types
 import Spicy.Wrapper.Internal.Output.Generic
-import Data.Attoparsec.Text
-import Data.Aeson
-import qualified Data.Massiv.Array as VM
 
+-- | Representation for the content of the xtbout.json file.
 data RawXTB = RawXTB
   { totalEnergy :: Double,
     partialCharges :: Vector Double,
     atomicDipoles :: Maybe (Vector (Vector Double)),
     atomicQuadrupoles :: Maybe (Vector (Vector Double))
   }
-  deriving (Generic,Show)
+  deriving (Generic, Show)
 
 instance FromJSON RawXTB where
-  parseJSON = withObject "xtbout" $ \o -> RawXTB
-    <$> o .: "total energy"
-    <*> o .: "partial charges"
-    -- The following are not present in GFN0 and GFN1
-    <*> o .:? "atomic dipole moments"
-    <*> o .:? "atomic quadrupole moments"
+  parseJSON = withObject "xtbout" $ \o ->
+    RawXTB
+      <$> o .: "total energy"
+      <*> o .: "partial charges"
+      -- The following are not present in GFN0 and GFN1
+      <*> o .:? "atomic dipole moments"
+      <*> o .:? "atomic quadrupole moments"
 
 orderPoles :: MonadThrow m => RawXTB -> m [CMultipoles]
-orderPoles RawXTB{..} = do
+orderPoles RawXTB {..} = do
   -- Sanity check: Do we have information for every atom?
   let mmono = CMonopole <$> partialCharges
       blank = V.replicate (RIO.length partialCharges) Nothing
@@ -61,10 +73,12 @@ orderPoles RawXTB{..} = do
       x <- vec !?? 0
       y <- vec !?? 1
       z <- vec !?? 2
-      return CDipole
-        { c100 = x
-        , c010 = y
-        , c001 = z }
+      return
+        CDipole
+          { c100 = x,
+            c010 = y,
+            c001 = z
+          }
     -- Assumes xx, xy, yy, xz, yz, zz ordering in the xtb output!
     mkQuadrupole :: MonadThrow m => Vector Double -> m CQuadrupole
     mkQuadrupole vec = do
@@ -75,23 +89,26 @@ orderPoles RawXTB{..} = do
       xz <- vec !?? 3
       yz <- vec !?? 4
       zz <- vec !?? 5
-      return CQuadrupole
-        { c200 = xx
-        , c020 = yy
-        , c002 = zz
-        , c110 = xy
-        , c101 = xz
-        , c011 = yz }
+      return
+        CQuadrupole
+          { c200 = xx,
+            c020 = yy,
+            c002 = zz,
+            c110 = xy,
+            c101 = xz,
+            c011 = yz
+          }
 
 -- | Parse the JSON file that XTB can be made to write.
 parseXTBout :: MonadThrow m => BL.ByteString -> m RawXTB
 parseXTBout = maybe (throwM $ ParserException "parseXTBout") return . decode
 
+-- | Get the spherical multipoles from the raw (cartesian) xtb output.
 xtbMultipoles :: MonadThrow m => RawXTB -> m [Multipoles]
 xtbMultipoles =
-  fmap fmap fmap cartesianToSpherical -- Yes, what about it?
-  . maybe (throwM $ DataStructureException "xtbMultipoles" "XTB poles could not be processed") return
-  . orderPoles
+  fmap fmap fmap cartesianToSpherical
+    . maybe (throwM $ DataStructureException "xtbMultipoles" "XTB poles could not be processed") return
+    . orderPoles
 
 -- | Parse the 'gradient' output file of XTB. XTB must be told to write this file, it will not do so
 -- on a normal run. This file can contain multiple gradients if the XTB calculation is a compound
@@ -105,24 +122,23 @@ parseXTBgradient = do
   let vec = VectorS . VM.fromList VM.Seq . loseStructure $ gradients
   _ <- string "$end"
   return vec
-    where
-      parseCoordinates = do
-        x <- skipHorizontalSpace *> double
-        y <- skipHorizontalSpace *> double
-        z <- skipHorizontalSpace *> double
-        name <- skipHorizontalSpace *> many1' (satisfy isAlpha)
-        _ <- skipLine
-        return (name,x,y,z)
-      parseGradients = do
-        x <- skipHorizontalSpace *> (double <|> fortranDouble)
-        y <- skipHorizontalSpace *> (double <|> fortranDouble)
-        z <- skipHorizontalSpace *> (double <|> fortranDouble)
-        _ <- skipLine
-        return (x,y,z)
-      loseStructure :: [(a,a,a)] -> [a] -- This feels like i'm begging for a memory leak
-      loseStructure [] = []
-      loseStructure ((x,y,z):xs) = x:y:z: loseStructure xs
-
+  where
+    parseCoordinates = do
+      x <- skipHorizontalSpace *> double
+      y <- skipHorizontalSpace *> double
+      z <- skipHorizontalSpace *> double
+      name <- skipHorizontalSpace *> many1' (satisfy isAlpha)
+      _ <- skipLine
+      return (name, x, y, z)
+    parseGradients = do
+      x <- skipHorizontalSpace *> (double <|> fortranDouble)
+      y <- skipHorizontalSpace *> (double <|> fortranDouble)
+      z <- skipHorizontalSpace *> (double <|> fortranDouble)
+      _ <- skipLine
+      return (x, y, z)
+    loseStructure :: [(a, a, a)] -> [a] -- This feels like i'm begging for a memory leak
+    loseStructure [] = []
+    loseStructure ((x, y, z) : xs) = x : y : z : loseStructure xs
 
 -- | Utility: Skip the rest of the line.
 skipLine :: Parser Text
@@ -133,13 +149,14 @@ skipLine = pack <$> manyTill (notChar '\n') (char '\n')
 -- workaround for this issue.
 fortranDouble :: Parser Double
 fortranDouble = do
-  raw <- fmap replaceD . unpack <$> takeWhile (not.isSpace)
+  raw <- fmap replaceD . unpack <$> takeWhile (not . isSpace)
   case readMaybe raw of
     Just aDouble -> pure aDouble
     Nothing -> fail "Failed to read Fortran real!"
   where
     replaceD c = if c == 'D' then 'E' else c
 
+-- | Parse the xtb hessian file into a matrix representation.
 parseXTBhessian :: Parser (MatrixS Double)
 parseXTBhessian = do
   _ <- string "$hessian"

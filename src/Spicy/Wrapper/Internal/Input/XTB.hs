@@ -1,39 +1,37 @@
 -- |
 -- Module      : Spicy.Wrapper.Internal.Input.XTB
 -- Description : Support for system calls to XTB.
--- Copyright   : Phillip Seeber, 2021
+-- Copyright   : Phillip Seeber, Sebastian Seidenath, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
 -- Portability : POSIX, Windows
 --
 -- Provides methods to generate XTB inputs including electronic embedding.
-
 module Spicy.Wrapper.Internal.Input.XTB
-  (
-    xtbMultipoleFilename,
+  ( xtbMultipoleFilename,
     xtbMultipoleRepresentation,
-    xtbInput
-  ) where
+    xtbInput,
+  )
+where
 
 -- XTB extra input files for embedding. May become obsolete with the C API later
 
-import RIO hiding ((^?), (^.))
-import qualified RIO.Text.Lazy as Text
-import qualified Data.Text.Lazy.Builder as Builder
 import qualified Data.Massiv.Array as Massiv
-
-import Spicy.Molecule.Internal.Types
-import Spicy.Molecule.Internal.Multipoles
-import Spicy.Molecule.Internal.Util
-import Spicy.Common
-
+import qualified Data.Text.Lazy.Builder as Builder
 import Optics
-import System.Path
-  (
-    (<.>)
+import RIO hiding
+  ( (^.),
+    (^?),
   )
-
+import qualified RIO.Text.Lazy as Text
+import Spicy.Common
+import Spicy.Molecule.Internal.Multipoles
+import Spicy.Molecule.Internal.Types
+import Spicy.Molecule.Internal.Util
+import System.Path
+  ( (<.>),
+  )
 import qualified System.Path as Path
 
 -- | Generate the multipole representation accepted by XTB. Must be in its own file.
@@ -61,16 +59,16 @@ xtbMultipoleRepresentation mol = do
 xtbMultipoleFilename :: CalcContext -> Path.RelFile
 xtbMultipoleFilename calcContext =
   let inputFilePrefix = Path.relFile . replaceProblematicChars $ calcContext ^. #input % #prefixName
-  in inputFilePrefix <.> ".pc"
+   in inputFilePrefix <.> ".pc"
 
 -- | Generate the XTB xcontrol detailed input file. XTB will still need the coordinates in a separate file.
-xtbInput :: 
+xtbInput ::
   (MonadThrow m) =>
   Molecule ->
   CalcID ->
   m Text
 xtbInput mol calcID = do
-  (calcContext,_) <- mol `getCalcByID` calcID
+  (calcContext, _) <- mol `getCalcByID` calcID
   let calcInput = calcContext ^. #input
       software = calcInput ^. #software
   case software of
@@ -82,15 +80,21 @@ xtbInput mol calcID = do
           xtbNOshells = tShow $ xtbMult - 1
           xtbPcFile = path2Text $ {-getDirPathAbs (calcInput ^. #permaDir) Path.</>-} xtbMultipoleFilename calcContext
       return $
-        "$chrg " <> xtbCharge <> "\n" <>
-        "$spin " <> xtbNOshells <> "\n" <> --Refers to nOpenshells, despite the name
-        "$gfn\n" <>
-        " method=" <> renderGFN gfn <> "\n" <>
-        "$embedding\n" <>
-        " input=" <> xtbPcFile <> "\n"
+        "$chrg " <> xtbCharge <> "\n"
+          <> "$spin "
+          <> xtbNOshells
+          <> "\n"
+          <> "$gfn\n" --Refers to nOpenshells, despite the name
+          <> " method="
+          <> renderGFN gfn
+          <> "\n"
+          <> "$embedding\n"
+          <> " input="
+          <> xtbPcFile
+          <> "\n"
     _ -> throwM $ WrapperGenericException "xtbInput" "Attempted to generate XTB input for non-XTB calculation"
 
--- | Convert the enumeration type representation to the digit expected by XTB. 
+-- | Convert the enumeration type representation to the digit expected by XTB.
 renderGFN ::
   GFN ->
   Text
