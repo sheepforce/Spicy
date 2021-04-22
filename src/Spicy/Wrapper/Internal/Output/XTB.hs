@@ -19,7 +19,7 @@ where
 
 import Data.Aeson
 import Data.Attoparsec.Text
-import qualified Data.Massiv.Array as VM
+import qualified Data.Massiv.Vector as VM
 import RIO
 import RIO.Char
 import qualified RIO.Vector as V
@@ -52,22 +52,20 @@ instance FromJSON RawXTB where
           atomicQuadrupoles = aQuadrupoles
         }
 
+-- | Take the raw XTB output and transform it into a more workable form.
 orderPoles :: MonadThrow m => RawXTB -> m [CMultipoles]
 orderPoles RawXTB {..} = do
-  let mmono = CMonopole <$> partialCharges
-      blank = V.replicate (RIO.length partialCharges) Nothing
-  mdi <- case atomicDipoles of
-    Just vDipoles -> sequenceA $ fmap pure . mkDipole <$> vDipoles
-    Nothing -> return blank
-  mquad <- case atomicQuadrupoles of
-    Just vQuadrupoles -> sequenceA $ fmap pure . mkQuadrupole <$> vQuadrupoles
-    Nothing -> return $ V.replicate (RIO.length partialCharges) Nothing
-  return . V.toList $ V.zipWith3 CMultipoles (Just <$> mmono) mdi mquad
+  let mmono = pure . CMonopole <$> partialCharges
+      l = RIO.length partialCharges
+      -- If any poles are missing, these blanks will be substituted
+      blankDipoles = V.replicate l Nothing
+      blankQuadrupoles = V.replicate l Nothing
+  mdi <- maybe (return blankDipoles) (traverse $ pure . mkDipole) atomicDipoles
+  mquad <- maybe (return blankQuadrupoles) (traverse $ pure . mkQuadrupole) atomicQuadrupoles
+  return . V.toList $ V.zipWith3 CMultipoles mmono mdi mquad
   where
     (!??) :: MonadThrow m => Vector a -> Int -> m a
-    v !?? i = case v V.!? i of
-      Nothing -> throwM (DataStructureException "!?" "Vector index out of bounds!")
-      Just r -> return r
+    v !?? i = maybe2MThrow (DataStructureException "!?" "Vector index out of bounds!") (v V.!? i)
     -- Assumes x,y,z ordering!
     mkDipole :: MonadThrow m => Vector Double -> m CDipole
     mkDipole vec = do
@@ -110,19 +108,19 @@ readXTBout = maybe2MThrow (ParserException "parseXTBout") . decode . fromStrictB
 xtbMultipoles :: MonadThrow m => RawXTB -> m [Multipoles]
 xtbMultipoles =
   fmap fmap fmap cartesianToSpherical
-    . maybe (throwM $ DataStructureException "xtbMultipoles" "XTB poles could not be processed") return
+    . maybe2MThrow (DataStructureException "xtbMultipoles" "XTB poles could not be processed")
     . orderPoles
 
 -- | Parse the 'gradient' output file of XTB. XTB must be told to write this file, it will not do so
 -- on a normal run. This file can contain multiple gradients if the XTB calculation is a compound
--- calculation -- This isn't currently dealt with.
+-- calculation -- This isn't currently dealt with (but also never requested by Spicy).
 parseXTBgradient :: Parser (VectorS Double)
 parseXTBgradient = do
   _ <- string "$grad" <* skipLine
   _ <- skipLine
   _ <- many1 parseCoordinates
   gradients <- many1' parseGradients
-  let vec = VectorS . VM.fromList VM.Seq . loseStructure $ gradients
+  let vec = VectorS . VM.convert . VM.sconcat $ gradients
   _ <- string "$end"
   return vec
   where
@@ -138,10 +136,7 @@ parseXTBgradient = do
       y <- skipHorizontalSpace *> (double <|> fortranDouble)
       z <- skipHorizontalSpace *> (double <|> fortranDouble)
       _ <- skipLine
-      return (x, y, z)
-    loseStructure :: [(a, a, a)] -> [a] -- This feels like i'm begging for a memory leak
-    loseStructure [] = []
-    loseStructure ((x, y, z) : xs) = x : y : z : loseStructure xs
+      return $ VM.sfromList [x, y, z]
 
 -- | Parse the xtb hessian file into a matrix representation.
 parseXTBhessian :: Parser (MatrixS Double)
