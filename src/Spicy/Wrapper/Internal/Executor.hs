@@ -285,7 +285,7 @@ executeXTB calcID inputFilePath = do
   -- Write the .pc point charge (embedding) file
   logDebug "Writing .pc file..."
   pcInput <- xtbMultipoleRepresentation thisMol
-  writeFileUTF8 (Path.toAbsRel $ permanentDir </> pcFile) pcInput
+  writeFileUTF8 (Path.toAbsRel pcFile) pcInput
 
   -- Prepare the command line arguments to XTB.
   let cmdTask = case calcContext ^. #input % #task of

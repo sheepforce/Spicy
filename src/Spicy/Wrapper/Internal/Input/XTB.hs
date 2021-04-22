@@ -56,10 +56,11 @@ xtbMultipoleRepresentation mol = do
 
 -- | Provide a file name for the XTB multipoles. This function is kept here so that
 -- the name is constistent across the program.
-xtbMultipoleFilename :: CalcContext -> Path.RelFile
+xtbMultipoleFilename :: CalcContext -> Path.AbsFile
 xtbMultipoleFilename calcContext =
   let inputFilePrefix = Path.relFile . replaceProblematicChars $ calcContext ^. #input % #prefixName
-   in inputFilePrefix <.> ".pc"
+      JDirPathAbs absDir = calcContext ^. #input % #permaDir
+   in absDir Path.</> inputFilePrefix <.> ".pc"
 
 -- | Generate the XTB xcontrol detailed input file. XTB will still need the coordinates in a separate file.
 xtbInput ::
