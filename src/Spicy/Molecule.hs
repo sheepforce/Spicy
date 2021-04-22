@@ -97,6 +97,7 @@ module Spicy.Molecule
     fragmentDetectionDetached,
     getPolarisationCloudFromAbove,
     redistributeLinkMoments,
+    redistributeLinkMoments',
     isAtomLink,
     removeRealLinkTagsFromModel,
     molToPointCharges,
