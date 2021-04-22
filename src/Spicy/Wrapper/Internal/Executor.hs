@@ -531,15 +531,17 @@ analyseXTB calcID = do
   logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
   (energy,modelMultipoleList) <- fromXTBout =<< readFileBinary (Path.toString jsonPath)
 
-  let atoms = localMol ^. #atoms
-      modelAtomKeys =
-        IntSet.toAscList
-          . IntMap.keysSet
-          . IntMap.filter (not . isAtomLink . isLink)
-          . IntMap.filter (\a -> not $ a ^. #isDummy)
-          $ atoms
-      multipoles = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
-      enDeriv =
+  -- Redistribute link atom multipoles to the rest of the atoms,
+  -- then put those multipoles in a map with the proper atom keys
+  let realAtoms = IntMap.filter (\a -> not $ a ^. #isDummy) $ localMol ^. #atoms
+      realAtomsKeys = IntMap.keys realAtoms
+      multipoleMap = IntMap.fromAscList $ zip realAtomsKeys modelMultipoleList
+      atomsWithDistributedPoles = redistributeLinkMoments' $
+        IntMap.intersectionWith (Optics.set #multipoles) multipoleMap realAtoms
+      distributedMultipoles = (^. #multipoles) <$> atomsWithDistributedPoles
+
+  -- Finalize the output
+  let enDeriv =
         EnergyDerivatives
           (pure energy)
           gradientOutput
@@ -547,7 +549,7 @@ analyseXTB calcID = do
       calcOutput =
         CalcOutput
           enDeriv
-          multipoles
+          distributedMultipoles
   return calcOutput
   where
     localExcp = WrapperGenericException "analyseXTB"
