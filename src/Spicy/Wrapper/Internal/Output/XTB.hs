@@ -9,11 +9,9 @@
 --
 -- Provides methods to parse the output of the xtb program suite.
 module Spicy.Wrapper.Internal.Output.XTB
-  ( readXTBout,
-    xtbMultipoles,
+  ( fromXTBout,
     parseXTBgradient,
     parseXTBhessian,
-    RawXTB (..),
   )
 where
 
@@ -51,6 +49,19 @@ instance FromJSON RawXTB where
           atomicDipoles = aDipoles,
           atomicQuadrupoles = aQuadrupoles
         }
+
+fromXTBout :: (MonadThrow m) => ByteString -> m (Double, [Multipoles])
+fromXTBout = processXTBout <=< readXTBout
+
+-- | From the parsed XTB output, generate the data used by the rest of Spicy.
+processXTBout :: (MonadThrow m) => RawXTB -> m (Double, [Multipoles])
+processXTBout raw@RawXTB {..} = do
+  multipoles <- xtbMultipoles raw
+  return (totalEnergy, multipoles)
+
+-- | Parse the JSON file that XTB can be made to write.
+readXTBout :: MonadThrow m => ByteString -> m RawXTB
+readXTBout = maybe2MThrow (ParserException "parseXTBout") . decode . fromStrictBytes
 
 -- | Take the raw XTB output and transform it into a more workable form.
 orderPoles :: MonadThrow m => RawXTB -> m [CMultipoles]
@@ -99,10 +110,6 @@ orderPoles RawXTB {..} = do
             c101 = xz,
             c011 = yz
           }
-
--- | Parse the JSON file that XTB can be made to write.
-readXTBout :: MonadThrow m => ByteString -> m RawXTB
-readXTBout = maybe2MThrow (ParserException "parseXTBout") . decode . fromStrictBytes
 
 -- | Get the spherical multipoles from the raw (cartesian) xtb output.
 xtbMultipoles :: MonadThrow m => RawXTB -> m [Multipoles]

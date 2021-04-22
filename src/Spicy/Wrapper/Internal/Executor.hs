@@ -529,8 +529,7 @@ analyseXTB calcID = do
 
   -- Get multipoles from the output json.
   logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
-  rawXTBout <- readXTBout =<< readFileBinary (Path.toString jsonPath)
-  modelMultipoleList <- xtbMultipoles rawXTBout
+  (energy,modelMultipoleList) <- fromXTBout =<< readFileBinary (Path.toString jsonPath)
 
   let atoms = localMol ^. #atoms
       modelAtomKeys =
@@ -542,7 +541,7 @@ analyseXTB calcID = do
       multipoles = IntMap.fromAscList $ zip modelAtomKeys modelMultipoleList
       enDeriv =
         EnergyDerivatives
-          (pure . totalEnergy $ rawXTBout)
+          (pure energy)
           gradientOutput
           hessianOutput
       calcOutput =
