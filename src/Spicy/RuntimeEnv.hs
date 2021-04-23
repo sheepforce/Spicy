@@ -114,7 +114,8 @@ data WrapperConfigs = WrapperConfigs
     nwchem :: Maybe JFilePath,
     gdma :: Maybe JFilePath,
     ipi :: Maybe JFilePath,
-    pysisyphus :: Maybe JFilePath
+    pysisyphus :: Maybe JFilePath,
+    xtb :: Maybe JFilePath
   }
   deriving (Show, Generic)
 
@@ -139,6 +140,9 @@ instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "ipi" k WrapperC
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}
 
+instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "xtb" k WrapperConfigs WrapperConfigs a b where
+  labelOptic = lens xtb $ \s b -> s {xtb = b}
+  
 -- Reader Classes
 class HasWrapperConfigs env where
   wrapperConfigsL :: Lens' env WrapperConfigs
@@ -200,5 +204,3 @@ instance (k ~ A_Lens, a ~ TMVar CalcID, b ~ a) => LabelOptic "input" k CalcSlot 
 
 instance (k ~ A_Lens, a ~ TMVar Molecule, b ~ a) => LabelOptic "output" k CalcSlot CalcSlot a b where
   labelOptic = lens (output :: CalcSlot -> TMVar Molecule) $ \s b -> (s {output = b} :: CalcSlot)
-
-----------------------------------------------------------------------------------------------------

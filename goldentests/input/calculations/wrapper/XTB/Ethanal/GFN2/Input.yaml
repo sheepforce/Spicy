@@ -1,0 +1,29 @@
+permanent: Tests/permanent
+scratch: Tests/scratch
+molecule:
+  path: goldentests/input/molecules/Ethanal.mol2
+  fileType: mol2
+model:
+  theoryLayer:
+    name: GFN2-xTB
+    program:
+      tag: xtb
+      contents: gfntwo
+    charge: 0
+    mult: 1
+    templateFile: goldentests/input/calculations/wrapper/XTB/Ethanal/GFN2/Template.xtb
+    execution:
+      nProcesses: 1
+      nThreads: 8
+      memory: 5000
+    selection: [1,2,3,4,5,6,7]
+    deeperLayer: []
+    embedding:
+      tag: electronic
+      contents: [0.2,0.4]
+    optimisation:
+      target: min
+      coords: cart
+      iterations: 27
+task:
+- optimise_macro

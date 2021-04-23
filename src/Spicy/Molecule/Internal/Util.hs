@@ -53,6 +53,7 @@ module Spicy.Molecule.Internal.Util
     fragmentAtomInfo2AtomsAndFragments,
     getJacobian,
     redistributeLinkMoments,
+    redistributeLinkMoments',
     removeRealLinkTagsFromModel,
     getAllCalcIDsHierarchically,
     getAllMolIDsHierarchically,
@@ -2371,7 +2372,12 @@ modifyMultipole f a =
 -- | Redistributes the multipole moments of the link atoms of a given molecule layer (not its
 -- sublayers) homogenously among all other atoms of the the layer.
 redistributeLinkMoments :: Molecule -> Molecule
-redistributeLinkMoments mol =
+redistributeLinkMoments = Optics.over #atoms redistributeLinkMoments'
+
+-- | Redistributes the multipole moments of the link atoms of a given set of atoms
+-- homogenously among all other atoms in the set.
+redistributeLinkMoments' :: IntMap Atom -> IntMap Atom
+redistributeLinkMoments' allAtoms =
   let zeroMoment =
         Multipoles
           { monopole = Just $ Monopole 0,
@@ -2380,7 +2386,6 @@ redistributeLinkMoments mol =
             octopole = Just $ Octopole 0 0 0 0 0 0 0,
             hexadecapole = Just $ Hexadecapole 0 0 0 0 0 0 0 0 0
           }
-      allAtoms = mol ^. #atoms
 
       -- Link atoms of this layer.
       linkAtoms = IntMap.filter (isAtomLink . isLink) allAtoms
@@ -2399,7 +2404,7 @@ redistributeLinkMoments mol =
 
       -- Recombine the set 1 and 2 atoms again to give the layer with redistributed multipoles.
       newAtoms = IntMap.union newSet1Atoms newLinkAtoms
-   in mol & #atoms .~ newAtoms
+   in newAtoms
 
 ----------------------------------------------------------------------------------------------------
 

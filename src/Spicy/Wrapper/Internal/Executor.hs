@@ -16,6 +16,7 @@ where
 import qualified Data.ByteString.Lazy.Char8 as ByteStringLazy8
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
+import qualified Data.Map as Map
 import Optics hiding (view)
 import RIO hiding
   ( view,
@@ -32,8 +33,10 @@ import Spicy.Logger
 import Spicy.Molecule
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.Shallow
+import Spicy.Wrapper.Internal.Input.XTB
 import Spicy.Wrapper.Internal.Output.GDMA
 import Spicy.Wrapper.Internal.Output.Generic
+import Spicy.Wrapper.Internal.Output.XTB
 import System.Path
   ( (<++>),
     (<.>),
@@ -88,7 +91,10 @@ runCalculation calcID = do
   liftIO $ Dir.createDirectoryIfMissing True scratchDir
 
   -- Write the input file for the calculation to its permanent directory.
-  wrapperInputFile <- translate2Input mol calcID
+  wrapperInputFile <- case software of
+    Psi4 -> translate2Input mol calcID
+    Nwchem -> undefined
+    XTB _ -> xtbInput mol calcID
   writeFileUTF8 (Path.toAbsRel inputFilePath) wrapperInputFile
 
   -- Logging about the Wrapper execution.
@@ -98,11 +104,13 @@ runCalculation calcID = do
   case software of
     Psi4 -> executePsi4 calcID inputFilePath
     Nwchem -> undefined
+    XTB _ -> executeXTB calcID inputFilePath
 
   -- Parse the output, that has been produced by the wrapper.
   calcOutput <- case software of
     Psi4 -> analysePsi4 calcID
     Nwchem -> undefined
+    XTB _ -> analyseXTB calcID
 
   -- Print logging information about the output obtained.
   -- mapM_ logInfo . hShow $ calcOutput
@@ -204,6 +212,115 @@ executePsi4 calcID inputFilePath = do
     logError $ "Psi4 error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Err)
     logError $ "Psi4 stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
+
+-- | Run a given xtb calculation on an input file.
+--
+-- Unlike other software, xtb does not seem to support the use of a dedicated
+-- scratch directory. Hence, all files are kept in the permanent directory.
+-- This function also takes care of writing additional input files for
+-- the geometry and embedding.
+executeXTB ::
+  (HasWrapperConfigs env, HasMolecule env, HasLogFunc env, HasProcessContext env) =>
+  -- | ID of the calculation to perform.
+  CalcID ->
+  -- | Path to the input file of XTB.
+  Path.AbsFile ->
+  RIO env ()
+executeXTB calcID inputFilePath = do
+  -- Obtain the XTB wrapper.
+  xtbWrapper <-
+    view (wrapperConfigsL % #xtb) >>= \wrapper -> case wrapper of
+      Just w -> return . getFilePath $ w
+      Nothing -> throwM $ WrapperGenericException "executeXTB" "XTB wrapper is not configured. Cannot execute."
+
+  -- Create the calculation context lens.
+  let calcLens = calcIDLensGen calcID
+
+  -- Gather information for the execution of XTB
+  mol <- view moleculeL >>= atomically . readTVar
+
+  -- The layer to be calculated
+  let thisID = calcID ^. #molID
+  thisMol <- getMolByID mol thisID
+
+  calcContext <-
+    maybe2MThrow
+      (MolLogicException "runCalculation" "Requested to perform a calculation which does not exist.")
+      (mol ^? calcLens)
+
+  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+      --scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
+      thisSoftware = calcContext ^. #input % #software
+      geomFilePath = Path.replaceExtension inputFilePath ".xyz"
+      pcFile = xtbMultipoleFilename calcContext
+
+  -- Check if this function is appropiate to execute the calculation at all.
+  let isXTB x = case x of
+        XTB _ -> True
+        _ -> False
+  unless (isXTB thisSoftware) $ do
+    logError
+      "A calculation should be done with the XTB driver function,\
+      \ but the calculation is not a XTB calculation."
+    throwM $
+      SpicyIndirectionException
+        "executeXTB"
+        ( "Requested to execute XTB on calculation with CalcID "
+            <> show calcID
+            <> "but this is not a XTB calculation."
+        )
+
+  -- Write the .xyz coordinate input file
+  logDebug "Writing .xyz file..."
+  let realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ thisMol ^. #atoms
+      realMol =
+        thisMol
+          & #atoms Optics.%~ flip IntMap.restrictKeys realAtomInds
+          & #fragment % each % #atoms Optics.%~ IntSet.intersection realAtomInds
+          & #bonds Optics.%~ flip cleanBondMatByAtomInds realAtomInds
+          & #subMol .~ mempty
+  xyzInput <- writeXYZ realMol
+  writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
+
+  -- Write the .pc point charge (embedding) file
+  logDebug "Writing .pc file..."
+  pcInput <- xtbMultipoleRepresentation thisMol
+  writeFileUTF8 (Path.toAbsRel pcFile) pcInput
+
+  -- Prepare the command line arguments to XTB.
+  let cmdTask = case calcContext ^. #input % #task of
+        WTEnergy -> "--sp"
+        WTGradient -> "--grad"
+        WTHessian -> "--hess"
+      xtbCmdArgs =
+        [ "--json",
+          cmdTask,
+          Path.toString geomFilePath,
+          "--input", -- This...
+          Path.toString inputFilePath -- And this need to be separate, for reasons unknown to mankind.
+          --"--parallel " <> show (calcContext ^. #input % #nProc),
+        ]
+
+  let nThreads = calcContext ^. #input % #nThreads
+
+  -- Debug logging before execution of XTB.
+  logDebug $ "Starting XTB with command line arguments: " <> displayShow xtbCmdArgs
+
+  -- Launch the XTB process and read its stdout and stderr.
+  (exitCode, xtbOut, xtbErr) <-
+    withModifyEnvVars (Map.insert "OMP_NUM_THREADS" (tShow nThreads <> ",1"))
+      . withWorkingDir (Path.toString permanentDir)
+      $ proc
+        (Path.toString xtbWrapper)
+        xtbCmdArgs
+        readProcess
+
+  -- Provide some information if something went wrong.
+  unless (exitCode == ExitSuccess) $ do
+    logError $ "xtb execution terminated abnormally. Got exit code: " <> displayShow exitCode
+    logError $ "xtb error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbErr)
+    logError $ "xtb stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbOut)
+    throwM $ WrapperGenericException "executeXTB" "XTB execution terminated abnormally."
 
 ----------------------------------------------------------------------------------------------------
 
@@ -365,3 +482,70 @@ analysePsi4 calcID = do
   return calcOutput
   where
     localExcp = WrapperGenericException "analysePsi4"
+
+-- | Analyse the output of an xtb calculation. Unlike Psi4, xtb output file names
+-- are independent of the input (unless explicitly specified). This function
+-- is not reliant on gdma either.
+analyseXTB ::
+  (HasLogFunc env, HasMolecule env) =>
+  CalcID ->
+  RIO env CalcOutput
+analyseXTB calcID = do
+  -- Create the calcID lens and the mol lens.
+  let molLens = molIDLensGen (calcID ^. #molID)
+      calcLens = calcIDLensGen calcID
+
+  -- Gather information about the run which to analyse.
+  mol <- view moleculeL >>= atomically . readTVar
+  localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
+  calcContext <-
+    maybe2MThrow
+      (MolLogicException "analyseXTB" "Requested to analyze a Calculation, which does not exist.")
+      (mol ^? calcLens)
+
+  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+      jsonPath = permanentDir </> Path.relFile "xtbout" <.> ".json"
+      gradientPath = permanentDir </> Path.relFile "gradient"
+      hessianPath = permanentDir </> Path.relFile "hessian"
+      task' = calcContext ^. #input % #task
+
+  -- If required, get the gradient from the respective output file.
+  gradientOutput <- case task' of
+    WTEnergy -> return Nothing
+    _ -> do
+      logDebug $ "Reading gradient file " <> path2Utf8Builder gradientPath
+      gradientContent <- readFileUTF8 $ Path.toAbsRel gradientPath
+      gradient <- parse' parseXTBgradient gradientContent
+      return . Just $ gradient
+
+  -- If the task was a hessian calculation, also parse the array with the hessian.
+  hessianOutput <- case task' of
+    WTHessian -> do
+      logDebug $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
+      hessianContent <- readFileUTF8 (Path.toAbsRel hessianPath)
+      hessian <- parse' parseXTBhessian hessianContent
+      return . Just $ hessian
+    _ -> return Nothing
+
+  -- Get multipoles from the output json.
+  logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
+  (energy,modelMultipoleList) <- fromXTBout =<< readFileBinary (Path.toString jsonPath)
+
+  -- Assign multipoles to the correct keys
+  let realAtoms = IntMap.filter (\a -> not $ a ^. #isDummy) $ localMol ^. #atoms
+      realAtomsKeys = IntMap.keys realAtoms
+      multipoleMap = IntMap.fromAscList $ zip realAtomsKeys modelMultipoleList
+
+  -- Finalize the output
+  let enDeriv =
+        EnergyDerivatives
+          (pure energy)
+          gradientOutput
+          hessianOutput
+      calcOutput =
+        CalcOutput
+          enDeriv
+          multipoleMap
+  return calcOutput
+  where
+    localExcp = WrapperGenericException "analyseXTB"

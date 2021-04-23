@@ -7,9 +7,10 @@ let
   spicyrc = pkgs.writeTextFile {
     name = "spicyrc";
     text = pkgs.lib.generators.toYAML {} {
-      "psi4" = "${pkgs.psi4}/bin/psi4";
+      "psi4" = "${pkgs.psi4Unstable}/bin/psi4";
       "gdma" = "${pkgs.gdma}/bin/gdma";
       "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
+      "xtb" = "${pkgs.xtb}/bin/xtb";
     };
   };
 in
@@ -39,6 +40,7 @@ in
       pkgs.pysisyphus
       pkgs.psi4Unstable
       pkgs.gdma
+      pkgs.xtb
     ];
 
     # Setup a runtime with QC wrappers available.
