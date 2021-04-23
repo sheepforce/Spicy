@@ -17,10 +17,9 @@ where
 
 import Data.Aeson
 import Data.Attoparsec.Text
-import qualified Data.Massiv.Vector as VM
+import Data.Massiv.Array
 import RIO
 import RIO.Char
-import qualified RIO.Vector as V
 import Spicy.Common
 import Spicy.Math.Spherical
 import Spicy.Molecule.Internal.Types
@@ -29,11 +28,11 @@ import Spicy.Wrapper.Internal.Output.Generic
 -- | Representation for the content of the xtbout.json file.
 data RawXTB = RawXTB
   { totalEnergy :: Double,
-    partialCharges :: Vector Double,
-    atomicDipoles :: Maybe (Vector (Vector Double)),
-    atomicQuadrupoles :: Maybe (Vector (Vector Double))
+    partialCharges :: VectorG S Double,
+    atomicDipoles :: Maybe (MatrixG S Double),
+    atomicQuadrupoles :: Maybe (MatrixG S Double)
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance FromJSON RawXTB where
   parseJSON = withObject "xtbout" $ \o -> do
@@ -66,56 +65,46 @@ readXTBout = maybe2MThrow (ParserException "parseXTBout") . decode . fromStrictB
 -- | Take the raw XTB output and transform it into a more workable form.
 orderPoles :: MonadThrow m => RawXTB -> m [CMultipoles]
 orderPoles RawXTB {..} = do
-  let mmono = pure . CMonopole <$> partialCharges
-      l = RIO.length partialCharges
+  let mmono = pure . CMonopole <$> (toStreamArray . getVectorG $ partialCharges)
+      l = size . getVectorG $ partialCharges
       -- If any poles are missing, these blanks will be substituted
-      blankDipoles = V.replicate l Nothing
-      blankQuadrupoles = V.replicate l Nothing
-  mdi <- maybe (return blankDipoles) (traverse $ pure . mkDipole) atomicDipoles
-  mquad <- maybe (return blankQuadrupoles) (traverse $ pure . mkQuadrupole) atomicQuadrupoles
-  return . V.toList $ V.zipWith3 CMultipoles mmono mdi mquad
+      blankDipoles = sreplicate l Nothing
+      blankQuadrupoles = sreplicate l Nothing
+  mdi <- maybe (return blankDipoles) mkDipoles atomicDipoles
+  mquad <- maybe (return blankQuadrupoles) mkQuadrupoles atomicQuadrupoles
+  return . stoList $ szipWith3 CMultipoles mmono mdi mquad
   where
-    (!??) :: MonadThrow m => Vector a -> Int -> m a
-    v !?? i = maybe2MThrow (DataStructureException "!?" "Vector index out of bounds!") (v V.!? i)
-    -- Assumes x,y,z ordering!
-    mkDipole :: MonadThrow m => Vector Double -> m CDipole
-    mkDipole vec = do
-      -- Sanitiy check - is this vector the right length?
-      unless (RIO.length vec == 3) . throwM $ DataStructureException "orderPoles.mkDipole" "Dipole has incorrect number of entries!"
-      x <- vec !?? 0
-      y <- vec !?? 1
-      z <- vec !?? 2
-      return
-        CDipole
-          { c100 = x,
-            c010 = y,
-            c001 = z
-          }
+    mkDipoles (MatrixG m) = do
+      let Sz2 _ l = size m
+          mm = outerSlices m
+          unsafeToCDipole arr =
+            CDipole
+              { c100 = arr ! 0,
+                c010 = arr ! 1,
+                c001 = arr ! 2
+              }
+      unless (l == 3) . throwM $ DataStructureException "orderPoles.mkDipole" "Dipole has incorrect number of entries!"
+      return $ smap (Just . unsafeToCDipole) mm
     -- Assumes xx, xy, yy, xz, yz, zz ordering in the xtb output!
-    mkQuadrupole :: MonadThrow m => Vector Double -> m CQuadrupole
-    mkQuadrupole vec = do
-      unless (RIO.length vec == 6) . throwM $ DataStructureException "orderPoles.mkQuadrupole" "Quadrupole has incorrect number of entries!"
-      xx <- vec !?? 0
-      xy <- vec !?? 1
-      yy <- vec !?? 2
-      xz <- vec !?? 3
-      yz <- vec !?? 4
-      zz <- vec !?? 5
-      return
-        CQuadrupole
-          { c200 = xx,
-            c020 = yy,
-            c002 = zz,
-            c110 = xy,
-            c101 = xz,
-            c011 = yz
-          }
+    mkQuadrupoles (MatrixG m) = do
+      let Sz2 _ l = size m
+          mm = outerSlices m
+          unsafeToCQuadrupole arr =
+            CQuadrupole
+              { c200 = arr ! 0,
+                c020 = arr ! 1,
+                c002 = arr ! 2,
+                c110 = arr ! 3,
+                c101 = arr ! 4,
+                c011 = arr ! 5
+              }
+      unless (l == 6) . throwM $ DataStructureException "orderPoles.mkQuadrupole" "Quadrupole has incorrect number of entries!"
+      return $ smap (Just . unsafeToCQuadrupole) mm
 
 -- | Get the spherical multipoles from the raw (cartesian) xtb output.
 xtbMultipoles :: MonadThrow m => RawXTB -> m [Multipoles]
 xtbMultipoles =
   fmap fmap fmap cartesianToSpherical
-    . maybe2MThrow (DataStructureException "xtbMultipoles" "XTB poles could not be processed")
     . orderPoles
 
 -- | Parse the 'gradient' output file of XTB. XTB must be told to write this file, it will not do so
@@ -127,7 +116,7 @@ parseXTBgradient = do
   _ <- skipLine
   _ <- many1 parseCoordinates
   gradients <- many1' parseGradients
-  let vec = VectorS . VM.convert . VM.sconcat $ gradients
+  let vec = VectorS . convert . sconcat $ gradients
   _ <- string "$end"
   return vec
   where
@@ -143,7 +132,7 @@ parseXTBgradient = do
       y <- skipHorizontalSpace *> (double <|> fortranDouble)
       z <- skipHorizontalSpace *> (double <|> fortranDouble)
       _ <- skipLine
-      return $ VM.sfromList [x, y, z]
+      return $ sfromList [x, y, z]
 
 -- | Parse the xtb hessian file into a matrix representation.
 parseXTBhessian :: Parser (MatrixS Double)
