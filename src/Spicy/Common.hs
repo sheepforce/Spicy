@@ -139,6 +139,7 @@ module Spicy.Common
     -- ** Massiv
     VectorS (..),
     MatrixS (..),
+    VectorG (..),
     MatrixG (..),
 
     -- *** Wrapper Types
@@ -1493,6 +1494,19 @@ instance (FromJSON a, Storable a) => FromJSON (MatrixS a) where
             <> (show . Massiv.size $ parsedArr)
             <> " and expected was: "
             <> show sizeSupposed
+
+----------------------------------------------------------------------------------------------------
+
+-- | Vectors with arbitrary content, serialised to Lists.
+newtype VectorG r a = VectorG {getVectorG :: Massiv.Vector r a}
+
+instance (ToJSON a, Source r Ix1 a) => ToJSON (VectorG r a) where
+  toJSON arr = toJSON . Massiv.toList . getVectorG $ arr
+
+instance (FromJSON a, Mutable r Ix1 a) => FromJSON (VectorG r a) where
+  parseJSON v = do
+    l <- parseJSON @[a] v
+    return . VectorG $ Massiv.fromList Par l
 
 ----------------------------------------------------------------------------------------------------
 
