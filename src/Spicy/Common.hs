@@ -137,6 +137,7 @@ module Spicy.Common
     -- ** Massiv
     VectorS (..),
     MatrixS (..),
+    MatrixG (..),
 
     -- *** Wrapper Types
 
@@ -1446,8 +1447,7 @@ instance (FromJSON a, Storable a) => FromJSON (VectorS a) where
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Newtype wrapper for JSON serialisation around Massiv's unboxed 2D arrays.
+-- | Newtype wrapper for JSON serialisation around Massiv's unboxed 2D arrays.
 newtype MatrixS a = MatrixS {getMatrixS :: Array Massiv.S Ix2 a}
   deriving (Generic, Show, Eq)
 
@@ -1471,6 +1471,21 @@ instance (FromJSON a, Storable a) => FromJSON (MatrixS a) where
             <> (show . Massiv.size $ parsedArr)
             <> " and expected was: "
             <> show sizeSupposed
+
+----------------------------------------------------------------------------------------------------
+
+-- | Matrices with arbitrary content, serialised to Lists of Lists.
+newtype MatrixG r a = MatrixG {getMatrixG :: Massiv.Matrix r a}
+
+instance (ToJSON a, Source r Ix2 a) => ToJSON (MatrixG r a) where
+  toJSON arr = toJSON . Massiv.toLists . getMatrixG $ arr
+
+instance (FromJSON a, Mutable r Ix2 a) => FromJSON (MatrixG r a) where
+  parseJSON v = do
+    ll <- parseJSON @[[a]] v
+    case Massiv.fromListsM Par ll of
+      Nothing -> fail "Could not parse list of lists as matrix"
+      Just arr -> return . MatrixG $ arr
 
 ----------------------------------------------------------------------------------------------------
 
