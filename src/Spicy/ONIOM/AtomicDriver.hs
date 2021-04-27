@@ -623,6 +623,10 @@ setupPsysisServers mol = do
       allAtoms = molFoldl (\acc m -> acc <> (m ^. #atoms)) mempty mol
       optAtomsAtDepth = fmap (IntMap.restrictKeys allAtoms) optAtomsSelAtDepth
 
+  -- Get an IntMap of atoms for Pysisyphus. These are the atoms of the real layer. Freezes to only
+  -- optimise a subsystem are employed later.
+  let allRealAtoms = mol ^. #atoms
+
   fstMolsAtDepth <-
     maybe2MThrow (localExc "a slice of the molecule seems to be empty") $
       traverse (Seq.!? 0) molSlices
@@ -632,18 +636,20 @@ setupPsysisServers mol = do
   let optSettingsAtDepth =
         Seq.mapWithIndex
           ( \i opt ->
-              opt
-                & #pysisyphus % #socketAddr .~ SockAddrUnix (mkScktPath scratchDirAbs i)
-                & #pysisyphus % #workDir .~ Path.toAbsRel (mkPysisWorkDir scratchDirAbs i)
-                & #pysisyphus % #initCoords .~ (mkPysisWorkDir scratchDirAbs i </> Path.relFile "InitCoords.xyz")
+              let freeAtomsAtThisDepth = IntMap.keysSet . fromMaybe mempty $ optAtomsAtDepth Seq.!? i
+                  frozenAtomsAtThisDepth = IntMap.keysSet $ allRealAtoms `IntMap.withoutKeys` freeAtomsAtThisDepth
+               in opt
+                    & #pysisyphus % #socketAddr .~ SockAddrUnix (mkScktPath scratchDirAbs i)
+                    & #pysisyphus % #workDir .~ Path.toAbsRel (mkPysisWorkDir scratchDirAbs i)
+                    & #pysisyphus % #initCoords .~ (mkPysisWorkDir scratchDirAbs i </> Path.relFile "InitCoords.xyz")
+                    & #freezes %~ (<> frozenAtomsAtThisDepth)
           )
           optSettingsAtDepthRaw
-      atomsAndSettingsAtDepth = Seq.zip optAtomsAtDepth optSettingsAtDepth
-  threadsAtDepth <- mapM (uncurry providePysisAbstract) atomsAndSettingsAtDepth
+  threadsAtDepth <- mapM (providePysisAbstract allRealAtoms) optSettingsAtDepth
 
   return $
-    Seq.zipWith
-      ( \(a, os) (st, ct) ->
+    Seq.zipWith3
+      ( \a os (st, ct) ->
           MicroOptSetup
             { atomsAtDepth = IntMap.keysSet a,
               ipiClientThread = ct,
@@ -652,7 +658,8 @@ setupPsysisServers mol = do
               geomConv = os ^. #convergence
             }
       )
-      atomsAndSettingsAtDepth
+      optAtomsAtDepth
+      optSettingsAtDepth
       threadsAtDepth
   where
     localExc = MolLogicException "setupPsysisServers"
