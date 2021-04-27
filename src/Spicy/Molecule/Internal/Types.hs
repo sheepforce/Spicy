@@ -944,6 +944,8 @@ data Optimisation = Optimisation
     optType :: OptType,
     -- | Convergence criteria.
     convergence :: GeomConv,
+    -- | Atom indices to freeze.
+    freezes :: IntSet,
     -- | Pysisyphus connection settings.
     pysisyphus :: IPI
   }
@@ -963,7 +965,8 @@ instance DefaultIO Optimisation where
           lineSearch = True,
           optType = Minimum RFO,
           pysisyphus = defPysis,
-          convergence = def
+          convergence = def,
+          freezes = mempty
         }
 
 instance ToJSON Optimisation where
@@ -978,7 +981,8 @@ instance ToJSON Optimisation where
         minTrust,
         lineSearch,
         optType,
-        convergence
+        convergence,
+        freezes
       } =
       object
         [ "coordType" .= coordType,
@@ -990,7 +994,8 @@ instance ToJSON Optimisation where
           "minTrust" .= minTrust,
           "lineSearch" .= lineSearch,
           "optType" .= optType,
-          "convergence" .= convergence
+          "convergence" .= convergence,
+          "freezes" .= freezes
         ]
 
 -- Lenses
@@ -1023,6 +1028,9 @@ instance (k ~ A_Lens, a ~ OptType, b ~ a) => LabelOptic "optType" k Optimisation
 
 instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "convergence" k Optimisation Optimisation a b where
   labelOptic = lens convergence $ \s b -> s {convergence = b}
+
+instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "freezes" k Optimisation Optimisation a b where
+  labelOptic = lens freezes $ \s b -> s {freezes = b}
 
 instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisyphus" k Optimisation Optimisation a b where
   labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}

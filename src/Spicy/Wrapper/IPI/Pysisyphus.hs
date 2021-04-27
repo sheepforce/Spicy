@@ -341,7 +341,8 @@ opt2Pysis
       minTrust,
       lineSearch,
       optType,
-      pysisyphus
+      pysisyphus,
+      freezes
     } = do
     scktAddr <- unixSocket2Path $ pysisyphus ^. #socketAddr
     return
@@ -351,7 +352,7 @@ opt2Pysis
           calc = calc . Path.toString $ scktAddr
         }
     where
-      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType, freeze_atoms = mempty}
+      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType, freeze_atoms = freezes}
       optimiser = case optType of
         SaddlePoint alg -> Right (tsOpt {optType = alg} :: TSOpt)
         Minimum alg ->
