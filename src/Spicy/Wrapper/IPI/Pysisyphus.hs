@@ -17,6 +17,8 @@ module Spicy.Wrapper.IPI.Pysisyphus
 where
 
 import Data.Aeson
+import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
 import Data.Yaml.Pretty
 import Optics hiding (view)
 import RIO hiding (lens, view, (^.), (^?))
@@ -152,7 +154,7 @@ runPysisServerAbstract atoms optSettings = do
     "Wrote initial coordinates for Pysisyphus to " <> path2Utf8Builder initCoordFileAbs
 
   -- Construct the input file for pysisyphus.
-  pysisInput <- opt2Pysis initCoordFileAbs optSettings
+  pysisInput <- opt2Pysis atoms initCoordFileAbs optSettings
   let pysisYamlPath = pysisWorkDir </> Path.relFile "pysis_servers_spicy.yml"
       pysisYaml = decodeUtf8Lenient . encodePretty defConfig $ pysisInput
   writeFileUTF8 pysisYamlPath pysisYaml
@@ -328,8 +330,9 @@ instance ToJSON CalcType where
 ----------------------------------------------------------------------------------------------------
 
 -- | Conversion of Optimisation settings to a Pysisyphus input.
-opt2Pysis :: MonadThrow m => Path.AbsFile -> Optimisation -> m PysisInput
+opt2Pysis :: MonadThrow m => IntMap Atom -> Path.AbsFile -> Optimisation -> m PysisInput
 opt2Pysis
+  atoms
   initCoordFile
   Optimisation
     { coordType,
@@ -352,7 +355,7 @@ opt2Pysis
           calc = calc . Path.toString $ scktAddr
         }
     where
-      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType, freeze_atoms = freezes}
+      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType, freeze_atoms = denseFreeze}
       optimiser = case optType of
         SaddlePoint alg -> Right (tsOpt {optType = alg} :: TSOpt)
         Minimum alg ->
@@ -384,3 +387,7 @@ opt2Pysis
             address = Just addr,
             verbose = False
           }
+
+      denseFreeze =
+        let sparseFreeze = IntMap.keys . IntMap.restrictKeys atoms $ freezes
+         in IntSet.fromList . fmap snd $ RIO.zip sparseFreeze [0 :: Int ..]
