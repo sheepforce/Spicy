@@ -289,7 +289,8 @@ instance ToJSON ConvThresh where
 -- | @geom@ input block of Pysisyphus
 data Geom = Geom
   { fn :: JFilePathAbs,
-    coordType :: CoordType
+    coordType :: CoordType,
+    freeze_atoms :: IntSet
   }
 
 instance ToJSON Geom where
@@ -350,7 +351,7 @@ opt2Pysis
           calc = calc . Path.toString $ scktAddr
         }
     where
-      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType}
+      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType, freeze_atoms = mempty}
       optimiser = case optType of
         SaddlePoint alg -> Right (tsOpt {optType = alg} :: TSOpt)
         Minimum alg ->
