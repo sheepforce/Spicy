@@ -1183,10 +1183,10 @@ instance FromJSON GeomConv where
 instance Default GeomConv where
   def =
     GeomConv
-      { maxForce = Just 0.00045,
-        rmsForce = Just 0.00030,
-        maxDisp = Just 0.00180,
-        rmsDisp = Just 0.00120,
+      { maxForce = Just $ 0.00045 * 1.88973,
+        rmsForce = Just $ 0.00030 * 1.88973,
+        maxDisp = Just $ 0.00180 * 1.88973,
+        rmsDisp = Just $ 0.00120 * 1.88973,
         eDiff = Just 0.00001
       }
 
