@@ -495,14 +495,18 @@ optAtDepth depth' microOptSettings'
       atomically . writeTVar molT $ molPostStep
 
       -- Construct force data, that we send to i-PI for this slice and send it.
-      let molHSlices = horizontalSlices molPostStep
+      let molRealAtoms = molPostStep ^. #atoms
+          molHSlices = horizontalSlices molPostStep
           molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
           molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
+          zeroAtomGrad = toManifest $ Massiv.replicate @U @Ix1 @Double Seq (Sz 3) 0
       gradsAtDepth <- combineSparseGradients molsAtDepth
       gradsAbove <- combineSparseGradients molsAbove
       let gradientsSparse = gradsAtDepth <> gradsAbove
           gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomDepthSelection
-          gradientsOfInterestDense = compute @U . concat' 1 $ gradientsOfInterestSparse
+          realZeroGrad = IntMap.map (const zeroAtomGrad) molRealAtoms
+          realGrads = gradientsOfInterestSparse `IntMap.union` realZeroGrad
+          gradientsOfInterestDense = compute @U . concat' 1 $ realGrads
           forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
           forceData =
             ForceData
