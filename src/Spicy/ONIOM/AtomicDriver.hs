@@ -26,6 +26,9 @@ import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
 import Data.Massiv.Array.Manifest.Vector as Massiv
+import Data.Text.IO (appendFile)
+import Formatting hiding ((%))
+import qualified Formatting as F
 import Network.Socket
 import Optics hiding (Empty, view)
 import RIO hiding
@@ -58,9 +61,7 @@ import Spicy.Wrapper.IPI.Pysisyphus
 import Spicy.Wrapper.IPI.Types
 import System.Path ((</>))
 import qualified System.Path as Path
-import Data.Text.IO (appendFile)
-import qualified Formatting as F
-import Formatting hiding ((%))
+import qualified System.Path.Directory as Path
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
 -- transered from the calculation output to the actual fields of the molecule.
@@ -311,35 +312,38 @@ geomMicroDriver = do
   molT <- view moleculeL
   mol <- readTVarIO molT
 
-  -- Setup the pysisyphus optimisation servers per horizontal slice.
-  microOptHierarchy <- setupPsysisServers mol
+  -- Prepare settings and communication channels for each slice.
+  microOptHierarchy <- prepareMicroOpt mol
 
   -- Perform the optimisations steps in a mindblowing recursion ...
   -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
   -- up. When converged the function will terminate.
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
 
-  -- Terminate all the companion threads.
-  forM_ microOptHierarchy $ \MicroOptSetup {ipiClientThread, pysisIPI} -> do
-    -- Stop the pysisyphus server by gracefully by writing a magic file. Send once more gradients
-    -- (dummy values more or less ...) to finish nicely and then reset all connections.
-    let convFile = (pysisIPI ^. #workDir) </> Path.relFile "converged"
-    writeFileUTF8 convFile mempty
-    atomically . putTMVar (pysisIPI ^. #input) . dummyForces . IntMap.keysSet $ mol ^. #atoms
+{-
+-- Terminate all the companion threads.
+forM_ microOptHierarchy $ \MicroOptSetup {ipiClientThread, pysisIPI} -> do
+  -- Stop the pysisyphus server by gracefully by writing a magic file. Send once more gradients
+  -- (dummy values more or less ...) to finish nicely and then reset all connections.
+  let convFile = (pysisIPI ^. #workDir) </> Path.relFile "converged"
+  writeFileUTF8 convFile mempty
+  atomically . putTMVar (pysisIPI ^. #input) . dummyForces . IntMap.keysSet $ mol ^. #atoms
 
-    -- Cancel the client and reset the communication variables to a fresh state.
-    cancel ipiClientThread
-    void . atomically . tryTakeTMVar $ pysisIPI ^. #input
-    void . atomically . tryTakeTMVar $ pysisIPI ^. #output
-    void . atomically . tryTakeTMVar $ pysisIPI ^. #status
-  where
-    dummyForces sel =
-      ForceData
-        { potentialEnergy = 0,
-          forces = NetVec . VectorS.fromListN (3 * IntSet.size sel) $ [0 ..],
-          virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
-          optionalData = mempty
-        }
+  -- Cancel the client and reset the communication variables to a fresh state.
+  cancel ipiClientThread
+  void . atomically . tryTakeTMVar $ pysisIPI ^. #input
+  void . atomically . tryTakeTMVar $ pysisIPI ^. #output
+  void . atomically . tryTakeTMVar $ pysisIPI ^. #status
+
+where
+  dummyForces sel =
+    ForceData
+      { potentialEnergy = 0,
+        forces = NetVec . VectorS.fromListN (3 * IntSet.size sel) $ [0 ..],
+        virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+        optionalData = mempty
+      }
+-}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -434,7 +438,8 @@ optAtDepth ::
     HasLogFunc env,
     HasCalcSlot env,
     HasProcessContext env,
-    HasMotion env
+    HasMotion env,
+    HasWrapperConfigs env
   ) =>
   Int ->
   Seq MicroOptSetup ->
@@ -444,7 +449,40 @@ optAtDepth depth' microOptSettings'
   | depth' < 0 = return ()
   | otherwise = do
     logInfo $ "Starting optimisation on layer " <> display depth'
-    untilConvergence depth' microOptSettings'
+    -- Get initial information.
+    mol <- view moleculeL >>= readTVarIO
+    microAtDepth <-
+      maybe2MThrow (MolLogicException "optAtDepth" "Optimisation settings missing for depth.") $
+        microOptSettings' Seq.!? depth'
+    let allRealAtoms = mol ^. #atoms
+        pysis = microAtDepth ^. #optSettings % #pysisyphus
+        pysisWorkDir = pysis ^. #workDir
+
+    -- Start the pysisyphus instance for this optimisations.
+    (_serverT, clientT) <- providePysisAbstract allRealAtoms $ microAtDepth ^. #optSettings
+
+    -- Enter the optimisation recursion on this slice.
+    untilConvergence depth' microAtDepth
+
+    -- Clean up the pysisyphus instance and channels for this optimisation.
+    let convFile = pysisWorkDir </> Path.relFile "converged"
+        dummyForces =
+          ForceData
+            { potentialEnergy = 0,
+              forces = NetVec . VectorS.fromListN (3 * IntMap.size allRealAtoms) $ [0 ..],
+              virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+              optionalData = mempty
+            }
+    writeFileUTF8 convFile mempty
+    atomically . putTMVar (pysis ^. #input) $ dummyForces
+    -- cancel clientT
+    void . atomically . tryTakeTMVar $ pysis ^. #input
+    void . atomically . tryTakeTMVar $ pysis ^. #output
+    void . atomically . tryTakeTMVar $ pysis ^. #status
+    liftIO $ gracefulClose (pysis ^. #socket) 20000
+    -- liftIO . Path.removeDirectoryRecursive $ pysisWorkDir
+    liftIO . Path.removeFile $ microAtDepth ^. #socketPath
+
     logInfo $ "Finished optimisation of layer " <> display depth'
   where
     -- Do a single geometry optimisation step at a given depth.
@@ -453,24 +491,22 @@ optAtDepth depth' microOptSettings'
         HasLogFunc env,
         HasCalcSlot env,
         HasProcessContext env,
-        HasMotion env
+        HasMotion env,
+        HasWrapperConfigs env
       ) =>
       Int ->
-      Seq MicroOptSetup ->
+      MicroOptSetup ->
       RIO env ()
     untilConvergence depth microOptSettings = do
       -- Initial information.
       molT <- view moleculeL
       motionT <- view motionL
       motionHist <- readTVarIO motionT
-      microSettingsAtDepth <-
-        maybe2MThrow (IndexOutOfBoundsException (Sz $ Seq.length microOptSettings) depth) $
-          microOptSettings Seq.!? depth
-      let atomDepthSelection = microSettingsAtDepth ^. #atomsAtDepth
-          geomConvCriteria = microSettingsAtDepth ^. #geomConv
-          ipiDataIn = microSettingsAtDepth ^. #pysisIPI % #input
-          ipiPosOut = microSettingsAtDepth ^. #pysisIPI % #output
-          ipiStatusVar = microSettingsAtDepth ^. #pysisIPI % #status
+      let atomDepthSelection = microOptSettings ^. #atomsAtDepth
+          geomConvCriteria = microOptSettings ^. #optSettings % #convergence
+          ipiDataIn = microOptSettings ^. #optSettings % #pysisyphus % #input
+          ipiPosOut = microOptSettings ^. #optSettings % #pysisyphus % #output
+          ipiStatusVar = microOptSettings ^. #optSettings % #pysisyphus % #status
 
       -- Obtain the molecule before the step.
       molPreStep <- readTVarIO molT
@@ -491,7 +527,7 @@ optAtDepth depth' microOptSettings'
       unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
 
       -- Optimise the layers above.
-      optAtDepth (depth - 1) microOptSettings
+      optAtDepth (depth - 1) microOptSettings'
 
       -- Calculate forces in the new geometry for the current layer only.
       calcAtDepth depth WTGradient
@@ -556,7 +592,6 @@ optAtDepth depth' microOptSettings'
       xyzHist <- writeXYZ molPostStep
       liftIO . appendFile "OptHist.xyz" $ xyzHist
 
-
       -- Decide if to do more iterations.
       if geomChange < geomConvCriteria
         then return ()
@@ -583,43 +618,30 @@ optAtDepth depth' microOptSettings'
 data MicroOptSetup = MicroOptSetup
   { -- | Moving atoms for this slice
     atomsAtDepth :: !IntSet,
-    -- | The i-PI client thread. To be killed in the end.
-    ipiClientThread :: Async (),
-    -- | Pysisyphus i-PI server thread. To be gracefully terminated when done.
-    ipiServerThread :: Async (),
-    -- | IPI communication and process settings.
-    pysisIPI :: !IPI,
     -- | Geometry convergence.
-    geomConv :: GeomConv
+    optSettings :: !Optimisation,
+    -- | Path to the unix domain socket. Same as in IPI instance but here wrapped for Pathtype.
+    socketPath :: Path.AbsFile
   }
 
 instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "atomsAtDepth" k MicroOptSetup MicroOptSetup a b where
   labelOptic = lens atomsAtDepth $ \s b -> s {atomsAtDepth = b}
 
-instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "ipiClientThread" k MicroOptSetup MicroOptSetup a b where
-  labelOptic = lens ipiClientThread $ \s b -> s {ipiClientThread = b}
+instance (k ~ A_Lens, a ~ Optimisation, b ~ a) => LabelOptic "optSettings" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens optSettings $ \s b -> s {optSettings = b}
 
-instance (k ~ A_Lens, a ~ Async (), b ~ a) => LabelOptic "ipiServerThread" k MicroOptSetup MicroOptSetup a b where
-  labelOptic = lens ipiServerThread $ \s b -> s {ipiServerThread = b}
-
-instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisIPI" k MicroOptSetup MicroOptSetup a b where
-  labelOptic = lens pysisIPI $ \s b -> s {pysisIPI = b}
-
-instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "geomConv" k MicroOptSetup MicroOptSetup a b where
-  labelOptic = lens geomConv $ \s b -> s {geomConv = b}
+instance (k ~ A_Lens, a ~ Path.AbsFile, b ~ a) => LabelOptic "socketPath" k MicroOptSetup MicroOptSetup a b where
+  labelOptic = lens socketPath $ \s b -> s {socketPath = b}
 
 -- | Create one Pysisyphus i-PI instance per layer that takes care of the optimisations steps at a
 -- given horizontal slice. It returns relevant optimisation settings for each layer to be used by
 -- other functions, that actually do the optimisation.
-setupPsysisServers ::
-  ( HasInputFile env,
-    HasLogFunc env,
-    HasProcessContext env,
-    HasWrapperConfigs env
+prepareMicroOpt ::
+  ( HasInputFile env
   ) =>
   Molecule ->
   RIO env (Seq MicroOptSetup)
-setupPsysisServers mol = do
+prepareMicroOpt mol = do
   -- Get directories to work in from the input file.
   inputFile <- view inputFileL
   scratchDirAbs <- liftIO . Path.dynamicMakeAbsoluteFromCwd . getDirPath $ inputFile ^. #scratch
@@ -646,31 +668,29 @@ setupPsysisServers mol = do
               let freeAtomsAtThisDepth = IntMap.keysSet . fromMaybe mempty $ optAtomsAtDepth Seq.!? i
                   frozenAtomsAtThisDepth = IntMap.keysSet $ allRealAtoms `IntMap.withoutKeys` freeAtomsAtThisDepth
                in opt
-                    & #pysisyphus % #socketAddr .~ SockAddrUnix (mkScktPath scratchDirAbs i)
+                    & #pysisyphus % #socketAddr .~ SockAddrUnix (Path.toString $ mkScktPath scratchDirAbs i)
                     & #pysisyphus % #workDir .~ Path.toAbsRel (mkPysisWorkDir scratchDirAbs i)
                     & #pysisyphus % #initCoords .~ (mkPysisWorkDir scratchDirAbs i </> Path.relFile "InitCoords.xyz")
                     & #freezes %~ (<> frozenAtomsAtThisDepth)
           )
           optSettingsAtDepthRaw
-  threadsAtDepth <- mapM (providePysisAbstract allRealAtoms) optSettingsAtDepth
+      socketsAtDepth = Seq.mapWithIndex (\i _ -> mkScktPath scratchDirAbs i) optAtomsAtDepth
 
   return $
     Seq.zipWith3
-      ( \a os (st, ct) ->
+      ( \a os sp ->
           MicroOptSetup
             { atomsAtDepth = IntMap.keysSet a,
-              ipiClientThread = ct,
-              ipiServerThread = st,
-              pysisIPI = os ^. #pysisyphus,
-              geomConv = os ^. #convergence
+              optSettings = os,
+              socketPath = sp
             }
       )
       optAtomsAtDepth
       optSettingsAtDepth
-      threadsAtDepth
+      socketsAtDepth
   where
     localExc = MolLogicException "setupPsysisServers"
-    mkScktPath sd i = Path.toString $ sd </> Path.relFile ("pysis_slice_" <> show i <> ".socket")
+    mkScktPath sd i = sd </> Path.relFile ("pysis_slice_" <> show i <> ".socket")
     mkPysisWorkDir pd i = pd </> Path.relDir ("pysis_slice" <> show i)
 
 {-

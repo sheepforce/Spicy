@@ -7,7 +7,7 @@
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
--- Portability : POSIX, Windows
+-- Portability : POSIX
 --
 -- i-PI type definitions and serialisation to binary network communication. See
 -- <<http://ipi-code.org/assets/pdf/manual.pdf i-PI>> protocol (section 3.3.1).
