@@ -317,12 +317,12 @@ geomMicroDriver = do
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
 
   -- Terminate all the companion threads.
-  forM_ microOptHierarchy $ \MicroOptSetup {atomsAtDepth, ipiClientThread, pysisIPI} -> do
+  forM_ microOptHierarchy $ \MicroOptSetup {ipiClientThread, pysisIPI} -> do
     -- Stop the pysisyphus server by gracefully by writing a magic file. Send once more gradients
     -- (dummy values more or less ...) to finish nicely and then reset all connections.
     let convFile = (pysisIPI ^. #workDir) </> Path.relFile "converged"
     writeFileUTF8 convFile mempty
-    atomically . putTMVar (pysisIPI ^. #input) $ dummyForces atomsAtDepth
+    atomically . putTMVar (pysisIPI ^. #input) . dummyForces . IntMap.keysSet $ mol ^. #atoms
 
     -- Cancel the client and reset the communication variables to a fresh state.
     cancel ipiClientThread
