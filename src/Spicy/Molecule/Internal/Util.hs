@@ -2477,17 +2477,20 @@ getAllMolIDsHierarchically mol =
 ----------------------------------------------------------------------------------------------------
 
 -- | Generic update of some atomic positions. The updated atoms need to be specified by an 'IntSet'
--- and the position vector needs to match the number of atoms (for \(n\) atoms a position vector of
--- length \(3 n\) is required). The coordinates in the vector need to be in the same (strictly
+-- but the position vector represents an update to all real top layer atoms.
+-- The coordinates in the vector need to be in the same (strictly
 -- ascending) order as the atoms in the 'IntSet' (always strictly ascending).
 updatePositionsPosVec :: MonadThrow m => Vector S Double -> IntSet -> Molecule -> m Molecule
 updatePositionsPosVec pos sel mol = do
+  -- Obtain all top level atoms.
+  let molAtomsSel = IntMap.keysSet $ mol ^. #atoms
+
   -- Associate new positions with individual atoms.
-  pos3 <- Massiv.map (VectorS . compute @S) . outerSlices <$> resizeM (Sz $ IntSet.size sel :. 3) pos
-  atomPosMap <- associate pos3 sel mempty
+  pos3 <- Massiv.map (VectorS . compute @S) . outerSlices <$> resizeM (Sz $ IntSet.size molAtomsSel :. 3) pos
+  atomPosMap <- associate pos3 molAtomsSel mempty
 
   -- Update all atoms with new positions.
-  updatePositions atomPosMap mol
+  updatePositions (atomPosMap `IntMap.restrictKeys` sel) mol
   where
     -- A zipper for vectors with sets to construct an IntMap
     associate :: (Source r Ix1 e, MonadThrow m) => Vector r e -> IntSet -> IntMap e -> m (IntMap e)

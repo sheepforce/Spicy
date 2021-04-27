@@ -58,6 +58,9 @@ import Spicy.Wrapper.IPI.Pysisyphus
 import Spicy.Wrapper.IPI.Types
 import System.Path ((</>))
 import qualified System.Path as Path
+import Data.Text.IO (appendFile)
+import qualified Formatting as F
+import Formatting hiding ((%))
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
 -- transered from the calculation output to the actual fields of the molecule.
@@ -471,6 +474,7 @@ optAtDepth depth' microOptSettings'
 
       -- Obtain the molecule before the step.
       molPreStep <- readTVarIO molT
+      let realAtoms = molPreStep ^. #atoms
 
       -- Obtain a new geometry from Pysisyphus (ignores the status for now).
       void . atomically . takeTMVar $ ipiStatusVar
@@ -495,8 +499,7 @@ optAtDepth depth' microOptSettings'
       atomically . writeTVar molT $ molPostStep
 
       -- Construct force data, that we send to i-PI for this slice and send it.
-      let molRealAtoms = molPostStep ^. #atoms
-          molHSlices = horizontalSlices molPostStep
+      let molHSlices = horizontalSlices molPostStep
           molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
           molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
           zeroAtomGrad = toManifest $ Massiv.replicate @U @Ix1 @Double Seq (Sz 3) 0
@@ -504,7 +507,7 @@ optAtDepth depth' microOptSettings'
       gradsAbove <- combineSparseGradients molsAbove
       let gradientsSparse = gradsAtDepth <> gradsAbove
           gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomDepthSelection
-          realZeroGrad = IntMap.map (const zeroAtomGrad) molRealAtoms
+          realZeroGrad = IntMap.map (const zeroAtomGrad) realAtoms
           realGrads = gradientsOfInterestSparse `IntMap.union` realZeroGrad
           gradientsOfInterestDense = compute @U . concat' 1 $ realGrads
           forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
@@ -539,7 +542,7 @@ optAtDepth depth' microOptSettings'
                 }
           nextMotion = motionHist |> newMotion
       atomically . writeTVar motionT $ nextMotion
-      {-
+
       traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
       traceM $
         "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
@@ -552,7 +555,7 @@ optAtDepth depth' microOptSettings'
       -- Write history file
       xyzHist <- writeXYZ molPostStep
       liftIO . appendFile "OptHist.xyz" $ xyzHist
-      -}
+
 
       -- Decide if to do more iterations.
       if geomChange < geomConvCriteria

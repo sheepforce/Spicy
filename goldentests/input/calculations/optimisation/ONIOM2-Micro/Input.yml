@@ -25,13 +25,7 @@ model:
       -  6
       -  7
     optimisation:
-      coords: cart
-      conv:
-        rmsForce: null
-        maxForce: 0.03
-        rmsDisp: 0.0005
-        maxDisp: 0.001
-        eDiff: 0.00001
+      coords: dlc
     deeperLayer:
     - templateFile: goldentests/input/calculations/optimisation/ONIOM2-Micro/hf.psi
       program: psi4
@@ -49,7 +43,7 @@ model:
         - 6
         - 7
       optimisation:
-        coords: cart
+        coords: dlc
       deeperLayer: []
 task:
 - optimise_micro

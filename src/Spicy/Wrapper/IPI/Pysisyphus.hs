@@ -296,10 +296,11 @@ data Geom = Geom
   }
 
 instance ToJSON Geom where
-  toJSON Geom {fn, coordType} =
+  toJSON Geom {fn, coordType, freeze_atoms} =
     object
       [ "fn" .= fn,
-        "type" .= coordType
+        "type" .= coordType,
+        "freeze_atoms" .= freeze_atoms
       ]
 
 ----------------------------------------------------------------------------------------------------
@@ -389,5 +390,9 @@ opt2Pysis
           }
 
       denseFreeze =
-        let sparseFreeze = IntMap.keys . IntMap.restrictKeys atoms $ freezes
-         in IntSet.fromList . fmap snd $ RIO.zip sparseFreeze [0 :: Int ..]
+        let atomKeys = IntMap.keys atoms
+            sparse2Dense = IntMap.fromAscList $ RIO.zip atomKeys [0 :: Int ..]
+         in IntSet.fromAscList
+              . fmap snd
+              . IntMap.toAscList
+              $ sparse2Dense `IntMap.restrictKeys` freezes
