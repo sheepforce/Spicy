@@ -34,6 +34,7 @@ import qualified RIO.Text.Lazy as Text
   )
 import Spicy.Common
 import Spicy.Molecule
+import Spicy.Wrapper.Internal.Input.XTB
 import qualified System.Path as Path
 import Text.Mustache
 
@@ -72,6 +73,8 @@ import Text.Mustache
 -- - **Psi4:** The calculation is expected to at least produce a formatted checkpoint file with the
 --   name `{{ prefix }}.fchk`. Hessian information need to be saved by numpy as plain text array, as
 --   they don't make it to the FChk for some reason in Psi4.
+-- - **XTB:** Yes, the input option in the template is called spin. Yes, it accepts NOpenshells,
+--   not the actual spin. No, this does not make sense.
 translate2Input ::
   (MonadThrow m, MonadIO m) =>
   -- | The complete molecule construct from top level on.
@@ -118,7 +121,7 @@ translate2Input mol calcID = do
         WTHessian -> True
         _ -> False
   contextMolecule <- toMolRepr molContext program'
-  contextMultipoles <- toMultipoleRep molContext program'
+  contextMultipoles <- toMultipoleRep molContext calcContext program'
   contextTask <- toTask task' program'
   let context =
         object
@@ -178,14 +181,13 @@ toMolRepr ::
   Molecule ->
   -- | The 'Program' for which the representation shall be generated.
   Program ->
-  -- | Molecule representation inf the program format.
+  -- | Molecule representation in the program format.
   m Text
-toMolRepr mol program'
-  | program' == Psi4 = simpleCartesianAngstrom
-  | program' == Nwchem = simpleCartesianAngstrom
-  | otherwise =
-    throwM $
-      WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
+toMolRepr mol program' = case program' of
+  Psi4 -> simpleCartesianAngstrom
+  Nwchem -> simpleCartesianAngstrom
+  XTB _ -> simpleCartesianAngstrom
+  --_ -> throwM $ WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
   where
     realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ mol ^. #atoms
     realMol =
@@ -204,12 +206,16 @@ toMultipoleRep ::
   -- | The __current__ 'Molecule' layer for which to perform the calculation. The multipoles must
   -- therefore already be present and multipole centres must be marked as Dummy atoms.
   Molecule ->
+  -- | The context of the calculation for which to generate the representation. 
+  CalcContext ->
   -- | The 'Program' for which the representation shall be generated.
   Program ->
   m Text
-toMultipoleRep mol program'
-  | program' == Psi4 = psi4Charges
-  | otherwise = throwM . localExc $ "No multipole representation available for wrapper."
+toMultipoleRep mol calc program' = case program' of
+  Psi4 -> psi4Charges
+  -- For XTB: Instead, write the path to the multipole file
+  XTB _ -> return . path2Text $ xtbMultipoleFilename calc
+  _ -> throwM . localExc $ "No multipole representation available for wrapper."
   where
     localExc = WrapperGenericException "toMultipoleRep"
 
@@ -230,11 +236,10 @@ toMultipoleRep mol program'
 
 -- | Generates a "task" string specific for computational chemistry 'Program'.
 toTask :: MonadThrow m => WrapperTask -> Program -> m Text
-toTask task' program'
-  | program' == Psi4 = psi4Task
-  | otherwise =
-    throwM $
-      WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
+toTask task' program' = case program' of
+  Psi4 -> psi4Task
+  XTB _ -> psi4Task --XTB has no need for this text; should be done more elegantly 
+  _ -> throwM $ WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
   where
     psi4Task = case task' of
       WTEnergy -> return "energy"
