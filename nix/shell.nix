@@ -10,8 +10,8 @@ let
         repo = pkgs.fetchFromGitHub {
           owner = "eljost";
           repo = "pysisyphus";
-          rev = "dce5dbab2da30b78d4e11f96bf100281802dfa61";
-          sha256 = "1xzkfimaawn9kawz1082rf5g78xa82zyr61pp87k5bnsmfnk33qs";
+          rev = "a5b687919091a7e6158875b4d74d5eebde94204f";
+          sha256 = "0nk7h0gi08vcxy7msbzfs9anz3fxbf6b4iqqda40ffcffk771jna";
         };
     in pkgs.python3Packages.callPackage "${repo}/nix/pysisyphus.nix" {
          orca = null;
