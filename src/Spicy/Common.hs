@@ -71,6 +71,7 @@ module Spicy.Common
     -- ** UTF8 Builder
     -- $utf8builderOperations
     utf8Show,
+    appendFileUtf8,
 
     -- ** ByteString
     -- $byteStringOperations
@@ -163,6 +164,7 @@ where
 
 import Data.Aeson hiding (Array)
 import Data.Attoparsec.Text
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as BL
 import Data.Foldable
@@ -396,7 +398,7 @@ fortranDouble = do
   mexp <- optional $ signed decimal
   case mexp of
     Nothing -> return prefix
-    Just (n::Int) -> return $ prefix * 10^n
+    Just (n :: Int) -> return $ prefix * 10 ^ n
 
 ----------------------------------------------------------------------------------------------------
 
@@ -711,6 +713,14 @@ fE width precision a =
 
 utf8Show :: Show a => a -> Utf8Builder
 utf8Show = text2Utf8Builder . tShow
+
+----------------------------------------------------------------------------------------------------
+
+-- | Append an 'Utf8Builder' to a file.
+appendFileUtf8 :: MonadIO m => Path.AbsRelFile -> Utf8Builder -> m ()
+appendFileUtf8 path' (Utf8Builder b) = liftIO . Path.withFile path' Path.AppendMode $ \h -> do
+  hSetEncoding h utf8
+  BB.hPutBuilder h b
 
 {-
 ====================================================================================================

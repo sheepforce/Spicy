@@ -58,6 +58,7 @@ library
       Spicy.ONIOM.AtomicDriver
       Spicy.ONIOM.Collector
       Spicy.ONIOM.Layout
+      Spicy.Outputter
       Spicy.RuntimeEnv
       Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
