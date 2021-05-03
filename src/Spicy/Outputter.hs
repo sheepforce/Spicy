@@ -18,12 +18,16 @@ module Spicy.Outputter
 where
 
 import Data.Default
+import qualified Data.IntMap as IntMap
+import qualified Data.IntSet as IntSet
+import Data.Massiv.Array as Massiv
 import qualified Data.Text.Lazy.Builder as TB
 import Formatting hiding ((%))
 import qualified Formatting as F
 import Optics hiding (view)
-import RIO hiding (Lens, Lens', lens, view, (%~), (.~), (^.), (^?))
+import RIO hiding (Lens, Lens', Vector, lens, view, (%~), (.~), (^.), (^?))
 import qualified RIO.HashSet as HashSet
+import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
 import qualified System.Path as Path
@@ -61,6 +65,10 @@ data Verbosity
   | Debug
   deriving (Eq, Ord)
 
+-- | Environments, that provide print verbosity depending on the event.
+class HasPrintVerbosity env where
+  printVerbosityL :: Lens' env (PrintVerbosity HashSet)
+
 -- | Information that can be printed and when to print.
 data PrintVerbosity f = PrintVerbosity
   { -- | Energy of the full ONIOM tree
@@ -90,6 +98,9 @@ data PrintVerbosity f = PrintVerbosity
     -- | MD information
     md :: f PrintEvent
   }
+
+instance HasPrintVerbosity (PrintVerbosity HashSet) where
+  printVerbosityL = castOptic simple
 
 instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomE" k (PrintVerbosity f) (PrintVerbosity f) a b where
   labelOptic = lens oniomE $ \s b -> s {oniomE = b}
@@ -235,32 +246,6 @@ data StartEnd
 
 ----------------------------------------------------------------------------------------------------
 
--- | Logs actual mo
-molLog :: (HasOutputter env, HasMolecule env) => HashSet PrintEvent -> RIO env ()
-molLog pevn = do
-  -- Get initial data.
-  file <- view $ outputterL % #outFile
-  pverb <- view $ outputterL % #printVerbosity
-  mol <- view moleculeL >>= readTVarIO
-
-  -- Log properties of the molecule, one after another.
-  --prettyP a
-  -- let a = mol ^? #energyDerivatives % #energy in when ((pverb ^. #oniomE) `ovlp` pevn) . logQ $ a
-  return ()
-  where
-    ovlp :: HashSet PrintEvent -> HashSet PrintEvent -> Bool
-    ovlp a b = not . HashSet.null $ HashSet.intersection a b
-
-    header :: TB.Builder
-    header =
-      "  *****************\n\
-      \  * Molecule Data *\n\
-      \  *****************\n\n"
-
--- | spicyLogText
-
-----------------------------------------------------------------------------------------------------
-
 -- | A simple logging thread, that listens on a message queue forever. All messages from the message
 -- queue are written to an output file.
 loggingThread :: (HasOutputter env) => RIO env ()
@@ -270,3 +255,113 @@ loggingThread = do
   forever $ do
     msg <- atomically . readTBQueue $ q
     appendFileUtf8 f msg
+
+{-
+====================================================================================================
+-}
+
+-- $prettyPrinters
+
+-- | A monad transformer, that allows to read an environment and log information about the
+-- environment
+type LogM r w = WriterT w (Reader r) ()
+
+type SpicyLog r = LogM r TB.Builder
+
+-- | Runs the 'LogM' monad with a given environment to read from.
+execLogM :: r -> LogM r w -> w
+execLogM r lm = snd . (\rm -> runReader rm r) . runWriterT $ lm
+
+----------------------------------------------------------------------------------------------------
+
+-- | Parameter type to give the line length.
+lw :: Int
+lw = 100
+
+-- | Parameter type, giving the width of an element to print.
+ew :: Int
+ew = 18
+
+-- | Default formatter for floating point numbers.
+nf :: (Buildable a, Real a) => Format r (a -> r)
+nf = left ew ' ' F.%. fixed (ew - 8)
+
+-- | String for non-available data.
+nAv :: IsString a => a
+nAv = "(Not Available)"
+
+-- | Printer for ONIOM energy of the full tree.
+-- oniomEnergy :: SpicyLog
+oniomEnergy :: HasDirectMolecule env => SpicyLog env
+oniomEnergy = do
+  me <- view $ moleculeDirectL % #energyDerivatives % #energy
+  case me of
+    Nothing -> tell $ bformat (builder F.% builder) header nAv
+    Just e -> tell $ bformat (builder F.% nf) header e
+  where
+    header =
+      "@ Energy (ONIOM) / Hartree\n\
+      \--------------------------\n"
+
+-- | Printer for the ONIOM gradient of the full tree.
+oniomGradient :: HasDirectMolecule env => SpicyLog env
+oniomGradient = do
+  msg <- view $ moleculeDirectL % #energyDerivatives % #gradient
+  atoms <- view (moleculeDirectL % #atoms)
+  let mg = msg >>= atomGradAssoc atoms . getVectorS
+  case mg of
+    Nothing -> tell $ bformat (builder F.% builder) header nAv
+    Just g -> tell $ bformat (builder F.% builder) header (tableHeader <> tableContent g)
+  where
+    header =
+      "@ Gradient (ONIOM) / (Hartree / Angstrom)\n\
+      \-----------------------------------------\n"
+
+    -- Header for the table of gradients.
+    tableHeader =
+      let hf = center ew ' ' F.%. builder
+       in bformat (hf F.% " | " F.% hf F.% " | " F.% hf F.% " | " F.% hf F.% "\n") "Atom (IX)" "X" "Y" "Z"
+
+    -- Atom associated gradients.
+    atomGradAssoc :: MonadThrow m => IntMap Atom -> Vector S Double -> m (IntMap (Atom, Vector M Double))
+    atomGradAssoc atoms g = do
+      let aIx = IntMap.keysSet atoms
+      gR <- Massiv.toList . outerSlices <$> resizeM (Sz $ IntMap.size atoms :. 3) g
+      let ixGrad = IntMap.fromAscList $ RIO.zip (IntSet.toAscList aIx) gR
+          assoc = IntMap.intersectionWith (,) atoms ixGrad
+      return assoc
+
+    -- Gradient table body
+    tableContent agMap =
+      let af = right ew ' ' F.%. (right 4 ' ' F.%. string) F.% ("(" F.% (left 7 ' ' F.%. int) F.% ")")
+       in IntMap.foldlWithKey'
+            ( \acc i (a, grad) ->
+                let l =
+                      bformat
+                        (af F.% " | " F.% nf F.% " | " F.% nf F.% " | " F.% nf F.% "\n")
+                        (show $ a ^. #element)
+                        i
+                        (grad Massiv.! 0)
+                        (grad Massiv.! 1)
+                        (grad Massiv.! 2)
+                 in acc <> l
+            )
+            mempty
+            agMap
+
+-- | Log string constructor monad for molecular information.
+spicyMolLog ::
+  ( HasDirectMolecule env,
+    HasPrintVerbosity env
+  ) =>
+  HashSet PrintEvent ->
+  SpicyLog env
+spicyMolLog pe = do
+  pv <- view printVerbosityL
+  when (doLog pv #oniomE) oniomEnergy
+  when (doLog pv #oniomG) oniomGradient
+  where
+    doLog :: PrintVerbosity HashSet -> Lens' (PrintVerbosity HashSet) (HashSet PrintEvent) -> Bool
+    doLog pv l =
+      let pvt = pv ^. l
+       in not . HashSet.null $ pvt `HashSet.intersection` pe

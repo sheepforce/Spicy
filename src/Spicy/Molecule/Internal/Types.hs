@@ -28,6 +28,7 @@ module Spicy.Molecule.Internal.Types
     Atom (..),
     Molecule (..),
     HasMolecule (..),
+    HasDirectMolecule (..),
     LinkInfo (..),
     _NotLink,
     _IsLink,
@@ -424,6 +425,9 @@ instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighb
 -- Reader Class
 class HasMolecule env where
   moleculeL :: Lens' env (TVar Molecule)
+
+class HasDirectMolecule env where
+  moleculeDirectL :: Lens' env Molecule
 
 ----------------------------------------------------------------------------------------------------
 

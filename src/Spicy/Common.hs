@@ -22,7 +22,6 @@ module Spicy.Common
     -- * Abstract and Generic Classes
     -- $class
     Check (..),
-    PrettyPrint (..),
     DefaultIO (..),
 
     -- * Parser Helper Functions
@@ -328,13 +327,6 @@ class Check a where
 
 ----------------------------------------------------------------------------------------------------
 
--- | A class for data, that can be printed nicely to a human friendly format with the purpose of
--- logging. Each line is a separate 'UTF8Builder', which allows prepending the log info string
--- before each line.
-class PrettyPrint a where
-  prettyP :: a -> Utf8Builder
-
-----------------------------------------------------------------------------------------------------
 
 -- | A class of default values, which need to be initialised by IO.
 class DefaultIO a where

@@ -14,6 +14,7 @@ module Spicy.Molecule
     Atom (..),
     Molecule (..),
     HasMolecule (..),
+    HasDirectMolecule (..),
     MolID,
 
     -- ** Calculations
