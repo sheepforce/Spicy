@@ -93,7 +93,9 @@ module Spicy.Molecule.Internal.Types
 
     -- ** Programs
     Program (..),
+    _XTB,
     GFN(..),
+    renderGFN,
 
     -- * Local Helper Types
     FragmentAtomInfo (..),
@@ -1418,6 +1420,11 @@ instance ToJSON Program where
 instance FromJSON Program where
   parseJSON = genericParseJSON spicyJOption
 
+_XTB :: Prism' Program GFN
+_XTB = prism' XTB $ \s -> case s of
+  XTB b -> Just b
+  _ -> Nothing
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Version of the GFN-Hamiltonian in XTB calculations.
@@ -1433,6 +1440,14 @@ instance ToJSON GFN where
 
 instance FromJSON GFN where
   parseJSON = genericParseJSON spicyJOption
+
+-- | Convert the enumeration type representation to the digit expected by XTB.
+renderGFN ::
+  GFN ->
+  Text
+renderGFN GFNZero = "0"
+renderGFN GFNOne = "1"
+renderGFN GFNTwo = "2"
 
 {-
 ====================================================================================================

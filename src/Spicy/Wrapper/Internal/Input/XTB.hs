@@ -94,11 +94,3 @@ xtbInput mol calcID = do
           <> xtbPcFile
           <> "\n"
     _ -> throwM $ WrapperGenericException "xtbInput" "Attempted to generate XTB input for non-XTB calculation"
-
--- | Convert the enumeration type representation to the digit expected by XTB.
-renderGFN ::
-  GFN ->
-  Text
-renderGFN GFNZero = "0"
-renderGFN GFNOne = "1"
-renderGFN GFNTwo = "2"
