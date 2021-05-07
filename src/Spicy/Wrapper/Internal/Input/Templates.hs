@@ -1,5 +1,3 @@
-{-# LANGUAGE RankNTypes #-}
-
 -- |
 -- Module      : Spicy.Wrapper.Internal.Input.Templates
 -- Description : Preparing input for external programs
@@ -11,7 +9,9 @@
 --
 -- This module provides a framework to construct inputs for external
 -- quantum chemistry programs.
-module Spicy.Wrapper.Internal.Input.Templates () where
+module Spicy.Wrapper.Internal.Input.Templates
+  ( makeInput
+  ) where
 
 {-
 Previously, Spicy used mustache templates to construct input files.
@@ -31,9 +31,10 @@ import Control.Monad.Free
 import Optics
 import RIO hiding (Lens', lens, view, (^.), (^?))
 import RIO.Writer
+import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Molecule.Internal.Types
-import Spicy.Molecule.Internal.Util
+import Spicy.Molecule
 
 makeInput :: (HasInput env, MonadThrow m) => ReaderT env m Text
 makeInput = do
@@ -60,6 +61,10 @@ class HasInput env where
   methodAF :: AffineFold env GFN
   taskAF :: AffineFold env WrapperTask
   softwareAF :: AffineFold env Program
+  memoryAF :: AffineFold env Int
+  moleculeAF :: AffineFold env Molecule
+  prefixAF :: AffineFold env String
+  permaDirAF :: AffineFold env JDirPathAbs
 
 -- This instance expects the complete molecule from the top level onwards. IMO, this is somewhat ugly.
 -- In the future, we might be interested in reworking this somehow - at the very least, add
@@ -70,20 +75,16 @@ instance HasInput (Molecule, CalcID) where
   methodAF = thisInputAF % #software % _XTB
   taskAF = thisInputAF % #task
   softwareAF = thisInputAF % #software
+  memoryAF = thisInputAF % #memory
+  moleculeAF = thisMolAF % _2
+  prefixAF = thisInputAF % #prefixName
+  permaDirAF = thisInputAF % #permaDir
 
 thisMolAF :: AffineFold (Molecule, CalcID) (CalcContext, Molecule)
 thisMolAF = afolding $ uncurry getCalcByID
 
 thisInputAF :: AffineFold (Molecule, CalcID) CalcInput
 thisInputAF = thisMolAF % _1 % #input
-
--- Mock environment for testing
-instance HasInput () where
-  chargeAF = afolding $ \_ -> pure 1
-  multAF = afolding $ \_ -> pure 2
-  methodAF = afolding $ \_ -> pure GFNTwo
-  taskAF = afolding $ \_ -> pure WTHessian
-  softwareAF = afolding $ \_ -> pure $ XTB GFNTwo
 
 -- | General getting action.
 gget ::
@@ -104,6 +105,18 @@ getMult = gget multAF "Mult"
 getMethod :: (MonadReader env m, MonadThrow m, HasInput env) => m GFN
 getMethod = gget methodAF "Method"
 
+getMemory :: (MonadReader env m, MonadThrow m, HasInput env) => m Int
+getMemory = gget memoryAF "Memory"
+
+getMolecule :: (MonadReader env m, MonadThrow m, HasInput env) => m Molecule
+getMolecule = gget moleculeAF "Molecule"
+
+getPrefix :: (MonadReader env m, MonadThrow m, HasInput env) => m String
+getPrefix = gget prefixAF "Prefix"
+
+getTask :: (MonadReader env m, MonadThrow m, HasInput env) => m WrapperTask
+getTask = gget taskAF "Tasks"
+
 {-
 ====================================================================================================
 -}
@@ -117,6 +130,7 @@ data XTBInput a
   = XTBCharge Int a
   | XTBNOpen Int a
   | XTBMethod GFN a
+  | XTBMultipoleInput Text a
   deriving (Functor)
 
 -- | This function embodies the /logical/ structure of the input file,
@@ -131,6 +145,7 @@ xtbInput = do
     liftF $ XTBCharge chrg ()
     liftF $ XTBNOpen nopen ()
     liftF $ XTBMethod mthd ()
+    -- TODO: Multipoles
 
 -- | This function specifies how to serialize the information contained in the
 -- abstract input representation
@@ -144,6 +159,9 @@ serializeXTB (XTBNOpen nopen a) = do
 serializeXTB (XTBMethod gfn a) = do
   tell $ "$gfn\n method=" <> renderGFN gfn <> "\n"
   return a
+serializeXTB (XTBMultipoleInput t a) = do
+  tell $ "$embedding\n input=" <> t <> "\n"
+  return a
 
 ----------------------------------------------------------------------------------------------------
 
@@ -151,9 +169,41 @@ serializeXTB (XTBMethod gfn a) = do
 
 data Psi4Input a
   = PsiMemory Int a
-  | PsiMolecule a
-  | PsiSet a
+  | PsiMolecule Int Int Text a
+  | PsiSet Text a
   | PsiDefine Text Text a
-  | PsiFCHK Text a
+  | PsiFCHK Text String a
   | PsiHessian Text a
+  | PsiMultipoles Text a
   deriving (Functor)
+
+psi4Input :: (HasInput env, MonadReader env m, MonadThrow m) => m (Free Psi4Input ())
+psi4Input = do
+  mem <- getMemory
+  chrg <- getCharge
+  mult <- getMult
+  mol <- getMolecule
+  molRepr <- simpleCartesianAngstrom mol
+  prefix <- getPrefix
+  task <- getTask
+  return $ do
+    liftF $ PsiMemory mem ()
+    liftF $ PsiMolecule chrg mult molRepr ()
+    liftF $ PsiSet "def2-svp" () -- Placeholder
+    (o,wfn) <- defaultDefine
+    liftF $ PsiFCHK wfn prefix ()
+    when (task == WTHessian) . liftF $ PsiHessian o ()
+    --TODO: add multipoles here
+  where
+    defaultDefine =
+      let (o,wfn) = ("o","wfn")
+      in liftF $ PsiDefine o wfn (o,wfn)
+
+----------------------------------------------------------------------------------------------------
+
+-- Various utility functions, to be moved to a separate module later
+
+-- | Make a simple coordinate representation of the current Molecule layer.
+-- This function takes care to remove all dummy atoms.
+simpleCartesianAngstrom :: MonadThrow m => Molecule -> m Text
+simpleCartesianAngstrom mol = Text.unlines . drop 2 . Text.lines <$> writeXYZ (isolateMoleculeLayer mol)
