@@ -272,13 +272,7 @@ executeXTB calcID inputFilePath = do
 
   -- Write the .xyz coordinate input file
   logDebug "Writing .xyz file..."
-  let realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ thisMol ^. #atoms
-      realMol =
-        thisMol
-          & #atoms Optics.%~ flip IntMap.restrictKeys realAtomInds
-          & #fragment % each % #atoms Optics.%~ IntSet.intersection realAtomInds
-          & #bonds Optics.%~ flip cleanBondMatByAtomInds realAtomInds
-          & #subMol .~ mempty
+  let realMol = isolateMoleculeLayer thisMol
   xyzInput <- writeXYZ realMol
   writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
 
@@ -529,7 +523,7 @@ analyseXTB calcID = do
 
   -- Get multipoles from the output json.
   logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
-  (energy,modelMultipoleList) <- fromXTBout =<< readFileBinary (Path.toString jsonPath)
+  (energy, modelMultipoleList) <- fromXTBout =<< readFileBinary (Path.toString jsonPath)
 
   -- Assign multipoles to the correct keys
   let realAtoms = IntMap.filter (\a -> not $ a ^. #isDummy) $ localMol ^. #atoms

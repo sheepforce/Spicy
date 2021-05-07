@@ -59,6 +59,7 @@ module Spicy.Molecule.Internal.Util
     getAllMolIDsHierarchically,
     updateMolWithPosVec,
     shrinkNeighbourList,
+    isolateMoleculeLayer,
   )
 where
 
@@ -2536,6 +2537,7 @@ updateMolWithPosVec pos mol = do
       return $ thisLayerUpdated & #subMol .~ subMolsUpdated
 
 ----------------------------------------------------------------------------------------------------
+
 -- | Reduces the search radius of a neighbour list to a smaller distance of neighbours. This should
 -- be more efficient than building a new neighbourlist with a different radius.
 shrinkNeighbourList ::
@@ -2588,3 +2590,19 @@ shrinkNeighbourList atoms oldNLs newDist
               )
               targets
       return filteredTargets
+
+----------------------------------------------------------------------------------------------------
+
+-- | Isolate a molecule layer, usually in preparation for printing. Cleaning involves:
+--  * Remove all dummy atoms
+--  * Removing all sub-molecules
+--  * Update the bond matrix and the fragments
+isolateMoleculeLayer :: Molecule -> Molecule
+isolateMoleculeLayer mol =
+  mol
+    & #atoms %~ flip IntMap.restrictKeys realAtomInds
+    & #fragment % each % #atoms %~ IntSet.intersection realAtomInds
+    & #bonds %~ flip cleanBondMatByAtomInds realAtomInds
+    & #subMol .~ mempty
+  where
+    realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ mol ^. #atoms
