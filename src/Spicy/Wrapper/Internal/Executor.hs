@@ -32,7 +32,7 @@ import Spicy.Formats.FChk
 import Spicy.Logger
 import Spicy.Molecule
 import Spicy.RuntimeEnv
-import Spicy.Wrapper.Internal.Input.Shallow
+import Spicy.Wrapper.Internal.Input.Templates
 import Spicy.Wrapper.Internal.Input.XTB
 import Spicy.Wrapper.Internal.Output.GDMA
 import Spicy.Wrapper.Internal.Output.Generic
@@ -75,7 +75,7 @@ runCalculation calcID = do
   -- Gather the information for this calculation.
   molT <- view moleculeL
   mol <- atomically . readTVar $ molT
-  calcContext <- maybe2MThrow (localExc "Requested to perform a cauclation, which does not exist") $ mol ^? calcLens
+  (calcContext, thisMol) <- maybe2MThrow (localExc "Requested to perform a cauclation, which does not exist") $ getCalcByID mol calcID
   unless (isNothing $ calcContext ^. #output) . throwM . localExc $ "Requested to perform a calculation, which has already been performed."
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
@@ -84,21 +84,14 @@ runCalculation calcID = do
       inputFileName = inputFilePrefix <.> ".inp"
       inputFilePath = permanentDir </> inputFileName
       software = calcContext ^. #input % #software
-      calcContextL = calcIDLensGen calcID
 
   -- Create permanent and scratch directory
   liftIO $ Dir.createDirectoryIfMissing True permanentDir
   liftIO $ Dir.createDirectoryIfMissing True scratchDir
 
   -- Write the input file for the calculation to its permanent directory.
-  wrapperInputFile <- case software of
-    Psi4 -> translate2Input mol calcID
-    Nwchem -> undefined
-    XTB _ -> xtbInput mol calcID
+  wrapperInputFile <- runReaderT makeInput (thisMol, calcContext ^. #input)
   writeFileUTF8 (Path.toAbsRel inputFilePath) wrapperInputFile
-
-  -- Logging about the Wrapper execution.
-  -- mapM_ (logInfo . ("   " <>)) . tShow $ calcContext ^. #input
 
   -- Execute the wrapper on the input file.
   case software of
@@ -116,7 +109,7 @@ runCalculation calcID = do
   -- mapM_ logInfo . hShow $ calcOutput
 
   -- Insert the output, that has been obtained for this calculation into the corresponding CalcID.
-  let molUpdated = mol & calcContextL % #output ?~ calcOutput
+  let molUpdated = mol & calcLens % #output ?~ calcOutput
 
   -- Write the updated molecule to the shared variable.
   return molUpdated
