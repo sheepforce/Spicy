@@ -151,7 +151,7 @@ module Spicy.Common
     vectorToVectorGroups,
     vectorToGroups,
     matrixFromGroupVector,
-    chunksOfNColumns,
+    innerChunksOfN,
 
     -- * RIO And Error Handlings
     -- $rioAndErrors
@@ -1693,20 +1693,19 @@ matrixFromGroupVector accessorF nColumns defElem vec = do
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Takes up to N columns from a matrix and groups them. Behaves otherwise similiar to 'chunksOf'.
-chunksOfNColumns ::
-  (Mutable r1 Ix2 e, Manifest r2 Ix2 e) =>
+-- | Takes up to N columns from a matrix and groups them. Behaves otherwise similiar to 'chunksOf'.
+innerChunksOfN ::
+  (Mutable r1 ix e, Manifest r2 ix e) =>
   -- | Size of the chunks to obtain.
   Int ->
-  Massiv.Array r2 Ix2 e ->
-  Seq (Massiv.Array r1 Ix2 e)
-chunksOfNColumns n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) Empty
+  Massiv.Array r2 ix e ->
+  Seq (Massiv.Array r1 ix e)
+innerChunksOfN n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) Empty
   where
-    go :: Int -> Matrix M a -> Seq (Matrix M a) -> Seq (Matrix M a)
+    go :: Index ix => Int -> Massiv.Array M ix a -> Seq (Massiv.Array M ix a) -> Seq (Massiv.Array M ix a)
     go n' restMatrix groupAcc = case Massiv.splitAtM (Dim 1) n' restMatrix of
       Nothing ->
-        let (Sz (_ :. nColsRemaining)) = Massiv.size restMatrix
+        let (_ , Sz nColsRemaining) = Massiv.unsnocSz . Massiv.size $  restMatrix
          in if nColsRemaining == 0 then groupAcc else groupAcc |> restMatrix
       Just (thisChunk, restMinusThisChunk) -> go n' restMinusThisChunk (groupAcc |> thisChunk)
 
