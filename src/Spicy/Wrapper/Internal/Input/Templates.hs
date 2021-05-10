@@ -11,7 +11,6 @@
 -- quantum chemistry programs.
 module Spicy.Wrapper.Internal.Input.Templates
   ( makeInput,
-    HasWrapperInput,
   )
 where
 
@@ -38,14 +37,13 @@ import Spicy.Common
 import Spicy.Molecule
 import Spicy.Molecule.Internal.Types
 
-makeInput :: (HasWrapperInput env, MonadThrow m) => ReaderT env m Text
+makeInput :: (MonadInput m) => m Text
 makeInput = do
-  mthisSoftware <- asks (^? softwareAF)
-  thisSoftware <- maybe2MThrow (WrapperGenericException "makeInput" "Could not determine software!") mthisSoftware
+  thisSoftware <- getSoftware
   case thisSoftware of
     Psi4 -> undefined -- To be implemented
     Nwchem -> error "NWChem not implemented!" -- To be implemented...eventually.
-    XTB _ -> xtbInput <&> execWriter . foldFree serializeXTB
+    XTB _ -> xtbInput <&> execWriter . foldFree serialiseXTB
 
 {-
 ====================================================================================================
@@ -53,33 +51,37 @@ makeInput = do
 
 -- Getting input values.
 
--- | Standard RIO-esque class for inputs. However, this uses AffineFolds
--- instead of Lens'es. AffineFolds are essentially half a prism with just
--- the 'preview' function -- which makes sense, since there's no sensible
--- setters here. They can be used with the standard '^?' operator.
-class HasWrapperInput env where
-  chargeAF :: AffineFold env Int
-  multAF :: AffineFold env Int
-  methodAF :: AffineFold env GFN
-  taskAF :: AffineFold env WrapperTask
-  softwareAF :: AffineFold env Program
-  memoryAF :: AffineFold env Int
-  moleculeAF :: AffineFold env Molecule
-  prefixAF :: AffineFold env String
-  permaDirAF :: AffineFold env JDirPathAbs
+-- | Standard mtl-style typeclass for acquiring input values.
+--
+-- Some notes:
+--  * MonadThrow is a superclass as all of these are likely to fail in some
+--    configuration, e.g. A GFN method makes sense only in an XTB calculation.
+--  * This is not "RIO"-style (a HasInput typeclass for a reader environment).
+--    The reason is that we may want to use different monads, e.g. a pure State
+--    for testing, or a non-reader IO for an interactive behaviour.
+class MonadThrow m => MonadInput m where
+  getSoftware :: m Program
+  getCharge :: m Int
+  getMult :: m Int
+  getMethod :: m GFN
+  getMemory :: m Int
+  getMolecule :: m Molecule
+  getPrefix :: m String
+  getPermaDir :: m JDirPathAbs
+  getTask :: m WrapperTask
 
 -- This instance expects the /current/ molecule layer, that is,
 -- the one for which the input will be prepared.
-instance HasWrapperInput (Molecule, CalcInput) where
-  chargeAF = castOptic @An_AffineFold _2 % #qMMMSpec % _QM % #charge
-  multAF = castOptic @An_AffineFold _2 % #qMMMSpec % _QM % #mult
-  methodAF = castOptic @An_AffineFold _2 % #software % _XTB
-  taskAF = castOptic @An_AffineFold _2 % #task
-  softwareAF = castOptic @An_AffineFold _2 % #software
-  memoryAF = castOptic @An_AffineFold _2 % #memory
-  moleculeAF = castOptic _1
-  prefixAF = castOptic @An_AffineFold _2 % #prefixName
-  permaDirAF = castOptic @An_AffineFold _2 % #permaDir
+instance MonadThrow m => MonadInput (ReaderT (Molecule, CalcInput) m) where
+  getSoftware = gget (_2 % #software) "Software"
+  getCharge = gget (_2 % #qMMMSpec % _QM % #charge) "Charge"
+  getMult = gget (_2 % #qMMMSpec % _QM % #mult) "Mult"
+  getMethod = gget (_2 % #software % _XTB) "Method"
+  getMemory = gget (_2 % #memory) "Memory"
+  getMolecule = gget _1 "Molecule"
+  getPrefix = gget (_2 % #prefixName) "Prefix"
+  getPermaDir = gget (_2 % #permaDir) "PermaDir"
+  getTask = gget (_2 % #task) "Tasks"
 
 -- | General getting action.
 gget ::
@@ -89,28 +91,7 @@ gget ::
   -- | Name of the input field, used to generate error messages
   String ->
   m a
-gget af str = asks (^? af) >>= maybe2MThrow (WrapperGenericException ("get" <> str) "Value could not be found!")
-
-getCharge :: (MonadReader env m, MonadThrow m, HasWrapperInput env) => m Int
-getCharge = gget chargeAF "Charge"
-
-getMult :: (MonadReader env m, MonadThrow m, HasWrapperInput env) => m Int
-getMult = gget multAF "Mult"
-
-getMethod :: (MonadReader env m, MonadThrow m, HasWrapperInput env) => m GFN
-getMethod = gget methodAF "Method"
-
-getMemory :: (MonadReader env m, MonadThrow m, HasWrapperInput env) => m Int
-getMemory = gget memoryAF "Memory"
-
-getMolecule :: (MonadReader env m, MonadThrow m, HasWrapperInput env) => m Molecule
-getMolecule = gget moleculeAF "Molecule"
-
-getPrefix :: (MonadReader env m, MonadThrow m, HasWrapperInput env) => m String
-getPrefix = gget prefixAF "Prefix"
-
-getTask :: (MonadReader env m, MonadThrow m, HasWrapperInput env) => m WrapperTask
-getTask = gget taskAF "Tasks"
+gget af str = asks (^? af) >>= maybe2MThrow (WrapperGenericException ("get" <> str) "Value could not be found while trying to write calculation input!")
 
 {-
 ====================================================================================================
@@ -118,10 +99,12 @@ getTask = gget taskAF "Tasks"
 
 -- The XTB Input specification
 
+type XTBInput = Free XTBInputF ()
+
 -- | A functor enumerating all common input options in an XTB input file. This functor is meant
 -- to be used as the base functor for a free monad, which will specify the input structure.
 -- The dummy type parameter is needed to enable fixpoint recursion.
-data XTBInput a
+data XTBInputF a
   = XTBCharge Int a
   | XTBNOpen Int a
   | XTBMethod GFN a
@@ -130,7 +113,7 @@ data XTBInput a
 
 -- | This function embodies the /logical/ structure of the input file,
 -- and produces a /data/ representation of said file.
-xtbInput :: (HasWrapperInput env, MonadReader env m, MonadThrow m) => m (Free XTBInput ())
+xtbInput :: (MonadInput m) => m XTBInput
 xtbInput = do
   chrg <- getCharge
   mult <- getMult
@@ -145,17 +128,17 @@ xtbInput = do
 
 -- | This function specifies how to serialize the information contained in the
 -- abstract input representation
-serializeXTB :: MonadWriter Text m => XTBInput a -> m a
-serializeXTB (XTBCharge chrg a) = do
+serialiseXTB :: MonadWriter Text m => XTBInputF a -> m a
+serialiseXTB (XTBCharge chrg a) = do
   tell $ "$chrg " <> tshow chrg <> "\n"
   return a
-serializeXTB (XTBNOpen nopen a) = do
+serialiseXTB (XTBNOpen nopen a) = do
   tell $ "$spin " <> tshow nopen <> "\n"
   return a
-serializeXTB (XTBMethod gfn a) = do
+serialiseXTB (XTBMethod gfn a) = do
   tell $ "$gfn\n method=" <> renderGFN gfn <> "\n"
   return a
-serializeXTB (XTBMultipoleInput t a) = do
+serialiseXTB (XTBMultipoleInput t a) = do
   tell $ "$embedding\n input=" <> t <> "\n"
   return a
 
@@ -163,18 +146,21 @@ serializeXTB (XTBMultipoleInput t a) = do
 
 -- The Psi4 input specification
 
-data Psi4Input a
-  = PsiMemory Int a
-  | PsiMolecule Int Int Text a
-  | PsiSet Text a
-  | PsiDefine Text Text a
-  | PsiFCHK Text String a
-  | PsiHessian Text a
-  | PsiMultipoles Text a
+type Psi4Input = Free Psi4InputF ()
+
+data Psi4InputF a
+  = Psi4Memory Int a -- ^ Memory in MB
+  | Psi4Molecule Int Int Text a -- ^ Charge, multiplicity , molecule representation
+  | Psi4Set Text a -- ^ Basis set
+  | Psi4Define Text Text Text a -- ^ Output name, wavefunction name, DFT functional
+  | Psi4FCHK Text String a -- ^ Output identifier, .fchk file prefix
+  | Psi4Hessian Text a -- ^ Wavefunction identifier
+  | Psi4Multipoles Text a
   deriving (Functor)
 
-psi4Input :: (HasWrapperInput env, MonadReader env m, MonadThrow m) => m (Free Psi4Input ())
+psi4Input :: (MonadInput m) => m Psi4Input
 psi4Input = do
+  -- Acquire all necessary values
   mem <- getMemory
   chrg <- getCharge
   mult <- getMult
@@ -182,19 +168,45 @@ psi4Input = do
   molRepr <- simpleCartesianAngstrom mol
   prefix <- getPrefix
   task <- getTask
+  -- Form the monadic input construct
   return $ do
-    liftF $ PsiMemory mem ()
-    liftF $ PsiMolecule chrg mult molRepr ()
-    liftF $ PsiSet "def2-svp" () -- Placeholder
+    liftF $ Psi4Memory mem ()
+    liftF $ Psi4Molecule chrg mult molRepr ()
+    liftF $ Psi4Set "def2-svp" () -- Placeholder
     (o, wfn) <- defaultDefine
-    liftF $ PsiFCHK wfn prefix ()
-    when (task == WTHessian) . liftF $ PsiHessian o ()
+    liftF $ Psi4FCHK wfn prefix ()
+    when (task == WTHessian) . liftF $ Psi4Hessian o ()
   where
     --TODO: add multipoles here
 
     defaultDefine =
       let (o, wfn) = ("o", "wfn")
-       in liftF $ PsiDefine o wfn (o, wfn)
+       in liftF $ Psi4Define o wfn "bp86" (o, wfn) -- Placeholder
+
+serialisePsi4 :: MonadWriter Text m => Psi4InputF a -> m a
+serialisePsi4 (Psi4Memory m a) = do
+  tell $ "memory " <> tShow m <> "MB\n"
+  return a
+serialisePsi4 (Psi4Molecule c m mol a) = do
+  tell "molecule {\n"
+  tell $ "  " <> tShow c <> " " <> tShow m <> "\n"
+  tell $ mol <> "\n}\n"
+  return a
+serialisePsi4 (Psi4Set basis a) = do
+  tell "set {\n"
+  tell $ "  basis " <> basis
+  tell "\n}\n"
+  return a
+serialisePsi4 (Psi4Define o wfn func a) = undefined -- TODO
+serialisePsi4 (Psi4FCHK wfn prefix a) = do
+  tell $ "fchk(" <> wfn <> ", \"" <> Text.pack prefix <> ".fchk\" )\n"
+  return a
+serialisePsi4 (Psi4Hessian o a) = do
+  tell $ "np.array(" <> o <> ")\n"
+  return a
+serialisePsi4 (Psi4Multipoles multipoles a) = do
+  tell $ "{" <> multipoles <> "}\n"
+  return a
 
 ----------------------------------------------------------------------------------------------------
 
