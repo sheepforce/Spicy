@@ -406,6 +406,38 @@ printHessian = do
         leftCmpntArr = compute . Massiv.expandInner @Ix2 (Sz 1) const . cmpnts $ atoms
         cmpntGroups = innerChunksOfN @B 3 leftCmpntArr
 
+-- | Coordinate printer.
+printCoords :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
+printCoords = do
+  atoms <- view $ moleculeDirectL % #atoms
+  tell $ header <> table atoms
+  where
+    header =
+      "@ Coordinates / Angstrom\n\
+      \------------------------\n"
+
+    tableHeader =
+      let hf = center ew ' ' F.%. builder
+       in bformat (hf F.% " | " F.% hf F.% " | " F.% hf F.% " | " F.% hf) "Atom (IX)" "x" "y" "z"
+
+    table atoms =
+      let af = right ew ' ' F.%. (right 4 ' ' F.%. string) F.% ("(" F.% (left 7 ' ' F.%. int) F.% ")")
+       in IntMap.foldlWithKey'
+            ( \acc i a ->
+                let coords = getVectorS $ a ^. #coordinates
+                    line =
+                      bformat
+                        (af F.% " | " F.% nf F.% " | " F.% nf F.% " | " F.% nf F.% "\n")
+                        (show $ a ^. #element)
+                        i
+                        (coords Massiv.! 0)
+                        (coords Massiv.! 1)
+                        (coords Massiv.! 2)
+                 in acc <> line
+            )
+            tableHeader
+            atoms
+
 -- | Log string constructor monad for molecular information.
 spicyMolLog ::
   ( HasDirectMolecule env,
