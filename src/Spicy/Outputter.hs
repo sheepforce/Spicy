@@ -18,15 +18,17 @@ module Spicy.Outputter
 where
 
 import Data.Default
+import Data.Foldable
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
-import Data.Massiv.Array as Massiv
+import Data.Massiv.Array as Massiv hiding (forM)
 import qualified Data.Text.Lazy.Builder as TB
 import Formatting hiding ((%))
 import qualified Formatting as F
 import Optics hiding (view)
 import RIO hiding (Lens, Lens', Vector, lens, view, (%~), (.~), (^.), (^?))
 import qualified RIO.HashSet as HashSet
+import qualified RIO.Seq as Seq
 import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
@@ -292,7 +294,7 @@ nAv = "(Not Available)"
 
 -- | Printer for ONIOM energy of the full tree.
 -- oniomEnergy :: SpicyLog
-oniomEnergy :: HasDirectMolecule env => SpicyLog env
+oniomEnergy :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
 oniomEnergy = do
   me <- view $ moleculeDirectL % #energyDerivatives % #energy
   case me of
@@ -304,11 +306,11 @@ oniomEnergy = do
       \--------------------------\n"
 
 -- | Printer for the ONIOM gradient of the full tree.
-oniomGradient :: HasDirectMolecule env => SpicyLog env
+oniomGradient :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
 oniomGradient = do
   msg <- view $ moleculeDirectL % #energyDerivatives % #gradient
-  atoms <- view (moleculeDirectL % #atoms)
-  let mg = msg >>= atomGradAssoc atoms . getVectorS
+  atoms <- view $ moleculeDirectL % #atoms
+  let mg = atomGradAssoc atoms . getVectorS =<< msg
   case mg of
     Nothing -> tell $ bformat (builder F.% builder) header nAv
     Just g -> tell $ bformat (builder F.% builder) header (tableHeader <> tableContent g)
@@ -349,6 +351,62 @@ oniomGradient = do
             mempty
             agMap
 
+-- | Printer for ONIOM Hessian of the full tree.
+oniomHessian :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
+oniomHessian = do
+  msh <- view $ moleculeDirectL % #energyDerivatives % #hessian
+  atoms <- view $ moleculeDirectL % #atoms
+  let mh = getMatrixS <$> msh
+  case mh of
+    Nothing -> tell $ bformat (builder F.% builder) header nAv
+    Just h -> tell $ bformat (builder F.% builder) header (fromMaybe mempty $ tableContent atoms h)
+  where
+    header =
+      "@ Hessian (ONIOM) / (Hartree / Angstrom^2)\n\
+      \------------------------------------------\n"
+
+    -- Atom and cartesian components to print as left column and as chunks as header row.
+    cmpnts :: IntMap Atom -> Vector B TB.Builder
+    cmpnts atoms =
+      compute @B . sconcat . fmap (\(x, y, z) -> Massiv.sfromList [x, y, z]) . IntMap.elems
+        . IntMap.map
+          ( \a ->
+              let e = a ^. #element
+               in (bShow e <> "(x)", bShow e <> "(y)", bShow e <> "(z)")
+          )
+        $ atoms
+      where
+        bShow = fromString . show
+
+    -- Top row printer chunks. Prints components header
+    headerRow :: Source r Ix1 TB.Builder => Vector r TB.Builder -> TB.Builder
+    headerRow chunk =
+      bformat (center 7 ' ' F.%. builder F.% "\n") "Cmpnt"
+        <> Massiv.foldMono (bformat $ center ew ' ' F.%. builder) chunk
+
+    -- Columns of the Hessian matrix.
+    tableContent :: MonadThrow m => IntMap Atom -> Matrix S Double -> m TB.Builder
+    tableContent atoms hessian = do
+      -- Make chunked print groups of hessian columns. Header missing.
+      printValueGroup <- forM colsGroups $ \hc ->
+        Massiv.fold . compute @B
+          <$> concatM (Dim 1) [leftCmpntArr, hc, rightNewLineArr]
+      -- Add the header to a print group and then combine everything into the final builder.
+      let printGroup =
+            Seq.zipWith
+              (\h hc -> headerRow (flatten h) <> hc <> "\n")
+              cmpntGroups
+              printValueGroup
+          table = foldl (<>) mempty printGroup
+      return table
+      where
+        Sz (r :. _) = size hessian
+        hessPrintV = compute @B . Massiv.map (bformat ("|" F.% nf)) $ hessian
+        colsGroups = innerChunksOfN 3 hessPrintV
+        rightNewLineArr = Massiv.makeArrayLinear @B Par (Sz $ r :. 1) (const "\n")
+        leftCmpntArr = compute . Massiv.expandInner @Ix2 (Sz 1) const . cmpnts $ atoms
+        cmpntGroups = innerChunksOfN @B 3 leftCmpntArr
+
 -- | Log string constructor monad for molecular information.
 spicyMolLog ::
   ( HasDirectMolecule env,
@@ -360,6 +418,7 @@ spicyMolLog pe = do
   pv <- view printVerbosityL
   when (doLog pv #oniomE) oniomEnergy
   when (doLog pv #oniomG) oniomGradient
+  when (doLog pv #oniomH) oniomHessian
   where
     doLog :: PrintVerbosity HashSet -> Lens' (PrintVerbosity HashSet) (HashSet PrintEvent) -> Bool
     doLog pv l =
