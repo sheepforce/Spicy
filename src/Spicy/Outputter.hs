@@ -33,6 +33,7 @@ import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
 import qualified System.Path as Path
+import qualified RIO.HashMap as HashMap
 
 ----------------------------------------------------------------------------------------------------
 
@@ -274,6 +275,10 @@ type SpicyLog r = LogM r TB.Builder
 execLogM :: r -> LogM r w -> w
 execLogM r lm = snd . (\rm -> runReader rm r) . runWriterT $ lm
 
+-- | Runs the Spicy Logger monad to obtain a 'Utf8Builder' log value.
+spicyLog :: r -> SpicyLog r -> TB.Builder
+spicyLog r lm = execLogM r lm
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Parameter type to give the line length.
@@ -438,6 +443,25 @@ printCoords = do
             tableHeader
             atoms
 
+-- | Print the bond matrix / topology.
+printTopology :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
+printTopology = do
+  bondMat <- view $ moleculeDirectL % #bonds
+  tell $ header <> table bondMat
+  where
+    header =
+      "@ Bond Topology\n\
+      \---------------\n"
+
+    table bondMat = HashMap.foldlWithKey' (\acc (o, t) b -> if b
+      then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t
+      else acc) mempty (makeBondMatUnidirectorial bondMat)
+      where
+        oF = left 8 ' ' F.%. int
+        tF = right 8 ' ' F.%. int
+
+
+
 -- | Log string constructor monad for molecular information.
 spicyMolLog ::
   ( HasDirectMolecule env,
@@ -453,6 +477,7 @@ spicyMolLog pe = do
   when (doLog pv #oniomG) printGradient
   when (doLog pv #oniomH) printHessian
   when (doLog pv #oniomC) printCoords
+  when (doLog pv #oniomT) printTopology
 
   -- Layer printers
   where
