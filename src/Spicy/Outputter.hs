@@ -285,17 +285,16 @@ ew :: Int
 ew = 18
 
 -- | Default formatter for floating point numbers.
-nf :: (Buildable a, Real a) => Format r (a -> r)
+nf :: (Real a) => Format r (a -> r)
 nf = left ew ' ' F.%. fixed (ew - 8)
 
 -- | String for non-available data.
 nAv :: IsString a => a
 nAv = "(Not Available)"
 
--- | Printer for ONIOM energy of the full tree.
--- oniomEnergy :: SpicyLog
-oniomEnergy :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-oniomEnergy = do
+-- | Printer for a molecule energy.
+printEnergy :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
+printEnergy = do
   me <- view $ moleculeDirectL % #energyDerivatives % #energy
   case me of
     Nothing -> tell $ bformat (builder F.% builder) header nAv
@@ -306,14 +305,14 @@ oniomEnergy = do
       \--------------------------\n"
 
 -- | Printer for the ONIOM gradient of the full tree.
-oniomGradient :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-oniomGradient = do
+printGradient :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
+printGradient = do
   msg <- view $ moleculeDirectL % #energyDerivatives % #gradient
   atoms <- view $ moleculeDirectL % #atoms
   let mg = atomGradAssoc atoms . getVectorS =<< msg
   case mg of
-    Nothing -> tell $ bformat (builder F.% builder) header nAv
-    Just g -> tell $ bformat (builder F.% builder) header (tableHeader <> tableContent g)
+    Nothing -> tell $ header <> nAv
+    Just g -> tell $ header <> tableHeader <> tableContent g
   where
     header =
       "@ Gradient (ONIOM) / (Hartree / Angstrom)\n\
@@ -352,14 +351,14 @@ oniomGradient = do
             agMap
 
 -- | Printer for ONIOM Hessian of the full tree.
-oniomHessian :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-oniomHessian = do
+printHessian :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
+printHessian = do
   msh <- view $ moleculeDirectL % #energyDerivatives % #hessian
   atoms <- view $ moleculeDirectL % #atoms
   let mh = getMatrixS <$> msh
   case mh of
-    Nothing -> tell $ bformat (builder F.% builder) header nAv
-    Just h -> tell $ bformat (builder F.% builder) header (fromMaybe mempty $ tableContent atoms h)
+    Nothing -> tell $ header <> nAv
+    Just h -> tell $ header <> fromMaybe mempty (tableContent atoms h)
   where
     header =
       "@ Hessian (ONIOM) / (Hartree / Angstrom^2)\n\
@@ -416,9 +415,14 @@ spicyMolLog ::
   SpicyLog env
 spicyMolLog pe = do
   pv <- view printVerbosityL
-  when (doLog pv #oniomE) oniomEnergy
-  when (doLog pv #oniomG) oniomGradient
-  when (doLog pv #oniomH) oniomHessian
+
+  -- Top level printers
+  when (doLog pv #oniomE) printEnergy
+  when (doLog pv #oniomG) printGradient
+  when (doLog pv #oniomH) printHessian
+  when (doLog pv #oniomC) printCoords
+
+  -- Layer printers
   where
     doLog :: PrintVerbosity HashSet -> Lens' (PrintVerbosity HashSet) (HashSet PrintEvent) -> Bool
     doLog pv l =

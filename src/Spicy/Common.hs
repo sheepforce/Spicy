@@ -1675,9 +1675,8 @@ vectorToGroups accessorF' vec' = go accessorF' vec' []
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Build a matrix from a vector of grouped elements. Groups are of fixed size and will be padded with
--- a default argument. The function fails if one of the groups exceeds the maximum size.
+-- | Build a matrix from a vector of grouped elements. Groups are of fixed size and will be padded 
+-- with a default argument. The function fails if one of the groups exceeds the maximum size.
 matrixFromGroupVector ::
   (Source r Ix1 a, Stream r Ix1 a, MonadThrow m, Eq b, Show a) =>
   (a -> b) ->
@@ -1687,7 +1686,7 @@ matrixFromGroupVector ::
   m (Matrix DL a)
 matrixFromGroupVector accessorF nColumns defElem vec = do
   groups <- vectorToVectorGroups accessorF nColumns defElem vec
-  let groupsExpandedToMatrix1 = fmap (Massiv.expandOuter (Sz 1) (\a _ -> a)) groups
+  let groupsExpandedToMatrix1 = fmap (Massiv.expandOuter (Sz 1) const) groups
   matrix <- Massiv.concatM 2 groupsExpandedToMatrix1
   return matrix
 
