@@ -1323,8 +1323,6 @@ data CalcInput = CalcInput
     -- | Information specific to either a QM or MM
     --   calculation.
     qMMMSpec :: !QMMMSpec,
-    -- | A Mustache template for the program.
-    template :: !Text,
     -- | The embedding type for this calculation
     --   part. Might be ignored for Inherited
     --   calculations in ONIOM (low calculation
@@ -1369,9 +1367,6 @@ instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "memory" k CalcInput CalcInp
 
 instance (k ~ A_Lens, a ~ QMMMSpec, b ~ a) => LabelOptic "qMMMSpec" k CalcInput CalcInput a b where
   labelOptic = lens qMMMSpec $ \s b -> s {qMMMSpec = b}
-
-instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "template" k CalcInput CalcInput a b where
-  labelOptic = lens template $ \s b -> s {template = b}
 
 instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInput CalcInput a b where
   labelOptic = lens embedding $ \s b -> s {embedding = b}

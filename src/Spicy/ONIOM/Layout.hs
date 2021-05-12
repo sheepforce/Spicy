@@ -96,7 +96,6 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
   -- Build values for the child, that need context from above.
   workDirAbs <- liftIO . Path.genericMakeAbsoluteFromCwd . getDirPath $ workDir
   scratchDirAbs <- liftIO . Path.genericMakeAbsoluteFromCwd . getDirPath $ scratchDir
-  template <- readFileUTF8 . getFilePath $ tl ^. #templateFile
   opt <- optSettings <$> defIO
   let calcInheritOld = parentMol ^? #calcContext % ix (ONIOMKey Original) % #input
       childComment = textDisplay $ "Layer" <> molID2OniomHumandID (parentID |> childKey)
@@ -121,7 +120,6 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
             nThreads = tl ^. #execution % #nThreads,
             memory = tl ^. #execution % #memory,
             qMMMSpec = QM QMContext {charge = tl ^. #charge, mult = tl ^. #mult},
-            template = template,
             embedding = tl ^. #embedding,
             optimisation = opt & #pysisyphus .~ pysis
           }

@@ -212,11 +212,10 @@ serialisePsi4 (Psi4Set basis a) = do
   tell "\n}\n"
   return a
 serialisePsi4 (Psi4Define o wfn mthd task a) = do
-  let
-    tskStr = case task of
-      WTEnergy -> "energy"
-      WTGradient -> "gradient"
-      WTHessian -> "hessian"
+  let tskStr = case task of
+        WTEnergy -> "energy"
+        WTGradient -> "gradient"
+        WTHessian -> "hessian"
   tell $ o <> ", " <> wfn <> " = " <> tskStr <> "(" <> mthd <> ", return_wfn = True)\n"
   return a
 serialisePsi4 (Psi4FCHK wfn prefix a) = do

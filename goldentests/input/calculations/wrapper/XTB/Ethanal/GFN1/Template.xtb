@@ -1,6 +1,0 @@
-$chrg {{ charge }}
-$spin {{ nopenshells }}
-$gfn
- method=2
-$write
- json=true
