@@ -178,6 +178,8 @@ psi4Input = do
   mult <- getMult
   mol <- getMolecule
   molRepr <- simpleCartesianAngstrom mol
+  calcType <- getCalculationType
+  basis <- getBasisSet
   prefix <- getPrefix
   task <- getTask
   multipoleRep <- psi4MultipoleRep mol
@@ -185,15 +187,15 @@ psi4Input = do
   return $ do
     liftF $ Psi4Memory mem ()
     liftF $ Psi4Molecule chrg mult molRepr ()
-    liftF $ Psi4Set "def2-svp" () -- Placeholder
+    liftF $ Psi4Set basis ()
     liftF $ Psi4Multipoles multipoleRep ()
-    (o, wfn) <- defaultDefine task
+    (o, wfn) <- defaultDefine task calcType
     liftF $ Psi4FCHK wfn prefix ()
     when (task == WTHessian) . liftF $ Psi4Hessian o ()
   where
-    defaultDefine tsk =
+    defaultDefine tsk mthd =
       let (o, wfn) = ("o", "wfn")
-       in liftF $ Psi4Define o wfn "\"bp86\"" tsk (o, wfn) -- Placeholder
+       in liftF $ Psi4Define o wfn ("\"" <> mthd <> "\"") tsk (o, wfn) -- Placeholder
 
 serialisePsi4 :: MonadWriter Text m => Psi4InputF a -> m a
 serialisePsi4 (Psi4Memory m a) = do
@@ -224,7 +226,7 @@ serialisePsi4 (Psi4Hessian o a) = do
   tell $ "np.array(" <> o <> ")\n"
   return a
 serialisePsi4 (Psi4Multipoles multipoles a) = do
-  tell $ "{" <> multipoles <> "}\n"
+  tell $ multipoles <> "\n"
   return a
 
 ----------------------------------------------------------------------------------------------------
