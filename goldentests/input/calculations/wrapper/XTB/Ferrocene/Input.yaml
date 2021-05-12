@@ -6,7 +6,9 @@ molecule:
 model:
   theoryLayer:
     name: GFN2-xTB
-    program: xtb
+    program:
+      tag: xtb
+      contents: gfnone
     charge: 0
     mult: 1
     templateFile: goldentests/input/calculations/wrapper/XTB/Ferrocene/Template.xtb

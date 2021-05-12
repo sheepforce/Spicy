@@ -94,7 +94,11 @@ module Spicy.Molecule.Internal.Types
     -- ** Programs
     Program (..),
     _XTB,
-    GFN(..),
+    _Psi4,
+    isPsi4,
+    isXTB,
+    Psi4Info(..),
+    GFN (..),
     renderGFN,
 
     -- * Local Helper Types
@@ -1407,9 +1411,9 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 ====================================================================================================
 -}
 
--- | A known computational chemistry program to use.
+-- | A known computational chemistry program to use, and some program-specific data.
 data Program
-  = Psi4
+  = Psi4 Psi4Info
   | Nwchem
   | XTB GFN
   deriving (Eq, Show, Generic)
@@ -1425,6 +1429,34 @@ _XTB = prism' XTB $ \s -> case s of
   XTB b -> Just b
   _ -> Nothing
 
+_Psi4 :: Prism' Program Psi4Info
+_Psi4 = prism' Psi4 $ \s -> case s of
+  Psi4 info -> Just info
+  _ -> Nothing
+
+-- Auxilliary functions for working with Program data
+isPsi4 :: Program -> Bool
+isPsi4 (Psi4 _) = True
+isPsi4 _ = False
+
+isXTB :: Program -> Bool
+isXTB (XTB _) = True
+isXTB _ = False
+
+----------------------------------------------------------------------------------------------------
+
+data Psi4Info = Psi4Info
+  { basisSet :: Text,
+    calculationType :: Text
+  }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Psi4Info where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON Psi4Info where
+  parseJSON = genericParseJSON spicyJOption
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Version of the GFN-Hamiltonian in XTB calculations.
@@ -1433,6 +1465,7 @@ data GFN
   | GFNOne
   | GFNTwo
   deriving (Eq, Show, Generic)
+
 -- FF hamiltonian still to do
 
 instance ToJSON GFN where

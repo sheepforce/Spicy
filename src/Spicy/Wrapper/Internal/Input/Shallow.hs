@@ -184,7 +184,7 @@ toMolRepr ::
   -- | Molecule representation in the program format.
   m Text
 toMolRepr mol program' = case program' of
-  Psi4 -> simpleCartesianAngstrom
+  Psi4 _ -> simpleCartesianAngstrom
   Nwchem -> simpleCartesianAngstrom
   XTB _ -> simpleCartesianAngstrom
   --_ -> throwM $ WrapperGenericException "toMolRepr" "Cannot write a molecule format for this software."
@@ -212,7 +212,7 @@ toMultipoleRep ::
   Program ->
   m Text
 toMultipoleRep mol calc program' = case program' of
-  Psi4 -> psi4Charges
+  Psi4 _ -> psi4Charges
   -- For XTB: Instead, write the path to the multipole file
   XTB _ -> return . path2Text $ xtbMultipoleFilename calc
   _ -> throwM . localExc $ "No multipole representation available for wrapper."
@@ -237,7 +237,7 @@ toMultipoleRep mol calc program' = case program' of
 -- | Generates a "task" string specific for computational chemistry 'Program'.
 toTask :: MonadThrow m => WrapperTask -> Program -> m Text
 toTask task' program' = case program' of
-  Psi4 -> psi4Task
+  Psi4 _ -> psi4Task
   XTB _ -> psi4Task --XTB has no need for this text; should be done more elegantly 
   _ -> throwM $ WrapperGenericException "toTask" "Cannot create a task string for the chosen software."
   where

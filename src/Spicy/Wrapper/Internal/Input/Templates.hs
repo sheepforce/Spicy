@@ -31,17 +31,23 @@ inspect it for correctness, modify it after construction, etc.
 import Control.Monad.Free
 import Optics
 import RIO hiding (Lens', lens, view, (^.), (^?))
-import qualified RIO.Text as Text
+import qualified RIO.Text as RText
 import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
 import Spicy.Molecule.Internal.Types
+import System.Path
+import System.IO.Unsafe
+
+import qualified Data.Massiv.Array as Massiv
+import qualified Data.Text.Lazy.Builder as Builder
+import qualified Data.Text.Lazy as Text
 
 makeInput :: (MonadInput m) => m Text
 makeInput = do
   thisSoftware <- getSoftware
   case thisSoftware of
-    Psi4 -> undefined -- To be implemented
+    Psi4 _ -> psi4Input <&> execWriter . foldFree serialisePsi4
     Nwchem -> error "NWChem not implemented!" -- To be implemented...eventually.
     XTB _ -> xtbInput <&> execWriter . foldFree serialiseXTB
 
@@ -64,6 +70,8 @@ class MonadThrow m => MonadInput m where
   getCharge :: m Int
   getMult :: m Int
   getMethod :: m GFN
+  getBasisSet :: m Text
+  getCalculationType :: m Text
   getMemory :: m Int
   getMolecule :: m Molecule
   getPrefix :: m String
@@ -77,6 +85,8 @@ instance MonadThrow m => MonadInput (ReaderT (Molecule, CalcInput) m) where
   getCharge = gget (_2 % #qMMMSpec % _QM % #charge) "Charge"
   getMult = gget (_2 % #qMMMSpec % _QM % #mult) "Mult"
   getMethod = gget (_2 % #software % _XTB) "Method"
+  getBasisSet = gget (_2 % #software % _Psi4 % #basisSet) "BasisName"
+  getCalculationType = gget (_2 % #software % _Psi4 % #calculationType) "CalculationType"
   getMemory = gget (_2 % #memory) "Memory"
   getMolecule = gget _1 "Molecule"
   getPrefix = gget (_2 % #prefixName) "Prefix"
@@ -88,7 +98,7 @@ gget ::
   (MonadReader env m, Is k An_AffineFold, MonadThrow m) =>
   -- | An optic to retrieve the value from the environment
   Optic' k is env a ->
-  -- | Name of the input field, used to generate error messages
+  -- | Name of the input field, for error message
   String ->
   m a
 gget af str = asks (^? af) >>= maybe2MThrow (WrapperGenericException ("get" <> str) "Value could not be found while trying to write calculation input!")
@@ -119,12 +129,14 @@ xtbInput = do
   mult <- getMult
   let nopen = mult - 1
   mthd <- getMethod
+  (JDirPathAbs perma) <- getPermaDir
+  prefix <- getPrefix
   return $ do
     liftF $ XTBCharge chrg ()
     liftF $ XTBNOpen nopen ()
     liftF $ XTBMethod mthd ()
-
--- TODO: Multipoles
+    let pth = path2Text $ perma </> path prefix <.> ".pc"
+    liftF $ XTBMultipoleInput pth ()
 
 -- | This function specifies how to serialize the information contained in the
 -- abstract input representation
@@ -152,7 +164,7 @@ data Psi4InputF a
   = Psi4Memory Int a -- ^ Memory in MB
   | Psi4Molecule Int Int Text a -- ^ Charge, multiplicity , molecule representation
   | Psi4Set Text a -- ^ Basis set
-  | Psi4Define Text Text Text a -- ^ Output name, wavefunction name, DFT functional
+  | Psi4Define Text Text Text WrapperTask a -- ^ Output name, wavefunction name, method, Task
   | Psi4FCHK Text String a -- ^ Output identifier, .fchk file prefix
   | Psi4Hessian Text a -- ^ Wavefunction identifier
   | Psi4Multipoles Text a
@@ -168,20 +180,20 @@ psi4Input = do
   molRepr <- simpleCartesianAngstrom mol
   prefix <- getPrefix
   task <- getTask
+  multipoleRep <- psi4MultipoleRep mol
   -- Form the monadic input construct
   return $ do
     liftF $ Psi4Memory mem ()
     liftF $ Psi4Molecule chrg mult molRepr ()
     liftF $ Psi4Set "def2-svp" () -- Placeholder
-    (o, wfn) <- defaultDefine
+    liftF $ Psi4Multipoles multipoleRep ()
+    (o, wfn) <- defaultDefine task
     liftF $ Psi4FCHK wfn prefix ()
     when (task == WTHessian) . liftF $ Psi4Hessian o ()
   where
-    --TODO: add multipoles here
-
-    defaultDefine =
+    defaultDefine tsk =
       let (o, wfn) = ("o", "wfn")
-       in liftF $ Psi4Define o wfn "bp86" (o, wfn) -- Placeholder
+       in liftF $ Psi4Define o wfn "\"bp86\"" tsk (o, wfn) -- Placeholder
 
 serialisePsi4 :: MonadWriter Text m => Psi4InputF a -> m a
 serialisePsi4 (Psi4Memory m a) = do
@@ -197,9 +209,16 @@ serialisePsi4 (Psi4Set basis a) = do
   tell $ "  basis " <> basis
   tell "\n}\n"
   return a
-serialisePsi4 (Psi4Define o wfn func a) = undefined -- TODO
+serialisePsi4 (Psi4Define o wfn mthd task a) = do
+  let
+    tskStr = case task of
+      WTEnergy -> "energy"
+      WTGradient -> "gradient"
+      WTHessian -> "hessian"
+  tell $ o <> ", " <> wfn <> " = " <> tskStr <> "(" <> mthd <> ", return_wfn = True)\n"
+  return a
 serialisePsi4 (Psi4FCHK wfn prefix a) = do
-  tell $ "fchk(" <> wfn <> ", \"" <> Text.pack prefix <> ".fchk\" )\n"
+  tell $ "fchk(" <> wfn <> ", \"" <> RText.pack prefix <> ".fchk\" )\n"
   return a
 serialisePsi4 (Psi4Hessian o a) = do
   tell $ "np.array(" <> o <> ")\n"
@@ -215,4 +234,53 @@ serialisePsi4 (Psi4Multipoles multipoles a) = do
 -- | Make a simple coordinate representation of the current Molecule layer.
 -- This function takes care to remove all dummy atoms.
 simpleCartesianAngstrom :: MonadThrow m => Molecule -> m Text
-simpleCartesianAngstrom mol = Text.unlines . drop 2 . Text.lines <$> writeXYZ (isolateMoleculeLayer mol)
+simpleCartesianAngstrom mol = RText.unlines . drop 2 . RText.lines <$> writeXYZ (isolateMoleculeLayer mol)
+
+-- | Generate the multipole representation accepted by XTB. Must be in its own file.
+xtbMultipoleRep ::
+  (MonadThrow m) =>
+  -- | The __current__ 'Molecule' layer for which to perform the calculation. The multipoles must
+  -- therefore already be present and multipole centres must be marked as Dummy atoms.
+  Molecule ->
+  m Text
+xtbMultipoleRep mol = do
+  let pointChargeVecs = Massiv.innerSlices $ umolToPointCharges mol
+      toText vec =
+        let q = Builder.fromText . tShow $ vec Massiv.! 3
+            x = Builder.fromText . tShow $ vec Massiv.! 0
+            y = Builder.fromText . tShow $ vec Massiv.! 1
+            z = Builder.fromText . tShow $ vec Massiv.! 2
+         in q <> " " <> x <> " " <> y <> " " <> z <> " 99\n"
+      chargeLines = Massiv.foldMono toText pointChargeVecs
+      countLine = (Builder.fromText . tShow . length $ pointChargeVecs) <> "\n"
+      xtbBuilder = countLine <> chargeLines
+  return . Text.toStrict . Builder.toLazyText $ xtbBuilder
+
+-- | Generates the multipole representation for Psi4.
+psi4MultipoleRep ::
+  (MonadThrow m) =>
+  -- | The __current__ 'Molecule' layer for which to perform the calculation. The multipoles must
+  -- therefore already be present and multipole centres must be marked as Dummy atoms.
+  Molecule ->
+  m Text
+psi4MultipoleRep mol = do
+      let pointChargeVecs = Massiv.innerSlices $ umolToPointCharges mol
+          toText vec =
+            let q = Builder.fromText . tShow $ vec Massiv.! 3
+                x = Builder.fromText . tShow $ vec Massiv.! 0
+                y = Builder.fromText . tShow $ vec Massiv.! 1
+                z = Builder.fromText . tShow $ vec Massiv.! 2
+             in "Chrgfield.extern.addCharge(" <> q <> ", " <> x <> ", " <> y <> ", " <> z <> ")\n"
+          chargeLines = Massiv.foldMono toText pointChargeVecs
+          settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
+          psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
+      return . Text.toStrict . Builder.toLazyText $ psi4Builder
+
+-- | A \"pure\" version of the "molToPointCharges" function. Morally, this is true,
+-- as the function performs no side effects and is entirely deterministic.
+-- The MonadIO constraint comes from the use of a parallel fold, which could
+-- in general produce non-deterministic results, however, both folding
+-- and chunk folding function are both commutative and associative, rendering
+-- this moot.
+umolToPointCharges :: Molecule -> Massiv.Matrix Massiv.S Double
+umolToPointCharges = unsafePerformIO . molToPointCharges

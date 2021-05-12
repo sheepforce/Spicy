@@ -95,13 +95,13 @@ runCalculation calcID = do
 
   -- Execute the wrapper on the input file.
   case software of
-    Psi4 -> executePsi4 calcID inputFilePath
+    Psi4 _ -> executePsi4 calcID inputFilePath
     Nwchem -> undefined
     XTB _ -> executeXTB calcID inputFilePath
 
   -- Parse the output, that has been produced by the wrapper.
   calcOutput <- case software of
-    Psi4 -> analysePsi4 calcID
+    Psi4 _ -> analysePsi4 calcID
     Nwchem -> undefined
     XTB _ -> analyseXTB calcID
 
@@ -166,7 +166,7 @@ executePsi4 calcID inputFilePath = do
       outputFilePath = Path.replaceExtension inputFilePath ".out"
 
   -- Check if this function is appropiate to execute the calculation at all.
-  unless (software == Psi4) $ do
+  unless (isPsi4 software) $ do
     logError
       "A calculation should be done with the Psi4 driver function,\
       \ but the calculation is not a Psi4 calculation."
@@ -248,9 +248,6 @@ executeXTB calcID inputFilePath = do
       pcFile = xtbMultipoleFilename calcContext
 
   -- Check if this function is appropiate to execute the calculation at all.
-  let isXTB x = case x of
-        XTB _ -> True
-        _ -> False
   unless (isXTB thisSoftware) $ do
     logError
       "A calculation should be done with the XTB driver function,\

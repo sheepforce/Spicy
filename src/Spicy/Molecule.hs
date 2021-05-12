@@ -67,7 +67,9 @@ module Spicy.Molecule
 
     -- ** Programs
     Program (..),
-    
+    isPsi4,
+    isXTB,
+
     -- * Parser
     xyz,
     txyz,
