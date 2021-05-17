@@ -29,6 +29,9 @@ inspect it for correctness, modify it after construction, etc.
 -}
 
 import Control.Monad.Free
+import qualified Data.Massiv.Array as Massiv
+import qualified Data.Text.Lazy as Text
+import qualified Data.Text.Lazy.Builder as Builder
 import Optics
 import RIO hiding (Lens', lens, view, (^.), (^?))
 import qualified RIO.Text as RText
@@ -36,19 +39,15 @@ import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
 import Spicy.Molecule.Internal.Types
-import System.Path
 import System.IO.Unsafe
-
-import qualified Data.Massiv.Array as Massiv
-import qualified Data.Text.Lazy.Builder as Builder
-import qualified Data.Text.Lazy as Text
+import System.Path
 
 makeInput :: (MonadInput m) => m Text
 makeInput = do
   thisSoftware <- getSoftware
   case thisSoftware of
     Psi4 _ -> psi4Input <&> execWriter . foldFree serialisePsi4
-    Nwchem -> error "NWChem not implemented!" -- To be implemented...eventually.
+    Nwchem -> error "NWChem not implemented!"
     XTB _ -> xtbInput <&> execWriter . foldFree serialiseXTB
 
 {-
@@ -115,10 +114,14 @@ type XTBInput = Free XTBInputF ()
 -- to be used as the base functor for a free monad, which will specify the input structure.
 -- The dummy type parameter is needed to enable fixpoint recursion.
 data XTBInputF a
-  = XTBCharge Int a
-  | XTBNOpen Int a
-  | XTBMethod GFN a
-  | XTBMultipoleInput Text a
+  = -- | Molecular charge
+    XTBCharge Int a
+  | -- | Number of open shells
+    XTBNOpen Int a
+  | -- | Version of the GFN Hamiltonian
+    XTBMethod GFN a
+  | -- | Multipole representation
+    XTBMultipoleInput Text a
   deriving (Functor)
 
 -- | This function embodies the /logical/ structure of the input file,
@@ -161,13 +164,20 @@ serialiseXTB (XTBMultipoleInput t a) = do
 type Psi4Input = Free Psi4InputF ()
 
 data Psi4InputF a
-  = Psi4Memory Int a -- ^ Memory in MB
-  | Psi4Molecule Int Int Text a -- ^ Charge, multiplicity , molecule representation
-  | Psi4Set Text a -- ^ Basis set
-  | Psi4Define Text Text Text WrapperTask a -- ^ Output name, wavefunction name, method, Task
-  | Psi4FCHK Text String a -- ^ Output identifier, .fchk file prefix
-  | Psi4Hessian Text a -- ^ Wavefunction identifier
-  | Psi4Multipoles Text a
+  = -- | Memory in MB
+    Psi4Memory Int a
+  | -- | Charge, multiplicity , molecule representation
+    Psi4Molecule Int Int Text a
+  | -- | Basis set
+    Psi4Set Text a
+  | -- | Output name, wavefunction name, method, Task
+    Psi4Define Text Text Text WrapperTask a
+  | -- | Output identifier, .fchk file prefix
+    Psi4FCHK Text String a
+  | -- | Wavefunction identifier
+    Psi4Hessian Text a
+  | -- | Multiple representation
+    Psi4Multipoles Text a
   deriving (Functor)
 
 psi4Input :: (MonadInput m) => m Psi4Input
@@ -183,6 +193,7 @@ psi4Input = do
   prefix <- getPrefix
   task <- getTask
   multipoleRep <- psi4MultipoleRep mol
+
   -- Form the monadic input construct
   return $ do
     liftF $ Psi4Memory mem ()
@@ -195,7 +206,7 @@ psi4Input = do
   where
     defaultDefine tsk mthd =
       let (o, wfn) = ("o", "wfn")
-       in liftF $ Psi4Define o wfn ("\"" <> mthd <> "\"") tsk (o, wfn) -- Placeholder
+       in liftF $ Psi4Define o wfn ("\"" <> mthd <> "\"") tsk (o, wfn)
 
 serialisePsi4 :: MonadWriter Text m => Psi4InputF a -> m a
 serialisePsi4 (Psi4Memory m a) = do
@@ -245,7 +256,7 @@ xtbMultipoleRep ::
   Molecule ->
   m Text
 xtbMultipoleRep mol = do
-  let pointChargeVecs = Massiv.innerSlices $ umolToPointCharges mol
+  let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
       toText vec =
         let q = Builder.fromText . tShow $ vec Massiv.! 3
             x = Builder.fromText . tShow $ vec Massiv.! 0
@@ -265,17 +276,17 @@ psi4MultipoleRep ::
   Molecule ->
   m Text
 psi4MultipoleRep mol = do
-      let pointChargeVecs = Massiv.innerSlices $ umolToPointCharges mol
-          toText vec =
-            let q = Builder.fromText . tShow $ vec Massiv.! 3
-                x = Builder.fromText . tShow $ vec Massiv.! 0
-                y = Builder.fromText . tShow $ vec Massiv.! 1
-                z = Builder.fromText . tShow $ vec Massiv.! 2
-             in "Chrgfield.extern.addCharge(" <> q <> ", " <> x <> ", " <> y <> ", " <> z <> ")\n"
-          chargeLines = Massiv.foldMono toText pointChargeVecs
-          settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
-          psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
-      return . Text.toStrict . Builder.toLazyText $ psi4Builder
+  let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
+      toText vec =
+        let q = Builder.fromText . tShow $ vec Massiv.! 3
+            x = Builder.fromText . tShow $ vec Massiv.! 0
+            y = Builder.fromText . tShow $ vec Massiv.! 1
+            z = Builder.fromText . tShow $ vec Massiv.! 2
+         in "Chrgfield.extern.addCharge(" <> q <> ", " <> x <> ", " <> y <> ", " <> z <> ")\n"
+      chargeLines = Massiv.foldMono toText pointChargeVecs
+      settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
+      psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
+  return . Text.toStrict . Builder.toLazyText $ psi4Builder
 
 -- | A \"pure\" version of the "molToPointCharges" function. Morally, this is true,
 -- as the function performs no side effects and is entirely deterministic.
@@ -283,5 +294,5 @@ psi4MultipoleRep mol = do
 -- in general produce non-deterministic results, however, both folding
 -- and chunk folding function are both commutative and associative, rendering
 -- this moot.
-umolToPointCharges :: Molecule -> Massiv.Matrix Massiv.S Double
-umolToPointCharges = unsafePerformIO . molToPointCharges
+unsafeMolToPointCharges :: Molecule -> Massiv.Matrix Massiv.S Double
+unsafeMolToPointCharges = unsafePerformIO . molToPointCharges
