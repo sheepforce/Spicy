@@ -27,13 +27,13 @@ import Formatting hiding ((%))
 import qualified Formatting as F
 import Optics hiding (view)
 import RIO hiding (Lens, Lens', Vector, lens, view, (%~), (.~), (^.), (^?))
+import qualified RIO.HashMap as HashMap
 import qualified RIO.HashSet as HashSet
 import qualified RIO.Seq as Seq
 import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
 import qualified System.Path as Path
-import qualified RIO.HashMap as HashMap
 
 ----------------------------------------------------------------------------------------------------
 
@@ -84,6 +84,8 @@ data PrintVerbosity f = PrintVerbosity
     oniomC :: f PrintEvent,
     -- | Bond topology on the full ONIOM tree
     oniomT :: f PrintEvent,
+    -- | ONIOM multipoles of the real system
+    oniomMP :: f PrintEvent,
     -- | High and low level energy of a layer
     layerE :: f PrintEvent,
     -- | High and low level gradient of a layer
@@ -119,6 +121,9 @@ instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomC" k (PrintVe
 
 instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomT" k (PrintVerbosity f) (PrintVerbosity f) a b where
   labelOptic = lens oniomT $ \s b -> s {oniomT = b}
+
+instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomMP" k (PrintVerbosity f) (PrintVerbosity f) a b where
+  labelOptic = lens oniomMP $ \s b -> s {oniomMP = b}
 
 instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "layerE" k (PrintVerbosity f) (PrintVerbosity f) a b where
   labelOptic = lens layerE $ \s b -> s {layerE = b}
@@ -453,14 +458,81 @@ printTopology = do
       "@ Bond Topology\n\
       \---------------\n"
 
-    table bondMat = HashMap.foldlWithKey' (\acc (o, t) b -> if b
-      then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t
-      else acc) mempty (makeBondMatUnidirectorial bondMat)
+    table bondMat =
+      HashMap.foldlWithKey'
+        ( \acc (o, t) b ->
+            if b
+              then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t
+              else acc
+        )
+        mempty
+        (makeBondMatUnidirectorial bondMat)
       where
         oF = left 8 ' ' F.%. int
         tF = right 8 ' ' F.%. int
 
+-- | Multipole printer for a given layer. Prints up to quadrupoles.
+printMultipoles :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
+printMultipoles = do
+  atoms <- view $ moleculeDirectL % #atoms
+  tell $ header <> content atoms
+  where
+    header =
+      "@ Multipoles (ONIOM) / ea_0^k for rank k\n\
+      \----------------------------------------\n"
 
+    content atoms = foldl' (\acc a -> acc <> atomPrinter a) mempty atoms
+
+    atomPrinter :: Atom -> TB.Builder
+    atomPrinter a =
+      let atomHeader =
+            bformat
+              ("  " F.% (right 3 ' ' F.%. string) F.% "  x = " F.% nf F.% "  y = " F.% nf F.% "  z = " F.% nf F.% "\n")
+              (show $ a ^. #element)
+              (getVectorS (a ^. #coordinates) Massiv.! 0)
+              (getVectorS (a ^. #coordinates) Massiv.! 1)
+              (getVectorS (a ^. #coordinates) Massiv.! 2)
+          monopole = do
+            mp <- a ^? #multipoles % #monopole % _Just % #q00
+            return $ lp <> vf "00" mp <> "\n"
+          dipole = do
+            dp <- a ^. #multipoles % #dipole
+            let q10 = dp ^. #q10
+                q11c = dp ^. #q11c
+                q11s = dp ^. #q11s
+                mag = sqrt $ q10 ** 2 + q11c ** 2 + q11s ** 2
+            return $ mf 1 mag <> vf "10" q10 <> vf "11c" q11c <> vf "11s" q11s <> "\n"
+          quadrupole = do
+            qp <- a ^. #multipoles % #quadrupole
+            let q20 = qp ^. #q20
+                q21c = qp ^. #q21c
+                q21s = qp ^. #q21s
+                q22c = qp ^. #q22c
+                q22s = qp ^. #q22s
+                mag = sqrt $ q20 ** 2 + q21c ** 2 + q21s ** 2 + q22c ** 2 + q22s ** 2
+            return $
+              mf 2 mag <> vf "21c" q21c <> vf "21s" q21s <> "\n"
+                <> lp
+                <> vf "22c" q22c
+                <> vf "22s" q22s
+                <> "\n"
+       in atomHeader <> fm monopole <> fm dipole <> fm quadrupole <> "\n"
+      where
+        fm :: Monoid a => Maybe a -> a
+        fm = fromMaybe mempty
+
+        lp :: TB.Builder
+        lp = bformat (left 19 ' ' F.%. builder) mempty
+
+        mf :: Real a => Int -> a -> TB.Builder
+        mf k num = bformat ("  |Q" F.% int F.% "| = " F.% (left 10 ' ' F.%. fixed 6)) k num
+
+        vf :: Real a => TB.Builder -> a -> TB.Builder
+        vf sub num =
+          bformat
+            ("  Q" F.% (right 3 ' ' F.%. builder) F.% " = " F.% (left 10 ' ' F.%. fixed 6))
+            sub
+            num
 
 -- | Log string constructor monad for molecular information.
 spicyMolLog ::
@@ -478,9 +550,10 @@ spicyMolLog pe = do
   when (doLog pv #oniomH) printHessian
   when (doLog pv #oniomC) printCoords
   when (doLog pv #oniomT) printTopology
-
-  -- Layer printers
+  when (doLog pv #oniomMP) printMultipoles
   where
+    -- Layer printers
+
     doLog :: PrintVerbosity HashSet -> Lens' (PrintVerbosity HashSet) (HashSet PrintEvent) -> Bool
     doLog pv l =
       let pvt = pv ^. l
