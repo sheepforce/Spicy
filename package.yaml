@@ -48,7 +48,6 @@ dependencies:
   - parallel >= 3.2.1.0 && < 3.3
   - aeson >= 1.4.4.0 && < 1.6
   - aeson-pretty >= 0.8.7 && < 0.9
-  - stache >= 2.1.0 && < 2.3
   - pathtype >= 0.8.1 && < 0.9
   - data-default >= 0.7.1.1 && < 0.8
   - integer-roots >= 1.0 && < 2

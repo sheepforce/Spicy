@@ -122,7 +122,6 @@ library
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
@@ -171,7 +170,6 @@ executable spicy
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
@@ -217,7 +215,6 @@ test-suite unittests
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.3
     , tasty-golden >=2.3.1 && <2.4
     , tasty-hunit >=0.10.0.2 && <0.11
@@ -289,7 +286,6 @@ benchmark bench
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
