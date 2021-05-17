@@ -13,7 +13,6 @@ model:
         basisSet: def2-tzvp
     charge: 0
     mult: 1
-    templateFile: goldentests/input/calculations/wrapper/Psi4/Ethanal/Template.psi
     execution:
       nProcesses: 1
       nThreads: 8

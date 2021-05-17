@@ -9,7 +9,6 @@ model:
     program: psi4
     charge: 0
     mult: 1
-    templateFile: goldentests/input/calculations/wrapper/Pysisyphus/Ethanal/Template.psi
     execution:
       nProcesses: 1
       nThreads: 8
