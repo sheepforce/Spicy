@@ -121,7 +121,8 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
             memory = tl ^. #execution % #memory,
             qMMMSpec = QM QMContext {charge = tl ^. #charge, mult = tl ^. #mult},
             embedding = tl ^. #embedding,
-            optimisation = opt & #pysisyphus .~ pysis
+            optimisation = opt & #pysisyphus .~ pysis,
+            additionalInput = tl ^. #additionalInput
           }
       calcInherited = case calcInheritOld of
         Nothing -> Nothing

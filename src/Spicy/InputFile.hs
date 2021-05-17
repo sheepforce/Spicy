@@ -271,7 +271,10 @@ data TheoryLayer = TheoryLayer
     -- | Defines the embedding type for the current layer.
     embedding :: Embedding,
     -- | Settings for the optimiser on a given layer.
-    optimisation :: Maybe Opt
+    optimisation :: Maybe Opt,
+    -- | Additional, arbitrary input string to be inserted into
+    --   the input file. Optional.
+    additionalInput :: Maybe Text
   }
   deriving (Eq, Show, Generic)
 

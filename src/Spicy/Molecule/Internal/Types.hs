@@ -1330,7 +1330,8 @@ data CalcInput = CalcInput
     embedding :: !Embedding,
     -- | Settings for geometry optimisations on this layer. Always given and if not specified in the
     -- input defaulting.
-    optimisation :: !Optimisation
+    optimisation :: !Optimisation,
+    additionalInput :: !(Maybe Text)
   }
   deriving (Generic)
 
