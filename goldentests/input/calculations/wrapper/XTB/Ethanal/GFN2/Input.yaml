@@ -24,6 +24,5 @@ model:
       target: min
       coords: cart
       iterations: 27
-    additionalInput: Hello, testing!
 task:
 - optimise_macro

@@ -76,6 +76,7 @@ class MonadThrow m => MonadInput m where
   getPrefix :: m String
   getPermaDir :: m JDirPathAbs
   getTask :: m WrapperTask
+  getAdditionalInput :: m (Maybe Text)
 
 -- This instance expects the /current/ molecule layer, that is,
 -- the one for which the input will be prepared.
@@ -91,6 +92,7 @@ instance MonadThrow m => MonadInput (ReaderT (Molecule, CalcInput) m) where
   getPrefix = gget (_2 % #prefixName) "Prefix"
   getPermaDir = gget (_2 % #permaDir) "PermaDir"
   getTask = gget (_2 % #task) "Tasks"
+  getAdditionalInput = gget (_2 % #additionalInput) "AdditionalInput"
 
 -- | General getting action.
 gget ::
@@ -122,24 +124,33 @@ data XTBInputF a
     XTBMethod GFN a
   | -- | Multipole representation
     XTBMultipoleInput Text a
+    -- | User-specified Text
+  | XTBArbitrary Text a
   deriving (Functor)
 
 -- | This function embodies the /logical/ structure of the input file,
 -- and produces a /data/ representation of said file.
 xtbInput :: (MonadInput m) => m XTBInput
 xtbInput = do
+  -- Get input information
   chrg <- getCharge
   mult <- getMult
   let nopen = mult - 1
   mthd <- getMethod
   (JDirPathAbs perma) <- getPermaDir
   prefix <- getPrefix
+  arb <- getAdditionalInput
+
+  -- Build input representation
   return $ do
     liftF $ XTBCharge chrg ()
     liftF $ XTBNOpen nopen ()
     liftF $ XTBMethod mthd ()
     let pth = path2Text $ perma </> path prefix <.> ".pc"
     liftF $ XTBMultipoleInput pth ()
+    case arb of
+      Nothing -> return ()
+      Just t -> liftF $ XTBArbitrary t ()
 
 -- | This function specifies how to serialize the information contained in the
 -- abstract input representation
@@ -155,6 +166,9 @@ serialiseXTB (XTBMethod gfn a) = do
   return a
 serialiseXTB (XTBMultipoleInput t a) = do
   tell $ "$embedding\n input=" <> t <> "\n"
+  return a
+serialiseXTB (XTBArbitrary t a) = do
+  tell $ t <> "\n"
   return a
 
 ----------------------------------------------------------------------------------------------------
@@ -178,6 +192,8 @@ data Psi4InputF a
     Psi4Hessian Text a
   | -- | Multiple representation
     Psi4Multipoles Text a
+    -- | User-specified Text
+  | Psi4Arbitrary Text a
   deriving (Functor)
 
 psi4Input :: (MonadInput m) => m Psi4Input
@@ -193,6 +209,7 @@ psi4Input = do
   prefix <- getPrefix
   task <- getTask
   multipoleRep <- psi4MultipoleRep mol
+  arb <- getAdditionalInput
 
   -- Form the monadic input construct
   return $ do
@@ -203,6 +220,9 @@ psi4Input = do
     (o, wfn) <- defaultDefine task calcType
     liftF $ Psi4FCHK wfn prefix ()
     when (task == WTHessian) . liftF $ Psi4Hessian o ()
+    case arb of
+      Nothing -> return ()
+      Just t -> liftF $ Psi4Arbitrary t ()
   where
     defaultDefine tsk mthd =
       let (o, wfn) = ("o", "wfn")
@@ -230,13 +250,16 @@ serialisePsi4 (Psi4Define o wfn mthd task a) = do
   tell $ o <> ", " <> wfn <> " = " <> tskStr <> "(" <> mthd <> ", return_wfn = True)\n"
   return a
 serialisePsi4 (Psi4FCHK wfn prefix a) = do
-  tell $ "fchk(" <> wfn <> ", \"" <> RText.pack prefix <> ".fchk\" )\n"
+  tell $ "fchk( " <> wfn <> ", \"" <> RText.pack prefix <> ".fchk\" )\n"
   return a
 serialisePsi4 (Psi4Hessian o a) = do
   tell $ "np.array(" <> o <> ")\n"
   return a
 serialisePsi4 (Psi4Multipoles multipoles a) = do
   tell $ multipoles <> "\n"
+  return a
+serialisePsi4 (Psi4Arbitrary t a) = do
+  tell $ t <> "\n"
   return a
 
 ----------------------------------------------------------------------------------------------------
