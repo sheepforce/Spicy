@@ -32,8 +32,7 @@ import Spicy.Formats.FChk
 import Spicy.Logger
 import Spicy.Molecule
 import Spicy.RuntimeEnv
-import Spicy.Wrapper.Internal.Input.Templates
-import Spicy.Wrapper.Internal.Input.XTB
+import Spicy.Wrapper.Internal.Input.IO
 import Spicy.Wrapper.Internal.Output.GDMA
 import Spicy.Wrapper.Internal.Output.Generic
 import Spicy.Wrapper.Internal.Output.XTB
@@ -75,38 +74,28 @@ runCalculation calcID = do
   -- Gather the information for this calculation.
   molT <- view moleculeL
   mol <- atomically . readTVar $ molT
-  (calcContext, thisMol) <- maybe2MThrow (localExc "Requested to perform a cauclation, which does not exist") $ getCalcByID mol calcID
+  (calcContext, _) <- maybe2MThrow (localExc "Requested to perform a calculation, which does not exist") $ getCalcByID mol calcID
   unless (isNothing $ calcContext ^. #output) . throwM . localExc $ "Requested to perform a calculation, which has already been performed."
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
-      inputFilePrefix = Path.relFile . replaceProblematicChars $ calcContext ^. #input % #prefixName
-      inputFileName = inputFilePrefix <.> ".inp"
-      inputFilePath = permanentDir </> inputFileName
       software = calcContext ^. #input % #software
 
   -- Create permanent and scratch directory
   liftIO $ Dir.createDirectoryIfMissing True permanentDir
   liftIO $ Dir.createDirectoryIfMissing True scratchDir
 
-  -- Write the input file for the calculation to its permanent directory.
-  wrapperInputFile <- runReaderT makeInput (thisMol, calcContext ^. #input)
-  writeFileUTF8 (Path.toAbsRel inputFilePath) wrapperInputFile
-
   -- Execute the wrapper on the input file.
   case software of
-    Psi4 _ -> executePsi4 calcID inputFilePath
+    Psi4 _ -> executePsi4 calcID
     Nwchem -> undefined
-    XTB _ -> executeXTB calcID inputFilePath
+    XTB _ -> executeXTB calcID
 
   -- Parse the output, that has been produced by the wrapper.
   calcOutput <- case software of
     Psi4 _ -> analysePsi4 calcID
     Nwchem -> undefined
     XTB _ -> analyseXTB calcID
-
-  -- Print logging information about the output obtained.
-  -- mapM_ logInfo . hShow $ calcOutput
 
   -- Insert the output, that has been obtained for this calculation into the corresponding CalcID.
   let molUpdated = mol & calcLens % #output ?~ calcOutput
@@ -125,21 +114,19 @@ runCalculation calcID = do
 -- are not responsible for processing of the output.
 
 -- |
--- Run Psi4 on a given input file. A Psi4 run will behave as follows:
+-- Run Psi4 on a given calculation. A Psi4 run will behave as follows:
 --
 -- - All permanent files will be in the 'calcInput_PermaDir'.
 -- - The 'calcInput_ScratchDir' will be used for scratch files and keep temporary files after
 --   execution.
 -- - All files will be prefixed with the 'calcInput_PrefixName'.
--- - The output will be kept for
+-- - The output will be kept for analysis.
 executePsi4 ::
   (HasWrapperConfigs env, HasMolecule env, HasLogFunc env, HasProcessContext env) =>
   -- | ID of the calculation to perform.
   CalcID ->
-  -- | Path to the input file of Psi4.
-  Path.AbsFile ->
   RIO env ()
-executePsi4 calcID inputFilePath = do
+executePsi4 calcID = do
   -- Obtain the Psi4 wrapper.
   psi4Wrapper <-
     view (wrapperConfigsL % #psi4) >>= \wrapper -> case wrapper of
@@ -163,10 +150,9 @@ executePsi4 calcID inputFilePath = do
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
       software = calcContext ^. #input % #software
-      outputFilePath = Path.replaceExtension inputFilePath ".out"
 
   -- Check if this function is appropiate to execute the calculation at all.
-  unless (isPsi4 software) $ do
+  unless (software & isPsi4) $ do
     logError
       "A calculation should be done with the Psi4 driver function,\
       \ but the calculation is not a Psi4 calculation."
@@ -177,6 +163,10 @@ executePsi4 calcID inputFilePath = do
             <> show calcID
             <> "but this is not a Psi4 calculation."
         )
+
+  -- Write the Psi4 input.
+  inputFilePath <- writeInputs calcID
+  let outputFilePath = Path.replaceExtension inputFilePath ".out"
 
   -- Prepare the command line arguments to Psi4.
   let psi4CmdArgs =
@@ -206,20 +196,16 @@ executePsi4 calcID inputFilePath = do
     logError $ "Psi4 stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
 
--- | Run a given xtb calculation on an input file.
+-- | Run a given XTB calculation. This function will write its own input files.
 --
 -- Unlike other software, xtb does not seem to support the use of a dedicated
 -- scratch directory. Hence, all files are kept in the permanent directory.
--- This function also takes care of writing additional input files for
--- the geometry and embedding.
 executeXTB ::
   (HasWrapperConfigs env, HasMolecule env, HasLogFunc env, HasProcessContext env) =>
   -- | ID of the calculation to perform.
   CalcID ->
-  -- | Path to the input file of XTB.
-  Path.AbsFile ->
   RIO env ()
-executeXTB calcID inputFilePath = do
+executeXTB calcID = do
   -- Obtain the XTB wrapper.
   xtbWrapper <-
     view (wrapperConfigsL % #xtb) >>= \wrapper -> case wrapper of
@@ -232,23 +218,15 @@ executeXTB calcID inputFilePath = do
   -- Gather information for the execution of XTB
   mol <- view moleculeL >>= atomically . readTVar
 
-  -- The layer to be calculated
-  let thisID = calcID ^. #molID
-  thisMol <- getMolByID mol thisID
-
   calcContext <-
     maybe2MThrow
       (MolLogicException "runCalculation" "Requested to perform a calculation which does not exist.")
       (mol ^? calcLens)
 
-  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
-      --scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
-      thisSoftware = calcContext ^. #input % #software
-      geomFilePath = Path.replaceExtension inputFilePath ".xyz"
-      pcFile = xtbMultipoleFilename calcContext
+  let thisSoftware = calcContext ^. #input % #software
 
   -- Check if this function is appropiate to execute the calculation at all.
-  unless (isXTB thisSoftware) $ do
+  unless (thisSoftware & isXTB) $ do
     logError
       "A calculation should be done with the XTB driver function,\
       \ but the calculation is not a XTB calculation."
@@ -260,16 +238,9 @@ executeXTB calcID inputFilePath = do
             <> "but this is not a XTB calculation."
         )
 
-  -- Write the .xyz coordinate input file
-  logDebug "Writing .xyz file..."
-  let realMol = isolateMoleculeLayer thisMol
-  xyzInput <- writeXYZ realMol
-  writeFileUTF8 (Path.toAbsRel geomFilePath) xyzInput
-
-  -- Write the .pc point charge (embedding) file
-  logDebug "Writing .pc file..."
-  pcInput <- xtbMultipoleRepresentation thisMol
-  writeFileUTF8 (Path.toAbsRel pcFile) pcInput
+  -- Write the input files for XTB
+  inputFilePath <- writeInputs calcID
+  let geomFilePath = Path.replaceExtension inputFilePath ".xyz"
 
   -- Prepare the command line arguments to XTB.
   let cmdTask = case calcContext ^. #input % #task of
@@ -285,12 +256,12 @@ executeXTB calcID inputFilePath = do
           --"--parallel " <> show (calcContext ^. #input % #nProc),
         ]
 
-  let nThreads = calcContext ^. #input % #nThreads
-
   -- Debug logging before execution of XTB.
   logDebug $ "Starting XTB with command line arguments: " <> displayShow xtbCmdArgs
 
   -- Launch the XTB process and read its stdout and stderr.
+  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+  let nThreads = calcContext ^. #input % #nThreads
   (exitCode, xtbOut, xtbErr) <-
     withModifyEnvVars (Map.insert "OMP_NUM_THREADS" (tShow nThreads <> ",1"))
       . withWorkingDir (Path.toString permanentDir)

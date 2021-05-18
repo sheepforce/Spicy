@@ -62,8 +62,8 @@ library
       Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
       Spicy.Wrapper.Internal.Generic
+      Spicy.Wrapper.Internal.Input.Representation
       Spicy.Wrapper.Internal.Input.Templates
-      Spicy.Wrapper.Internal.Input.XTB
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
