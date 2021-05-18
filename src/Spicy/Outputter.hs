@@ -7,13 +7,24 @@
 -- Stability   : experimental
 -- Portability : POSIX, Windows
 module Spicy.Outputter
-  ( HasOutputter (..),
+  (
+    -- * Settings
+    HasOutputter (..),
     Outputter (..),
     Verbosity (..),
     PrintVerbosity (..),
     PrintEvent (..),
     MotionEvent (..),
     StartEnd (..),
+
+    -- * Logging Facilities
+    loggingThread,
+    printSpicy,
+
+    -- * Log Generators
+    SpicyLog,
+    spicyLog,
+    spicyLogMol
   )
 where
 
@@ -29,7 +40,9 @@ import Optics hiding (view)
 import RIO hiding (Lens, Lens', Vector, lens, view, (%~), (.~), (^.), (^?))
 import qualified RIO.HashMap as HashMap
 import qualified RIO.HashSet as HashSet
+import qualified RIO.Partial as RIO'
 import qualified RIO.Seq as Seq
+import qualified RIO.Text as Text
 import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
@@ -162,6 +175,7 @@ defPrintVerbosity v = case v of
         oniomH = f [Task End],
         oniomC = mempty,
         oniomT = mempty,
+        oniomMP = mempty,
         layerE = mempty,
         layerG = mempty,
         layerH = mempty,
@@ -178,6 +192,7 @@ defPrintVerbosity v = case v of
         oniomH = f [Task End],
         oniomC = f [Spicy Start, Spicy End],
         oniomT = f [Spicy Start],
+        oniomMP = mempty,
         layerE = mempty,
         layerG = mempty,
         layerH = mempty,
@@ -194,6 +209,7 @@ defPrintVerbosity v = case v of
         oniomH = f [Always],
         oniomC = f [Spicy Start, Spicy End],
         oniomT = f [Spicy Start],
+        oniomMP = f [Spicy End],
         layerE = f [Motion Micro],
         layerG = f [Motion Micro],
         layerH = mempty,
@@ -210,6 +226,7 @@ defPrintVerbosity v = case v of
         oniomH = f [Always],
         oniomC = f [Always],
         oniomT = f [Spicy Start],
+        oniomMP = f [Motion Macro],
         layerE = f [Motion Micro],
         layerG = f [Motion Micro],
         layerH = f [FullTraversal],
@@ -264,6 +281,12 @@ loggingThread = do
     msg <- atomically . readTBQueue $ q
     appendFileUtf8 f msg
 
+-- | Log function for arbitrary content in Spicy. Meant to be the content of the output file.
+printSpicy :: (HasOutputter env) => Utf8Builder -> RIO env ()
+printSpicy t = do
+  q <- view $ outputterL % #outChan
+  atomically . writeTBQueue q $ t
+
 {-
 ====================================================================================================
 -}
@@ -302,31 +325,103 @@ nf = left ew ' ' F.%. fixed (ew - 8)
 nAv :: IsString a => a
 nAv = "(Not Available)"
 
+-- | Wether to print full ONIOM tree properties or per layer properties.
+data PrintTarget = ONIOM | Layer MolID
+
+-- | Conversion of a molecular ID into the human readable version.
+molID2OniomHumandID :: MolID -> Text
+molID2OniomHumandID Seq.Empty = "0"
+molID2OniomHumandID molID =
+  let depth = Seq.length molID
+      idTree =
+        foldr'
+          ( \currentID textAcc ->
+              let offSet = fromEnum 'A'
+                  idLetter = RIO'.toEnum $ currentID + offSet
+               in textAcc `Text.snoc` idLetter
+          )
+          (tShow depth)
+          molID
+   in Text.pack . show $ idTree
+
 -- | Printer for a molecule energy.
-printEnergy :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-printEnergy = do
-  me <- view $ moleculeDirectL % #energyDerivatives % #energy
-  case me of
-    Nothing -> tell $ bformat (builder F.% builder) header nAv
-    Just e -> tell $ bformat (builder F.% nf) header e
+printEnergy ::
+  (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) =>
+  PrintTarget ->
+  m ()
+printEnergy pt = case pt of
+  ONIOM -> do
+    me <- view $ moleculeDirectL % #energyDerivatives % #energy
+    case me of
+      Nothing -> tell $ oHeader <> nAv
+      Just e -> tell $ bformat (builder F.% nf) oHeader e
+  Layer i -> do
+    mol <- view moleculeDirectL
+    let mes :: Maybe (Double, Double, Double) = do
+          layer <- mol ^? molIDLensGen i
+          e <- layer ^. #energyDerivatives % #energy
+          el <- layer ^? #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #energy % _Just
+          eh <- layer ^? #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #energy % _Just
+          return (e, el, eh)
+    case mes of
+      Nothing -> tell $ lHeader i <> nAv
+      Just (e, el, eh) ->
+        tell $
+          lHeader i
+            <> bformat ("  ONIOM SubTree -> " F.% nf F.% "\n") e
+            <> bformat ("  High Level    -> " F.% nf F.% "\n") eh
+            <> bformat ("  Low Level     -> " F.% nf F.% "\n") el
   where
-    header =
+    oHeader =
       "@ Energy (ONIOM) / Hartree\n\
       \--------------------------\n"
+    lHeader i =
+      let txt = "@ Energy (Layer " <> molID2OniomHumandID i <> " ) / Hartree"
+          line = Text.replicate (Text.length txt) "-"
+       in TB.fromText . Text.unlines $ [txt, line]
 
 -- | Printer for the ONIOM gradient of the full tree.
-printGradient :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-printGradient = do
-  msg <- view $ moleculeDirectL % #energyDerivatives % #gradient
-  atoms <- view $ moleculeDirectL % #atoms
-  let mg = atomGradAssoc atoms . getVectorS =<< msg
-  case mg of
-    Nothing -> tell $ header <> nAv
-    Just g -> tell $ header <> tableHeader <> tableContent g
+printGradient ::
+  (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) =>
+  PrintTarget ->
+  m ()
+printGradient pt = case pt of
+  ONIOM -> do
+    msg <- view $ moleculeDirectL % #energyDerivatives % #gradient
+    atoms <- view $ moleculeDirectL % #atoms
+    let mg = atomGradAssoc atoms . getVectorS =<< msg
+    case mg of
+      Nothing -> tell $ oHeader <> nAv
+      Just g -> tell $ oHeader <> tableHeader <> tableContent g
+  Layer i -> do
+    mol <- view moleculeDirectL
+    let atoms = mol ^. #atoms
+        mgs = do
+          layer <- mol ^? molIDLensGen i
+          VectorS g <- layer ^. #energyDerivatives % #gradient
+          VectorS gl <- layer ^? #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #gradient % _Just
+          VectorS gh <- layer ^? #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #gradient % _Just
+          aG <- atomGradAssoc atoms g
+          aGL <- atomGradAssoc atoms gl
+          aGH <- atomGradAssoc atoms gh
+          return (aG, aGL, aGH)
+    case mgs of
+      Nothing -> tell $ lHeader i <> nAv
+      Just (g, gl, gh) -> do
+        tell $
+          lHeader i
+            <> ("ONIOM SubTree ->\n" <> tableHeader <> tableContent g)
+            <> ("High Level    ->\n" <> tableHeader <> tableContent gh)
+            <> ("Low Level     ->\n" <> tableHeader <> tableContent gl)
   where
-    header =
+    oHeader =
       "@ Gradient (ONIOM) / (Hartree / Angstrom)\n\
       \-----------------------------------------\n"
+
+    lHeader i =
+      let txt = "@ Gradient (Layer " <> molID2OniomHumandID i <> ") / (Hartree / Angstrom)"
+          line = Text.replicate (Text.length txt) "-"
+       in TB.fromText . Text.unlines $ [txt, line]
 
     -- Header for the table of gradients.
     tableHeader =
@@ -360,19 +455,45 @@ printGradient = do
             mempty
             agMap
 
--- | Printer for ONIOM Hessian of the full tree.
-printHessian :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-printHessian = do
-  msh <- view $ moleculeDirectL % #energyDerivatives % #hessian
-  atoms <- view $ moleculeDirectL % #atoms
-  let mh = getMatrixS <$> msh
-  case mh of
-    Nothing -> tell $ header <> nAv
-    Just h -> tell $ header <> fromMaybe mempty (tableContent atoms h)
+-- | Printer for Hessians.
+printHessian ::
+  (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) =>
+  PrintTarget ->
+  m ()
+printHessian pt = case pt of
+  ONIOM -> do
+    msh <- view $ moleculeDirectL % #energyDerivatives % #hessian
+    atoms <- view $ moleculeDirectL % #atoms
+    let mh = getMatrixS <$> msh
+    case mh of
+      Nothing -> tell $ oHeader <> nAv
+      Just h -> tell $ oHeader <> fromMaybe mempty (tableContent atoms h)
+  Layer i -> do
+    mol <- view moleculeDirectL
+    let atoms = mol ^. #atoms
+        mhs = do
+          layer <- mol ^? molIDLensGen i
+          MatrixS h <- layer ^. #energyDerivatives % #hessian
+          MatrixS hl <- layer ^? #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #hessian % _Just
+          MatrixS hh <- layer ^? #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #hessian % _Just
+          return (h, hl, hh)
+    case mhs of
+      Nothing -> tell $ lHeader i <> nAv
+      Just (h, hl, hh) ->
+        tell $
+          lHeader i
+            <> ("ONIOM SubTree ->\n" <> fromMaybe mempty (tableContent atoms h))
+            <> ("High Level    ->\n" <> fromMaybe mempty (tableContent atoms hh))
+            <> ("Low Level     ->\n" <> fromMaybe mempty (tableContent atoms hl))
   where
-    header =
+    oHeader =
       "@ Hessian (ONIOM) / (Hartree / Angstrom^2)\n\
       \------------------------------------------\n"
+
+    lHeader i =
+      let txt = "@ Hessian (Layer " <> molID2OniomHumandID i <> ") / (Hartree / Angstrom^2)"
+          line = Text.replicate (Text.length txt) "-"
+       in TB.fromText . Text.unlines $ [txt, line]
 
     -- Atom and cartesian components to print as left column and as chunks as header row.
     cmpnts :: IntMap Atom -> Vector B TB.Builder
@@ -417,14 +538,27 @@ printHessian = do
         cmpntGroups = innerChunksOfN @B 3 leftCmpntArr
 
 -- | Coordinate printer.
-printCoords :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-printCoords = do
-  atoms <- view $ moleculeDirectL % #atoms
-  tell $ header <> table atoms
+printCoords ::
+  (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) =>
+  PrintTarget ->
+  m ()
+printCoords pt = case pt of
+  ONIOM -> do
+    atoms <- view $ moleculeDirectL % #atoms
+    tell $ oHeader <> table atoms
+  Layer i -> do
+    mol <- view moleculeDirectL
+    let mAtoms = mol ^? molIDLensGen i % #atoms
+    tell $ lHeader i <> fromMaybe mempty (table <$> mAtoms)
   where
-    header =
-      "@ Coordinates / Angstrom\n\
+    oHeader =
+      "@ Coordinates (ONIOM) / Angstrom\n\
       \------------------------\n"
+
+    lHeader i =
+      let txt = "@ Coordinates (Layer " <> molID2OniomHumandID i <> ") / Angstrom"
+          line = Text.replicate (Text.length txt) "-"
+       in TB.fromText . Text.unlines $ [txt, line]
 
     tableHeader =
       let hf = center ew ' ' F.%. builder
@@ -449,14 +583,27 @@ printCoords = do
             atoms
 
 -- | Print the bond matrix / topology.
-printTopology :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-printTopology = do
-  bondMat <- view $ moleculeDirectL % #bonds
-  tell $ header <> table bondMat
+printTopology ::
+  (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) =>
+  PrintTarget ->
+  m ()
+printTopology pt = case pt of
+  ONIOM -> do
+    bondMat <- view $ moleculeDirectL % #bonds
+    tell $ oHeader <> table bondMat
+  Layer i -> do
+    mol <- view moleculeDirectL
+    let mBondMat = mol ^? molIDLensGen i % #bonds
+    tell $ lHeader i <> fromMaybe mempty (table <$> mBondMat)
   where
-    header =
-      "@ Bond Topology\n\
-      \---------------\n"
+    oHeader =
+      "@ Bond Topology (ONIOM)\n\
+      \-----------------------\n"
+
+    lHeader i =
+      let txt = "@ Bond Topology (Layer" <> molID2OniomHumandID i <> ")"
+          line = Text.replicate (Text.length txt) "-"
+       in TB.fromText . Text.unlines $ [txt, line]
 
     table bondMat =
       HashMap.foldlWithKey'
@@ -472,14 +619,27 @@ printTopology = do
         tF = right 8 ' ' F.%. int
 
 -- | Multipole printer for a given layer. Prints up to quadrupoles.
-printMultipoles :: (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) => m ()
-printMultipoles = do
-  atoms <- view $ moleculeDirectL % #atoms
-  tell $ header <> content atoms
+printMultipoles ::
+  (HasDirectMolecule env, MonadReader env m, MonadWriter TB.Builder m) =>
+  PrintTarget ->
+  m ()
+printMultipoles pt = case pt of
+  ONIOM -> do
+    atoms <- view $ moleculeDirectL % #atoms
+    tell $ oHeader <> content atoms
+  Layer i -> do
+    mol <- view moleculeDirectL
+    let mAtoms = mol ^? molIDLensGen i % #atoms
+    tell $ lHeader i <> fromMaybe mempty (content <$> mAtoms)
   where
-    header =
+    oHeader =
       "@ Multipoles (ONIOM) / ea_0^k for rank k\n\
       \----------------------------------------\n"
+
+    lHeader i =
+      let txt = "@ Multipoles (Layer " <> molID2OniomHumandID i <> ") / ea_0^k for rank k"
+          line = Text.replicate (Text.length txt) "-"
+       in TB.fromText . Text.unlines $ [txt, line]
 
     content atoms = foldl' (\acc a -> acc <> atomPrinter a) mempty atoms
 
@@ -534,26 +694,36 @@ printMultipoles = do
             sub
             num
 
--- | Log string constructor monad for molecular information.
-spicyMolLog ::
+-- | Log string constructor monad for molecular information on full ONIOM trees.
+spicyLogMol ::
   ( HasDirectMolecule env,
     HasPrintVerbosity env
   ) =>
   HashSet PrintEvent ->
+  Maybe MolID ->
   SpicyLog env
-spicyMolLog pe = do
+spicyLogMol pe mi = do
   pv <- view printVerbosityL
 
-  -- Top level printers
-  when (doLog pv #oniomE) printEnergy
-  when (doLog pv #oniomG) printGradient
-  when (doLog pv #oniomH) printHessian
-  when (doLog pv #oniomC) printCoords
-  when (doLog pv #oniomT) printTopology
-  when (doLog pv #oniomMP) printMultipoles
-  where
-    -- Layer printers
+  -- Full ONIOM tree writers
+  when (doLog pv #oniomE) $ printEnergy ONIOM
+  when (doLog pv #oniomG) $ printGradient ONIOM
+  when (doLog pv #oniomH) $ printHessian ONIOM
+  when (doLog pv #oniomC) $ printCoords ONIOM
+  when (doLog pv #oniomT) $ printTopology ONIOM
+  when (doLog pv #oniomMP) $ printMultipoles ONIOM
 
+  -- Layer writers
+  case mi of
+    Nothing -> return ()
+    Just i -> do
+      when (doLog pv #layerE) $ printEnergy (Layer i)
+      when (doLog pv #layerG) $ printGradient (Layer i)
+      when (doLog pv #layerH) $ printHessian (Layer i)
+      when (doLog pv #layerC) $ printCoords (Layer i)
+      when (doLog pv #layerT) $ printTopology (Layer i)
+      when (doLog pv #layerMP) $ printMultipoles (Layer i)
+  where
     doLog :: PrintVerbosity HashSet -> Lens' (PrintVerbosity HashSet) (HashSet PrintEvent) -> Bool
     doLog pv l =
       let pvt = pv ^. l
