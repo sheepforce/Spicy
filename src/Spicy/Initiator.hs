@@ -35,6 +35,7 @@ import Spicy.Common
 import Spicy.InputFile
 import Spicy.JobDriver
 import Spicy.Molecule
+import Spicy.Outputter hiding (Motion)
 import Spicy.RuntimeEnv
 import System.Console.CmdArgs hiding (def)
 import System.Environment
@@ -132,6 +133,19 @@ inputToEnvAndRun = do
   scratchExists <- liftIO . Dir.doesDirectoryExist $ scratchDirAbs
   when scratchExists . liftIO . Dir.removeDirectoryRecursive $ scratchDirAbs
 
+  -- Initialise the outputter thread.
+  outQ <- newTBQueueIO 100
+  let outfile = fromMaybe (Path.file "spicy.out") (Path.file <$> inputArgs ^. #logfile)
+      printVerb = defPrintVerbosity High
+      outputter =
+        Outputter
+          { outChan = outQ,
+            outFile = outfile,
+            printVerbosity = printVerb
+          }
+  logThread <- async $ runReaderT loggingThread outputter
+  link logThread
+
   -- Construct the LogFunction and return the runtime environment
   logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
   let logOptions = setLogUseTime True logOptions'
@@ -144,7 +158,8 @@ inputToEnvAndRun = do
               motion = motionT,
               procCntxt = procCntxt',
               logFunc = lf,
-              calcSlot = calcSlot
+              calcSlot = calcSlot,
+              outputter = outputter
             }
 
     -- The spicy main thread.

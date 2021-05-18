@@ -13,6 +13,7 @@ module Spicy.Outputter
     Outputter (..),
     Verbosity (..),
     PrintVerbosity (..),
+    defPrintVerbosity,
     PrintEvent (..),
     MotionEvent (..),
     StartEnd (..),
@@ -273,7 +274,7 @@ data StartEnd
 
 -- | A simple logging thread, that listens on a message queue forever. All messages from the message
 -- queue are written to an output file.
-loggingThread :: (HasOutputter env) => RIO env ()
+loggingThread :: (HasOutputter env, MonadReader env m, MonadIO m) => m ()
 loggingThread = do
   q <- view $ outputterL % #outChan
   f <- view $ outputterL % #outFile
