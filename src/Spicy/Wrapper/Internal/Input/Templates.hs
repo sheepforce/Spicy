@@ -11,6 +11,7 @@
 -- quantum chemistry programs.
 module Spicy.Wrapper.Internal.Input.Templates
   ( makeInput,
+    xtbMultPath
   )
 where
 
@@ -29,9 +30,6 @@ inspect it for correctness, modify it after construction, etc.
 -}
 
 import Control.Monad.Free
-import qualified Data.Massiv.Array as Massiv
-import qualified Data.Text.Lazy as Text
-import qualified Data.Text.Lazy.Builder as Builder
 import Optics
 import RIO hiding (Lens', lens, view, (^.), (^?))
 import qualified RIO.Text as RText
@@ -39,8 +37,9 @@ import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
 import Spicy.Molecule.Internal.Types
-import System.IO.Unsafe
-import System.Path
+import Spicy.Wrapper.Internal.Input.Representation
+import System.Path ((</>), (<.>))
+import qualified System.Path as Path
 
 makeInput :: (MonadInput m) => m Text
 makeInput = do
@@ -124,8 +123,8 @@ data XTBInputF a
     XTBMethod GFN a
   | -- | Multipole representation
     XTBMultipoleInput Text a
-    -- | User-specified Text
-  | XTBArbitrary Text a
+  | -- | User-specified Text
+    XTBArbitrary Text a
   deriving (Functor)
 
 -- | This function embodies the /logical/ structure of the input file,
@@ -146,7 +145,7 @@ xtbInput = do
     liftF $ XTBCharge chrg ()
     liftF $ XTBNOpen nopen ()
     liftF $ XTBMethod mthd ()
-    let pth = path2Text $ perma </> path prefix <.> ".pc"
+    let pth = path2Text $ xtbMultPath perma (Path.path prefix)
     liftF $ XTBMultipoleInput pth ()
     case arb of
       Nothing -> return ()
@@ -171,6 +170,9 @@ serialiseXTB (XTBArbitrary t a) = do
   tell $ t <> "\n"
   return a
 
+xtbMultPath :: Path.AbsDir -> Path.RelFile -> Path.AbsFile
+xtbMultPath perma prefix = perma </> prefix <.> ".pc"
+
 ----------------------------------------------------------------------------------------------------
 
 -- The Psi4 input specification
@@ -192,8 +194,8 @@ data Psi4InputF a
     Psi4Hessian Text a
   | -- | Multiple representation
     Psi4Multipoles Text a
-    -- | User-specified Text
-  | Psi4Arbitrary Text a
+  | -- | User-specified Text
+    Psi4Arbitrary Text a
   deriving (Functor)
 
 psi4Input :: (MonadInput m) => m Psi4Input
@@ -261,61 +263,3 @@ serialisePsi4 (Psi4Multipoles multipoles a) = do
 serialisePsi4 (Psi4Arbitrary t a) = do
   tell $ t <> "\n"
   return a
-
-----------------------------------------------------------------------------------------------------
-
--- Various utility functions, to be moved to a separate module later
-
--- | Make a simple coordinate representation of the current Molecule layer.
--- This function takes care to remove all dummy atoms.
-simpleCartesianAngstrom :: MonadThrow m => Molecule -> m Text
-simpleCartesianAngstrom mol = RText.unlines . drop 2 . RText.lines <$> writeXYZ (isolateMoleculeLayer mol)
-
--- | Generate the multipole representation accepted by XTB. Must be in its own file.
-xtbMultipoleRep ::
-  (MonadThrow m) =>
-  -- | The __current__ 'Molecule' layer for which to perform the calculation. The multipoles must
-  -- therefore already be present and multipole centres must be marked as Dummy atoms.
-  Molecule ->
-  m Text
-xtbMultipoleRep mol = do
-  let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
-      toText vec =
-        let q = Builder.fromText . tShow $ vec Massiv.! 3
-            x = Builder.fromText . tShow $ vec Massiv.! 0
-            y = Builder.fromText . tShow $ vec Massiv.! 1
-            z = Builder.fromText . tShow $ vec Massiv.! 2
-         in q <> " " <> x <> " " <> y <> " " <> z <> " 99\n"
-      chargeLines = Massiv.foldMono toText pointChargeVecs
-      countLine = (Builder.fromText . tShow . length $ pointChargeVecs) <> "\n"
-      xtbBuilder = countLine <> chargeLines
-  return . Text.toStrict . Builder.toLazyText $ xtbBuilder
-
--- | Generates the multipole representation for Psi4.
-psi4MultipoleRep ::
-  (MonadThrow m) =>
-  -- | The __current__ 'Molecule' layer for which to perform the calculation. The multipoles must
-  -- therefore already be present and multipole centres must be marked as Dummy atoms.
-  Molecule ->
-  m Text
-psi4MultipoleRep mol = do
-  let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
-      toText vec =
-        let q = Builder.fromText . tShow $ vec Massiv.! 3
-            x = Builder.fromText . tShow $ vec Massiv.! 0
-            y = Builder.fromText . tShow $ vec Massiv.! 1
-            z = Builder.fromText . tShow $ vec Massiv.! 2
-         in "Chrgfield.extern.addCharge(" <> q <> ", " <> x <> ", " <> y <> ", " <> z <> ")\n"
-      chargeLines = Massiv.foldMono toText pointChargeVecs
-      settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
-      psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
-  return . Text.toStrict . Builder.toLazyText $ psi4Builder
-
--- | A \"pure\" version of the "molToPointCharges" function. Morally, this is true,
--- as the function performs no side effects and is entirely deterministic.
--- The MonadIO constraint comes from the use of a parallel fold, which could
--- in general produce non-deterministic results, however, both folding
--- and chunk folding function are both commutative and associative, rendering
--- this moot.
-unsafeMolToPointCharges :: Molecule -> Massiv.Matrix Massiv.S Double
-unsafeMolToPointCharges = unsafePerformIO . molToPointCharges
