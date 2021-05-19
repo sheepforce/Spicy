@@ -136,7 +136,7 @@ inputToEnvAndRun = do
   -- Initialise the outputter thread.
   outQ <- newTBQueueIO 100
   let outfile = fromMaybe (Path.file "spicy.out") (Path.file <$> inputArgs ^. #logfile)
-      printVerb = defPrintVerbosity High
+      printVerb = defPrintVerbosity . fromMaybe Medium $ inputFile ^. #printLevel
       outputter =
         Outputter
           { outChan = outQ,

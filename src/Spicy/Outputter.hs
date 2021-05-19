@@ -7,8 +7,7 @@
 -- Stability   : experimental
 -- Portability : POSIX, Windows
 module Spicy.Outputter
-  (
-    -- * Settings
+  ( -- * Settings
     HasOutputter (..),
     Outputter (..),
     Verbosity (..),
@@ -25,10 +24,11 @@ module Spicy.Outputter
     -- * Log Generators
     SpicyLog,
     spicyLog,
-    spicyLogMol
+    spicyLogMol,
   )
 where
 
+import Data.Aeson
 import Data.Default
 import Data.Foldable
 import qualified Data.IntMap as IntMap
@@ -80,7 +80,11 @@ data Verbosity
   | Medium
   | High
   | Debug
-  deriving (Eq, Ord)
+  deriving (Eq, Ord, Generic)
+
+instance ToJSON Verbosity
+
+instance FromJSON Verbosity
 
 -- | Environments, that provide print verbosity depending on the event.
 class HasPrintVerbosity env where

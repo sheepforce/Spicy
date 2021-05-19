@@ -34,6 +34,7 @@ import Spicy.Common
 import Spicy.InputFile hiding (MD, molecule)
 import Spicy.Molecule hiding (pysisyphus)
 import Spicy.Wrapper.IPI.Types
+import Spicy.Outputter
 
 ----------------------------------------------------------------------------------------------------
 
@@ -57,7 +58,9 @@ data SpicyEnv = SpicyEnv
     -- | A process context for RIO.
     procCntxt :: !ProcessContext,
     -- | The current calculation to be performed by the calculator thread.
-    calcSlot :: !CalcSlot
+    calcSlot :: !CalcSlot,
+    -- | Output file writer context.
+    outputter :: !Outputter
   }
   deriving (Generic)
 
@@ -83,6 +86,9 @@ instance (k ~ A_Lens, a ~ ProcessContext, b ~ a) => LabelOptic "procCntxt" k Spi
 instance (k ~ A_Lens, a ~ CalcSlot, b ~ a) => LabelOptic "calcSlot" k SpicyEnv SpicyEnv a b where
   labelOptic = lens calcSlot $ \s b -> s {calcSlot = b}
 
+instance (k ~ A_Lens, a ~ Outputter, b ~ a) => LabelOptic "outputter" k SpicyEnv SpicyEnv a b where
+  labelOptic = lens outputter $ \s b -> s {outputter = b}
+
 -- Reader Classes
 instance HasMotion SpicyEnv where
   motionL = #motion
@@ -104,6 +110,9 @@ instance HasProcessContext SpicyEnv where
 
 instance HasCalcSlot SpicyEnv where
   calcSlotL = #calcSlot
+
+instance HasOutputter SpicyEnv where
+  outputterL = #outputter
 
 ----------------------------------------------------------------------------------------------------
 
@@ -142,7 +151,7 @@ instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k W
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "xtb" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens xtb $ \s b -> s {xtb = b}
-  
+
 -- Reader Classes
 class HasWrapperConfigs env where
   wrapperConfigsL :: Lens' env WrapperConfigs

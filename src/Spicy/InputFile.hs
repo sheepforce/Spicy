@@ -31,6 +31,7 @@ import RIO hiding (Lens', lens)
 import Spicy.Aeson
 import Spicy.Common
 import Spicy.Molecule (CoordType, Embedding, HessianUpdate, Program)
+import Spicy.Outputter (Verbosity)
 
 -- | Definition of a complete calculation of arbitrary type.
 data InputFile = InputFile
@@ -50,7 +51,9 @@ data InputFile = InputFile
     --   software.
     scratch :: JDirPath,
     -- | Directory for permanent files.
-    permanent :: JDirPath
+    permanent :: JDirPath,
+    -- | A print level for the output file.
+    printLevel :: Maybe Verbosity
   }
   deriving (Eq, Show, Generic)
 
@@ -78,6 +81,9 @@ instance (k ~ A_Lens, a ~ JDirPath, b ~ a) => LabelOptic "scratch" k InputFile I
 
 instance (k ~ A_Lens, a ~ JDirPath, b ~ a) => LabelOptic "permanent" k InputFile InputFile a b where
   labelOptic = lens permanent $ \s b -> s {permanent = b}
+
+instance (k ~ A_Lens, a ~ Maybe Verbosity, b ~ a) => LabelOptic "printLevel" k InputFile InputFile a b where
+  labelOptic = lens printLevel $ \s b -> s {printLevel = b}
 
 -- Reader Class
 class HasInputFile env where
