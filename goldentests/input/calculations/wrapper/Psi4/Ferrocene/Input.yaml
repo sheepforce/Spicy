@@ -6,7 +6,8 @@ molecule:
 model:
   theoryLayer:
     name: BP86/def2-SVP
-    program: psi4
+    program:
+      tag: psi4
     charge: 0
     mult: 1
     templateFile: goldentests/input/calculations/wrapper/Psi4/Ferrocene/Template.psi
