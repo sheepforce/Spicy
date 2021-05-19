@@ -80,7 +80,7 @@ data Verbosity
   | Medium
   | High
   | Debug
-  deriving (Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, Generic)
 
 instance ToJSON Verbosity
 
