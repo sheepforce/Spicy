@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 -- |
 -- Module      : Spicy.JobDriver
 -- Description : Combination of steps to full ONIOM jobs
@@ -15,16 +13,14 @@ module Spicy.JobDriver
   )
 where
 
-import Data.FileEmbed
 import Data.List.Split
 import qualified Data.Map as Map
+import Data.Yaml.Pretty
 import Optics hiding (view)
-import RIO hiding
-  ( view,
-    (.~),
-    (^.),
-  )
+import RIO hiding (view, (.~), (^.))
+import RIO.ByteString (hPutStr)
 import qualified RIO.HashMap as HashMap
+import qualified RIO.HashSet as HashSet
 import RIO.Process
 import Spicy.Common
 import Spicy.Data
@@ -33,19 +29,12 @@ import Spicy.Molecule
 import Spicy.ONIOM.AtomicDriver
 import Spicy.ONIOM.Collector
 import Spicy.ONIOM.Layout
+import Spicy.Outputter hiding (Macro, Micro)
 import Spicy.RuntimeEnv
 import Spicy.Wrapper
-import qualified System.Path as Path
 
 logSource :: LogSource
 logSource = "JobDriver"
-
-----------------------------------------------------------------------------------------------------
-
--- | The Spicy Logo as ASCII art.
-jobDriverText :: Text
-jobDriverText =
-  decodeUtf8Lenient $(embedFile . Path.toString . Path.relFile $ "data/Fonts/JobDriver.txt")
 
 ----------------------------------------------------------------------------------------------------
 spicyExecMain ::
@@ -54,10 +43,27 @@ spicyExecMain ::
     HasLogFunc env,
     HasWrapperConfigs env,
     HasProcessContext env,
-    HasCalcSlot env
+    HasCalcSlot env,
+    HasOutputter env
   ) =>
   RIO env ()
 spicyExecMain = do
+  -- Starting the output log.
+  hPutStr stderr spicyLogoColour
+  inputFile <- view inputFileL
+  inputPrintEnv <- getCurrPrintEvn
+  printSpicy $
+    spicyLogo
+      <> ("Spicy Version " <> versionInfo <> "\n")
+      <> txtInput
+      <> sep
+      <> (displayBytesUtf8 . encodePretty defConfig $ inputFile)
+      <> sep
+      <> ( renderBuilder . spicyLog inputPrintEnv $ do
+             printCoords ONIOM
+             printTopology ONIOM
+         )
+
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
   link calcSlotThread
@@ -75,6 +81,16 @@ spicyExecMain = do
   logInfo "Preparing layout for a MC-ONIOMn calculation ..."
   layoutMoleculeForCalc
 
+  -- setupPhase printing. Show the layouted molecules and topologies in hierarchical order.
+  setupPrintEnv <- getCurrPrintEvn
+  let molIDHierarchy = getAllMolIDsHierarchically $ setupPrintEnv ^. #mol
+  printSpicy $
+    txtSetup
+      <> ( renderBuilder . spicyLog setupPrintEnv . forM_ molIDHierarchy $ \i -> do
+             printCoords (Layer i)
+             printTopology (Layer i)
+         )
+
   -- Perform the specified tasks on the input file.
   tasks <- view $ inputFileL % #task
   forM_ tasks $ \t -> do
@@ -87,9 +103,10 @@ spicyExecMain = do
         logError "A MD run was requested but MD is not implemented yet."
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
 
-  -- LOG
-  -- finalMol <- view moleculeL >>= atomically . readTVar
-  -- logDebug . display . writeSpicy $ finalMol
+  -- Final logging.
+  finalPrintEnv <- getCurrPrintEvn
+  printSpicy . renderBuilder . spicyLog finalPrintEnv $
+    spicyLogMol (HashSet.fromList [Spicy End]) Nothing
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread

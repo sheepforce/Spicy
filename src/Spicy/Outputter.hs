@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 -- |
 -- Module      : Spicy.Outputter
 -- Description : Facilties for generating structured output file.
@@ -7,37 +9,65 @@
 -- Stability   : experimental
 -- Portability : POSIX, Windows
 module Spicy.Outputter
-  ( -- * Settings
+  ( -- * Exposed Metadata
+    spicyLogo,
+    spicyLogoColour,
+    versionInfo,
+
+    -- * Section Fonts
+
+    -- Generated with the ASCII art generator <https://patorjk.com/software/taag/#p=display&h=3&v=2&f=Lean&t=text%0A>
+    sep,
+    txtInput,
+    txtSetup,
+
+    -- * Settings
     HasOutputter (..),
     Outputter (..),
     Verbosity (..),
     PrintVerbosity (..),
+    HasPrintVerbosity (..),
     defPrintVerbosity,
     PrintEvent (..),
     MotionEvent (..),
     StartEnd (..),
+    PrintEnv (..),
+    getCurrPrintEvn,
 
     -- * Logging Facilities
     loggingThread,
     printSpicy,
 
     -- * Log Generators
+    PrintTarget (..),
     SpicyLog,
     spicyLog,
+    printEnergy,
+    printGradient,
+    printHessian,
+    printCoords,
+    printTopology,
+    printMultipoles,
     spicyLogMol,
+
+    -- * Utility
+    renderBuilder,
   )
 where
 
 import Data.Aeson
 import Data.Default
+import Data.FileEmbed
 import Data.Foldable
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM)
 import qualified Data.Text.Lazy.Builder as TB
+import Data.Version (showVersion)
 import Formatting hiding ((%))
 import qualified Formatting as F
 import Optics hiding (view)
+import Paths_spicy (version)
 import RIO hiding (Lens, Lens', Vector, lens, view, (%~), (.~), (^.), (^?))
 import qualified RIO.HashMap as HashMap
 import qualified RIO.HashSet as HashSet
@@ -48,6 +78,29 @@ import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
 import qualified System.Path as Path
+
+-- | The Spicy Logo as ASCII art.
+spicyLogo :: Utf8Builder
+spicyLogo = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/logo/spicy.ascii")
+
+-- | The Spicy Logo as coloured ASCII art with ANSI colour codes.
+spicyLogoColour :: ByteString
+spicyLogoColour = $(embedFile . Path.toString . Path.relFile $ "data/logo/spicy.ansi")
+
+-- | Get information from the build by TemplateHaskell to be able to show a reproducible version.
+versionInfo :: Utf8Builder
+versionInfo = displayShow . showVersion $ version
+
+----------------------------------------------------------------------------------------------------
+
+sep :: Utf8Builder
+sep = display $ Text.replicate 100 "-"
+
+txtInput :: Utf8Builder
+txtInput = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/input.txt")
+
+txtSetup :: Utf8Builder
+txtSetup = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/setup.txt")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -273,6 +326,31 @@ data StartEnd
   = Start
   | End
   deriving (Eq, Generic, Hashable)
+
+-- | A print environemt, that contains necessary data.
+data PrintEnv = PrintEnv
+  { mol :: Molecule,
+    printV :: PrintVerbosity HashSet
+  }
+
+instance HasDirectMolecule PrintEnv where
+  moleculeDirectL = #mol
+
+instance HasPrintVerbosity PrintEnv where
+  printVerbosityL = #printV
+
+instance (k ~ A_Lens, a ~ Molecule, b ~ a) => LabelOptic "mol" k PrintEnv PrintEnv a b where
+  labelOptic = lens mol $ \s b -> s {mol = b}
+
+instance (k ~ A_Lens, a ~ PrintVerbosity HashSet, b ~ a) => LabelOptic "printV" k PrintEnv PrintEnv a b where
+  labelOptic = lens printV $ \s b -> s {printV = b}
+
+-- | From the current runtime environment make a logging environment.
+getCurrPrintEvn :: (HasMolecule env, HasOutputter env) => RIO env PrintEnv
+getCurrPrintEvn = do
+  mol <- view moleculeL >>= readTVarIO
+  printV <- view $ outputterL % #printVerbosity
+  return PrintEnv { mol = mol, printV = printV}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -733,3 +811,9 @@ spicyLogMol pe mi = do
     doLog pv l =
       let pvt = pv ^. l
        in not . HashSet.null $ pvt `HashSet.intersection` pe
+
+----------------------------------------------------------------------------------------------------
+
+-- | Render a text builder as Utf8Builder.
+renderBuilder :: TB.Builder -> Utf8Builder
+renderBuilder = display . TB.toLazyText

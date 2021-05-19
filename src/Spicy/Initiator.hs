@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 -- |
 -- Module      : Spicy.Initiator
 -- Description : Translator of inputs to initial state
@@ -16,12 +14,9 @@ module Spicy.Initiator
 where
 
 import Data.Char
-import Data.FileEmbed
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Version (showVersion)
 import Optics hiding (view)
-import Paths_spicy (version)
 import RIO hiding
   ( to,
     view,
@@ -45,18 +40,6 @@ import qualified System.Path.Directory as Dir
 
 logSource :: LogSource
 logSource = "Initiator"
-
-----------------------------------------------------------------------------------------------------
-
--- | The Spicy Logo as ASCII art.
-spicyLogo :: Utf8Builder
-spicyLogo = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/Fonts/SpicyLogo.txt")
-
-----------------------------------------------------------------------------------------------------
-
--- | Get information from the build by TemplateHaskell to be able to show a reproducible version.
-versionInfo :: Utf8Builder
-versionInfo = displayShow . showVersion $ version
 
 ----------------------------------------------------------------------------------------------------
 spicyMain :: IO ()
@@ -133,7 +116,7 @@ inputToEnvAndRun = do
   scratchExists <- liftIO . Dir.doesDirectoryExist $ scratchDirAbs
   when scratchExists . liftIO . Dir.removeDirectoryRecursive $ scratchDirAbs
 
-  -- Initialise the outputter thread.
+  -- Initialise the outputter thread and make sure to remove old log files.
   outQ <- newTBQueueIO 100
   let outfile = fromMaybe (Path.file "spicy.out") (Path.file <$> inputArgs ^. #logfile)
       printVerb = defPrintVerbosity . fromMaybe Medium $ inputFile ^. #printLevel
@@ -143,6 +126,7 @@ inputToEnvAndRun = do
             outFile = outfile,
             printVerbosity = printVerb
           }
+  liftIO . Dir.removeFile $ outfile
   logThread <- async $ runReaderT loggingThread outputter
   link logThread
 

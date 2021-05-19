@@ -429,6 +429,9 @@ class HasMolecule env where
 class HasDirectMolecule env where
   moleculeDirectL :: Lens' env Molecule
 
+instance HasDirectMolecule Molecule where
+  moleculeDirectL = castOptic simple
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Flag if an atom is a link atom. If an atom is a link atom (set 2 atom), then it will contain
