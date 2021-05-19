@@ -1,5 +1,5 @@
 -- |
--- Module      : Spicy.Wrapper.Internal.Input.Templates
+-- Module      : Spicy.Wrapper.Internal.Input.Language
 -- Description : Preparing input for external programs
 -- Copyright   : Phillip Seeber, Sebastian Seidenath, 2021
 -- License     : GPL-3
@@ -7,26 +7,27 @@
 -- Stability   : experimental
 -- Portability : POSIX, Windows
 --
--- This module provides a framework to construct inputs for external
+-- This module provides languages to construct inputs for external
 -- quantum chemistry programs.
 module Spicy.Wrapper.Internal.Input.Language
   ( makeInput,
-    xtbMultPath
+    xtbMultPath,
   )
 where
 
 {-
-Previously, Spicy used mustache templates to construct input files.
-This had the advantage of allowing for a single function consistent
-through programs. However, Text-templates are "stupid":
-not typesafe, difficult to modify and inflexible.
-
-This approach consist of specifying a "vocabulary" using a functor,
-a Reader specifying the logic of each input file,
-and an interpretation function, specifying the details of the final representation.
-
-Since the input information is stored as haskell data, we can pass it around,
-inspect it for correctness, modify it after construction, etc.
+The approach in this file is intended to be modular and expandable. Some notes:
+- In order to add a new input option to an input file, follow these steps:
+  * Add a new constructor to the language functor. All necessary information
+    should be contained in a field of this constructor. (i.e. XTBNewInputOption Value a)
+  * In the serialize<program> function, add instructions for how to write the new
+    input options into the file
+  * In the <program>Input function, implement the logic regarding the new input
+    (when to include it, how to obtain values, etc.)
+- The intermediate data representation can be inspected for correctness or
+  other properties, although this is not currently done
+- We can define different interpreters, for example for logging, or store/serilize
+  the representation
 -}
 
 import Control.Monad.Free
@@ -38,9 +39,11 @@ import Spicy.Common
 import Spicy.Molecule
 import Spicy.Molecule.Internal.Types
 import Spicy.Wrapper.Internal.Input.Representation
-import System.Path ((</>), (<.>))
+import System.Path ((<.>), (</>))
 import qualified System.Path as Path
 
+-- | Construct the appropriate text for an input file, based
+-- on the program.
 makeInput :: (MonadInput m) => m Text
 makeInput = do
   thisSoftware <- getSoftware
@@ -114,6 +117,7 @@ type XTBInput = Free XTBInputF ()
 -- | A functor enumerating all common input options in an XTB input file. This functor is meant
 -- to be used as the base functor for a free monad, which will specify the input structure.
 -- The dummy type parameter is needed to enable fixpoint recursion.
+-- The arbitrary field allows users to insert arbitrary text into the input file.
 data XTBInputF a
   = -- | Molecular charge
     XTBCharge Int a
@@ -127,7 +131,7 @@ data XTBInputF a
     XTBArbitrary Text a
   deriving (Functor)
 
--- | This function embodies the /logical/ structure of the input file,
+-- | This function embodies the /logical/ structure of the xtb input file,
 -- and produces a /data/ representation of said file.
 xtbInput :: (MonadInput m) => m XTBInput
 xtbInput = do
@@ -152,7 +156,7 @@ xtbInput = do
       Just t -> liftF $ XTBArbitrary t ()
 
 -- | This function specifies how to serialize the information contained in the
--- abstract input representation
+-- abstract input representation into a text representation.
 serialiseXTB :: MonadWriter Text m => XTBInputF a -> m a
 serialiseXTB (XTBCharge chrg a) = do
   tell $ "$chrg " <> tshow chrg <> "\n"
@@ -170,6 +174,8 @@ serialiseXTB (XTBArbitrary t a) = do
   tell $ t <> "\n"
   return a
 
+-- | Using this function to build the path to the XTB multipole file
+-- ensures that it is consistent across the program.
 xtbMultPath :: Path.AbsDir -> Path.RelFile -> Path.AbsFile
 xtbMultPath perma prefix = perma </> prefix <.> ".pc"
 
@@ -179,6 +185,10 @@ xtbMultPath perma prefix = perma </> prefix <.> ".pc"
 
 type Psi4Input = Free Psi4InputF ()
 
+-- | A functor enumerating all common input options in a Psi4 input file. This functor is meant
+-- to be used as the base functor for a free monad, which will specify the input structure.
+-- The dummy type parameter is needed to enable fixpoint recursion.
+-- The arbitrary field allows users to insert arbitrary text into the input file.
 data Psi4InputF a
   = -- | Memory in MB
     Psi4Memory Int a
@@ -198,6 +208,8 @@ data Psi4InputF a
     Psi4Arbitrary Text a
   deriving (Functor)
 
+-- | This function embodies the /logical/ structure of the psi4 input file,
+-- and produces a /data/ representation of said file.
 psi4Input :: (MonadInput m) => m Psi4Input
 psi4Input = do
   -- Acquire all necessary values
@@ -230,6 +242,8 @@ psi4Input = do
       let (o, wfn) = ("o", "wfn")
        in liftF $ Psi4Define o wfn ("\"" <> mthd <> "\"") tsk (o, wfn)
 
+-- | This function specifies how to serialize the information contained in the
+-- abstract input representation into a text representation.
 serialisePsi4 :: MonadWriter Text m => Psi4InputF a -> m a
 serialisePsi4 (Psi4Memory m a) = do
   tell $ "memory " <> tShow m <> "MB\n"

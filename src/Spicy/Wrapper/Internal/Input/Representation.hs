@@ -72,8 +72,7 @@ psi4MultipoleRep mol = do
 -- | A \"pure\" version of the "molToPointCharges" function. Morally, this is true,
 -- as the function performs no side effects and is entirely deterministic.
 -- The MonadIO constraint comes from the use of a parallel fold, which could
--- in general produce non-deterministic results, however, both folding
--- and chunk folding function are both commutative and associative, rendering
--- this moot.
+-- in general produce non-deterministic results, however, folding and chunk
+-- folding function are commutative and associative, rendering this moot.
 unsafeMolToPointCharges :: Molecule -> Massiv.Matrix Massiv.S Double
 unsafeMolToPointCharges = unsafePerformIO . molToPointCharges

@@ -1,5 +1,5 @@
 -- |
--- Module      : Spicy.Wrapper.Internal.Input.Representation
+-- Module      : Spicy.Wrapper.Internal.Input.IO
 -- Description : Writing external program input
 -- Copyright   : Phillip Seeber, Sebastian Seidenath, 2021
 -- License     : GPL-3
