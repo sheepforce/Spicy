@@ -17,7 +17,6 @@ module Spicy.Wrapper.Internal.Input.Representation
 where
 
 import qualified Data.Massiv.Array as Massiv
---import qualified Data.Text.Lazy as Text
 import qualified Data.Text.Lazy.Builder as Builder
 import RIO
 import qualified RIO.Text as Text

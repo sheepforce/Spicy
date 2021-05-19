@@ -9,7 +9,7 @@
 --
 -- This module provides a framework to construct inputs for external
 -- quantum chemistry programs.
-module Spicy.Wrapper.Internal.Input.Templates
+module Spicy.Wrapper.Internal.Input.Language
   ( makeInput,
     xtbMultPath
   )
