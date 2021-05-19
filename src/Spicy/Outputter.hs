@@ -20,6 +20,7 @@ module Spicy.Outputter
     sep,
     txtInput,
     txtSetup,
+    txtGeoOpt,
 
     -- * Settings
     HasOutputter (..),
@@ -101,6 +102,9 @@ txtInput = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/t
 
 txtSetup :: Utf8Builder
 txtSetup = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/setup.txt")
+
+txtGeoOpt :: Utf8Builder
+txtGeoOpt = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/geoopt.txt")
 
 ----------------------------------------------------------------------------------------------------
 

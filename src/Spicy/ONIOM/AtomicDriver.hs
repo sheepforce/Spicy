@@ -31,6 +31,7 @@ import RIO hiding
     (^..),
     (^?),
   )
+import qualified RIO.HashSet as HashSet
 import qualified RIO.Map as Map
 import RIO.Process
 import RIO.Seq (Seq (..))
@@ -41,6 +42,7 @@ import Spicy.InputFile
 import Spicy.Logger
 import Spicy.Molecule
 import Spicy.ONIOM.Collector
+import Spicy.Outputter
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.IPI.Protocol
 import Spicy.Wrapper.IPI.Pysisyphus
@@ -166,10 +168,17 @@ geomMacroDriver ::
     HasInputFile env,
     HasCalcSlot env,
     HasProcessContext env,
-    HasWrapperConfigs env
+    HasWrapperConfigs env,
+    HasOutputter env
   ) =>
   RIO env ()
 geomMacroDriver = do
+  -- Logging.
+  optStartPrintEvn <- getCurrPrintEvn
+  printSpicy txtGeoOpt
+  printSpicy . renderBuilder . spicyLog optStartPrintEvn $
+    spicyLogMol (HashSet.fromList [Always, Task Start]) Nothing
+
   -- Obtain the Pysisyphus IPI settings for communication.
   pysisIPI <-
     view moleculeL >>= readTVarIO >>= \mol -> do
