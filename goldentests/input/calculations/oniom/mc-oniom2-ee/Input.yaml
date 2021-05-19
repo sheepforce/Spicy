@@ -35,7 +35,8 @@ model:
       selection: [2,6,7]
       deeperLayer: []
     - templateFile: goldentests/input/calculations/oniom/mc-oniom2-ee/ccsd.psi
-      program: psi4
+      program:
+        tag: psi4
       name: CCSD/cc-pVDZ
       embedding:
         tag: electronic
