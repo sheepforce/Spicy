@@ -6,7 +6,11 @@ molecule:
 model:
   theoryLayer:
     name: HF/def2-SVP
-    program: psi4
+    program:
+      tag: psi4
+      contents:
+        basisSet: def2-svp
+        calculationType: hf
     charge: 0
     mult: 1
     execution:

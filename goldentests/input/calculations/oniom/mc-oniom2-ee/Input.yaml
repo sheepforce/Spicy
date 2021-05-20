@@ -21,11 +21,11 @@ model:
     mult: 1
     selection: [1,2,3,4,5,6,7]
     deeperLayer:
-    program:
-      tag: psi4
-      contents:
-        calculationType: ccsd
-        basisSet: cc-pvdz
+    - program:
+        tag: psi4
+        contents:
+          calculationType: ccsd
+          basisSet: cc-pvdz
       name: CCSD/cc-pVDZ
       embedding:
         tag: electronic
@@ -38,7 +38,11 @@ model:
       mult: 1
       selection: [2,6,7]
       deeperLayer: []
-      program: psi4
+    - program:
+        tag: psi4
+        contents:
+          calculationType: ccsd
+          basisSet: cc-pVDZ
       name: CCSD/cc-pVDZ
       embedding:
         tag: electronic
