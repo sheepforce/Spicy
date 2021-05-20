@@ -17,8 +17,8 @@ import Optics hiding (view)
 import RIO hiding (view, (^.))
 import Spicy.Common
 import Spicy.Molecule
-import Spicy.Wrapper.Internal.Input.Representation
 import Spicy.Wrapper.Internal.Input.Language
+import Spicy.Wrapper.Internal.Input.Representation
 import System.Path
 
 writeInputs :: (HasMolecule env, HasLogFunc env) => CalcID -> RIO env AbsFile
