@@ -312,6 +312,9 @@ instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k TheoryLa
 instance (k ~ A_Lens, a ~ Maybe Opt, b ~ a) => LabelOptic "optimisation" k TheoryLayer TheoryLayer a b where
   labelOptic = lens optimisation $ \s b -> s {optimisation = b}
 
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "additionalInput" k TheoryLayer TheoryLayer a b where
+  labelOptic = lens additionalInput $ \s b -> s {additionalInput = b}
+
 ----------------------------------------------------------------------------------------------------
 
 -- |

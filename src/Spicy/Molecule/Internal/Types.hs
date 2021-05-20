@@ -1331,6 +1331,7 @@ data CalcInput = CalcInput
     -- | Settings for geometry optimisations on this layer. Always given and if not specified in the
     -- input defaulting.
     optimisation :: !Optimisation,
+    -- | Additional input text, which will be inserted into the input file.
     additionalInput :: !(Maybe Text)
   }
   deriving (Generic)
@@ -1374,6 +1375,9 @@ instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInpu
 
 instance (k ~ A_Lens, a ~ Optimisation, b ~ a) => LabelOptic "optimisation" k CalcInput CalcInput a b where
   labelOptic = lens optimisation $ \s b -> s {optimisation = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "additionalInput" k CalcInput CalcInput a b where
+  labelOptic = lens additionalInput $ \s b -> s {additionalInput = b}
 
 ----------------------------------------------------------------------------------------------------
 
