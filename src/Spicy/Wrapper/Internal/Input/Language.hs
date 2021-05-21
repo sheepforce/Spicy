@@ -240,7 +240,7 @@ psi4Input = do
   where
     defaultDefine tsk mthd =
       let (o, wfn) = ("o", "wfn")
-       in liftF $ Psi4Define o wfn ("\"" <> mthd <> "\"") tsk (o, wfn)
+       in liftF $ Psi4Define o wfn mthd tsk (o, wfn)
 
 -- | This function specifies how to serialize the information contained in the
 -- abstract input representation into a text representation.
@@ -263,7 +263,7 @@ serialisePsi4 (Psi4Define o wfn mthd task a) = do
         WTEnergy -> "energy"
         WTGradient -> "gradient"
         WTHessian -> "hessian"
-  tell $ o <> ", " <> wfn <> " = " <> tskStr <> "(" <> mthd <> ", return_wfn = True)\n"
+  tell $ o <> ", " <> wfn <> " = " <> tskStr <> "(\"" <> mthd <> "\", return_wfn = True)\n"
   return a
 serialisePsi4 (Psi4FCHK wfn prefix a) = do
   tell $ "fchk( " <> wfn <> ", \"" <> pack prefix <> ".fchk\" )\n"
