@@ -1435,18 +1435,26 @@ _Psi4 = prism' Psi4 $ \s -> case s of
   _ -> Nothing
 
 -- Auxilliary functions for working with Program data
+
+-- | Returns true if the program is Psi4, and false otherwise.
 isPsi4 :: Program -> Bool
 isPsi4 (Psi4 _) = True
 isPsi4 _ = False
 
+-- | Returns true if the program is XTB, and false otherwise.
 isXTB :: Program -> Bool
 isXTB (XTB _) = True
 isXTB _ = False
 
 ----------------------------------------------------------------------------------------------------
 
+-- | Program specific information for Psi4. Contains the
+-- desired basis set and calculation type.
 data Psi4Info = Psi4Info
-  { basisSet :: Text,
+  { -- | The requested basis set. Will be printed into the program input verbatim.
+    basisSet :: Text,
+    -- | The required calculation type (hf, ccsd,..). Will be printed
+    -- into the program input verbatim
     calculationType :: Text
   }
   deriving (Eq, Show, Generic)
@@ -1475,9 +1483,7 @@ instance FromJSON GFN where
   parseJSON = genericParseJSON spicyJOption
 
 -- | Convert the enumeration type representation to the digit expected by XTB.
-renderGFN ::
-  GFN ->
-  Text
+renderGFN :: GFN -> Text
 renderGFN GFNZero = "0"
 renderGFN GFNOne = "1"
 renderGFN GFNTwo = "2"
