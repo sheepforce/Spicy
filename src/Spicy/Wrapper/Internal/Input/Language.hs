@@ -277,3 +277,39 @@ serialisePsi4 (Psi4Multipoles multipoles a) = do
 serialisePsi4 (Psi4Arbitrary t a) = do
   tell $ t <> "\n"
   return a
+
+----------------------------------------------------------------------------------------------------
+
+-- Input verification
+
+-- | Check whether charge is reasonable, and generate a warning if not.
+checkCharge :: MonadWriter [Text] m => Int -> m ()
+checkCharge c = when (abs c > 10) $ tell ["Very large charge in this layer - are you sure this is what you want?"]
+
+checkMult :: MonadWriter [Text] m => Int -> m ()
+checkMult m = do
+  when (abs m > 10) $ tell ["Very large multiplicity in this layer - are you sure this is what you want?"]
+  when (m < 0) $ tell ["Negative number of open shells - this will likely cause problems."]
+
+checkMemory :: MonadWriter [Text] m => Int -> m ()
+checkMemory mem = do
+  when (mem < 100 && signum mem >= 0) $ tell ["Very little memory (<100 MB) specified - are you sure this is what you want?"]
+  when (mem < 0) $ tell ["Negative memory specified - this will likely cause problems."]
+
+-- | Go through an XTB input and generate warnings for the user.
+checkXTB :: (MonadWriter [Text] m) => XTBInputF a -> m a
+checkXTB (XTBCharge c a) = checkCharge c >> return a
+checkXTB (XTBNOpen nopen a) = checkMult nopen >> return a
+checkXTB (XTBMethod _ a) = return a
+checkXTB (XTBMultipoleInput _ a) = return a
+checkXTB (XTBArbitrary _ a) = return a
+
+checkPsi4 :: MonadWriter [Text] m => Psi4InputF a -> m a
+checkPsi4 (Psi4Memory m a) = checkMemory m >> return a
+checkPsi4 (Psi4Molecule c m _ a) = checkCharge c >> checkMult m >> return a
+checkPsi4 (Psi4Set _ a) = return a
+checkPsi4 (Psi4Define _ _ _ _ a) = return a
+checkPsi4 (Psi4FCHK _ _ a) = return a
+checkPsi4 (Psi4Hessian _ a) = return a
+checkPsi4 (Psi4Multipoles _ a) = return a
+checkPsi4 (Psi4Arbitrary _ a) = return a
