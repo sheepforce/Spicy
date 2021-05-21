@@ -17,6 +17,7 @@ module Spicy.Wrapper.Internal.Input.Representation
 where
 
 import qualified Data.Massiv.Array as Massiv
+import Data.Text.Lazy (toStrict)
 import qualified Data.Text.Lazy.Builder as Builder
 import RIO
 import qualified RIO.Text as Text
@@ -47,7 +48,7 @@ xtbMultipoleRep mol = do
       chargeLines = Massiv.foldMono toText pointChargeVecs
       countLine = (Builder.fromText . tShow . length $ pointChargeVecs) <> "\n"
       xtbBuilder = countLine <> chargeLines
-  return . tshow $ xtbBuilder
+  return . toStrict . Builder.toLazyText $ xtbBuilder
 
 -- | Generates the multipole representation for Psi4.
 psi4MultipoleRep ::
@@ -67,7 +68,7 @@ psi4MultipoleRep mol = do
       chargeLines = Massiv.foldMono toText pointChargeVecs
       settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
       psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
-  return . tshow $ psi4Builder
+  return . toStrict . Builder.toLazyText $ psi4Builder
 
 -- | A \"pure\" version of the "molToPointCharges" function. Morally, this is true,
 -- as the function performs no side effects and is entirely deterministic.
