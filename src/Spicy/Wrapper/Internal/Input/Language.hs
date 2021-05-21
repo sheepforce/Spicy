@@ -33,7 +33,7 @@ The approach in this file is intended to be modular and expandable. Some notes:
 import Control.Monad.Free
 import Optics
 import RIO hiding (Lens', lens, view, (^.), (^?))
-import qualified RIO.Text as RText
+import RIO.Text
 import RIO.Writer
 import Spicy.Common
 import Spicy.Molecule
@@ -82,7 +82,7 @@ class MonadThrow m => MonadInput m where
 
 -- This instance expects the /current/ molecule layer, that is,
 -- the one for which the input will be prepared.
-instance MonadThrow m => MonadInput (ReaderT (Molecule, CalcInput) m) where
+instance (MonadThrow m, MonadReader (Molecule,CalcInput) m) => MonadInput m where
   getSoftware = gget (_2 % #software) "Software"
   getCharge = gget (_2 % #qMMMSpec % _QM % #charge) "Charge"
   getMult = gget (_2 % #qMMMSpec % _QM % #mult) "Mult"
@@ -266,7 +266,7 @@ serialisePsi4 (Psi4Define o wfn mthd task a) = do
   tell $ o <> ", " <> wfn <> " = " <> tskStr <> "(" <> mthd <> ", return_wfn = True)\n"
   return a
 serialisePsi4 (Psi4FCHK wfn prefix a) = do
-  tell $ "fchk( " <> wfn <> ", \"" <> RText.pack prefix <> ".fchk\" )\n"
+  tell $ "fchk( " <> wfn <> ", \"" <> pack prefix <> ".fchk\" )\n"
   return a
 serialisePsi4 (Psi4Hessian o a) = do
   tell $ "np.array(" <> o <> ")\n"
