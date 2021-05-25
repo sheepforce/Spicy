@@ -39,7 +39,8 @@ xtbMultipoleRep ::
   Molecule ->
   m Text
 xtbMultipoleRep mol = do
-  let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
+  pointCharges <- molToPointCharges mol
+  let pointChargeVecs = Massiv.innerSlices pointCharges
       frmt = float % " " % float % " " % float % " " % float % " 99\n"
       chargeLines = Massiv.foldMono (toText frmt) pointChargeVecs
       countLine = (Builder.fromText . tShow . length $ pointChargeVecs) <> "\n"
@@ -54,7 +55,8 @@ psi4MultipoleRep ::
   Molecule ->
   m Text
 psi4MultipoleRep mol = do
-  let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
+  pointCharges <- molToPointCharges mol
+  let pointChargeVecs = Massiv.innerSlices pointCharges
       fmrt = "Chrgfield.extern.addCharge(" % float % ", " % float % ", " % float % ", " % float % ")\n"
       chargeLines = Massiv.foldMono (toText fmrt) pointChargeVecs
       settingsLine = "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
@@ -71,11 +73,3 @@ toText fmrt vec =
       y = vec Massiv.! 1
       z = vec Massiv.! 2
   in bformat fmrt q x y z
-
--- | A \"pure\" version of the "molToPointCharges" function. Morally, this is true,
--- as the function performs no side effects and is entirely deterministic.
--- The MonadIO constraint comes from the use of a parallel fold, which could
--- in general produce non-deterministic results, however, folding and chunk
--- folding function are commutative and associative, rendering this moot.
-unsafeMolToPointCharges :: Molecule -> Massiv.Matrix Massiv.S Double
-unsafeMolToPointCharges = unsafePerformIO . molToPointCharges
