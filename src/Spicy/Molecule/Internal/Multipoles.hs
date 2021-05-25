@@ -105,7 +105,7 @@ isSphericalRef ref = case ref of
 -- information. The point charges will be represented in a \(4 \times (p N)\) matrix, where \(p\) is
 -- the number of point charges used per atom to expand the multipole moments, and \(N\) is the
 -- number of dummy atoms in the molecule. See also 'OctahedralModel'.
-molToPointCharges :: (MonadThrow m, MonadIO m) => Molecule -> m (Matrix S Double)
+molToPointCharges :: (MonadThrow m) => Molecule -> m (Matrix S Double)
 molToPointCharges mol = do
   let -- Obtain some initial information.
       atoms = mol ^. #atoms
