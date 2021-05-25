@@ -24,6 +24,7 @@ import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Molecule
 import System.IO.Unsafe
+import Formatting
 
 -- | Make a simple coordinate representation of the current Molecule layer.
 -- This function takes care to remove all dummy atoms.
@@ -39,13 +40,8 @@ xtbMultipoleRep ::
   m Text
 xtbMultipoleRep mol = do
   let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
-      toText vec =
-        let q = Builder.fromText . tShow $ vec Massiv.! 3
-            x = Builder.fromText . tShow $ vec Massiv.! 0
-            y = Builder.fromText . tShow $ vec Massiv.! 1
-            z = Builder.fromText . tShow $ vec Massiv.! 2
-         in q <> " " <> x <> " " <> y <> " " <> z <> " 99\n"
-      chargeLines = Massiv.foldMono toText pointChargeVecs
+      frmt = float % " " % float % " " % float % " " % float % " 99\n"
+      chargeLines = Massiv.foldMono (toText frmt) pointChargeVecs
       countLine = (Builder.fromText . tShow . length $ pointChargeVecs) <> "\n"
       xtbBuilder = countLine <> chargeLines
   return . toStrict . Builder.toLazyText $ xtbBuilder
@@ -59,16 +55,22 @@ psi4MultipoleRep ::
   m Text
 psi4MultipoleRep mol = do
   let pointChargeVecs = Massiv.innerSlices $ unsafeMolToPointCharges mol
-      toText vec =
-        let q = Builder.fromText . tShow $ vec Massiv.! 3
-            x = Builder.fromText . tShow $ vec Massiv.! 0
-            y = Builder.fromText . tShow $ vec Massiv.! 1
-            z = Builder.fromText . tShow $ vec Massiv.! 2
-         in "Chrgfield.extern.addCharge(" <> q <> ", " <> x <> ", " <> y <> ", " <> z <> ")\n"
-      chargeLines = Massiv.foldMono toText pointChargeVecs
-      settingsLine = Builder.fromText "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
+      fmrt = "Chrgfield.extern.addCharge(" % float % ", " % float % ", " % float % ", " % float % ")\n"
+      chargeLines = Massiv.foldMono (toText fmrt) pointChargeVecs
+      settingsLine = "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
       psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
   return . toStrict . Builder.toLazyText $ psi4Builder
+
+-- | Auxilliary function which formats multipoles.
+-- Said vector must contain at least 4 entries, thus unsafe
+-- and not to be exported.
+toText :: (Massiv.Manifest r ix t1, Num ix) => Format Builder.Builder (t1 -> t1 -> t1 -> t1 -> t2) -> Massiv.Array r ix t1 -> t2
+toText fmrt vec =
+  let q = vec Massiv.! 3
+      x = vec Massiv.! 0
+      y = vec Massiv.! 1
+      z = vec Massiv.! 2
+  in bformat fmrt q x y z
 
 -- | A \"pure\" version of the "molToPointCharges" function. Morally, this is true,
 -- as the function performs no side effects and is entirely deterministic.
