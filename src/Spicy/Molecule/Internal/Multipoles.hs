@@ -302,7 +302,7 @@ data BestBondPartners
 -- | Groups the atoms into groups of three non-colinear atoms within fragments. These groups are
 -- allowed to overlap.
 makeReferenceGroups ::
-  (MonadThrow m, MonadIO m) =>
+  (MonadThrow m) =>
   -- | The whole layer for which to form groups.
   Molecule ->
   m (Seq BestBondPartners)
