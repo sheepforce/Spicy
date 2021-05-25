@@ -692,14 +692,16 @@ printTopology pt = case pt of
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 
-    table bondMat =
+    table bondMat = snd $
       HashMap.foldlWithKey'
-        ( \acc (o, t) b ->
-            if b
-              then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t
-              else acc
+        ( \(cnt, acc) (o, t) b ->
+          let newCnt = succ cnt
+              newAcc = if b
+                then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t <> if (cnt `mod` 3 == 0) then "\n" else mempty
+                else acc
+            in (newCnt, newAcc)
         )
-        mempty
+        (0, mempty)
         (makeBondMatUnidirectorial bondMat)
       where
         oF = left 8 ' ' F.%. int
