@@ -230,13 +230,13 @@ psi4Input = do
     liftF $ Psi4Memory mem ()
     liftF $ Psi4Molecule chrg mult molRepr ()
     liftF $ Psi4Set basis ()
+    case arb of
+      Nothing -> return ()
+      Just t -> liftF $ Psi4Arbitrary t ()
     liftF $ Psi4Multipoles multipoleRep ()
     (o, wfn) <- defaultDefine task calcType
     liftF $ Psi4FCHK wfn prefix ()
     when (task == WTHessian) . liftF $ Psi4Hessian o ()
-    case arb of
-      Nothing -> return ()
-      Just t -> liftF $ Psi4Arbitrary t ()
   where
     defaultDefine tsk mthd =
       let (o, wfn) = ("o", "wfn")
@@ -286,11 +286,13 @@ serialisePsi4 (Psi4Arbitrary t a) = do
 checkCharge :: MonadWriter [Text] m => Int -> m ()
 checkCharge c = when (abs c > 10) $ tell ["Very large charge in this layer - are you sure this is what you want?"]
 
+-- | Check whether multiplicity is reasonable, and generate appropriate warnings.
 checkMult :: MonadWriter [Text] m => Int -> m ()
 checkMult m = do
   when (abs m > 10) $ tell ["Very large multiplicity in this layer - are you sure this is what you want?"]
   when (m < 0) $ tell ["Negative number of open shells - this will likely cause problems."]
 
+-- | Check whether memory is reasonable, and generate appropriate warnings.
 checkMemory :: MonadWriter [Text] m => Int -> m ()
 checkMemory mem = do
   when (mem < 100 && signum mem >= 0) $ tell ["Very little memory (<100 MB) specified - are you sure this is what you want?"]
