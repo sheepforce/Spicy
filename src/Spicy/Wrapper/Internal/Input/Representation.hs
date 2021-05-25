@@ -23,7 +23,6 @@ import RIO
 import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Molecule
-import System.IO.Unsafe
 import Formatting
 
 -- | Make a simple coordinate representation of the current Molecule layer.
