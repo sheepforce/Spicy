@@ -20,5 +20,7 @@ model:
     embedding:
       tag: electronic
       contents: [0.2,0.4]
+topology:
+  guessBonds: true
 task:
 - optimise_macro
