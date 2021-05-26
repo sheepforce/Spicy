@@ -67,6 +67,8 @@ module Spicy.Molecule
 
     -- ** Programs
     Program (..),
+    isPsi4,
+    isXTB,
 
     -- * Parser
     xyz,
@@ -105,6 +107,7 @@ module Spicy.Molecule
     getAllMolIDsHierarchically,
     updateMolWithPosVec,
     shrinkNeighbourList,
+    isolateMoleculeLayer,
 
     -- * Writer
     writeXYZ,

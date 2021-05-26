@@ -59,6 +59,7 @@ module Spicy.Molecule.Internal.Util
     getAllMolIDsHierarchically,
     updateMolWithPosVec,
     shrinkNeighbourList,
+    isolateMoleculeLayer,
   )
 where
 
@@ -99,6 +100,7 @@ import Spicy.Common
 import Spicy.Data
 import Spicy.Math
 import Spicy.Molecule.Internal.Types
+import System.IO.Unsafe
 
 {-
 "IS" = IntSet
@@ -1280,9 +1282,10 @@ getAtomsAsVector mol = Massiv.fromList Par . fmap snd . IntMap.toAscList . (^. #
 ----------------------------------------------------------------------------------------------------
 
 -- | Generate a neighbouhr list. This is an set of association of one atom, with all the ones, which
--- are within a certain distance. The neighbours are free of self-interaction.
+-- are within a certain distance. The neighbours are free of self-interaction. NOTE: contains
+-- a morally pure use of unsafePerformIO in order to parallelise the operation.
 {-# INLINE neighbourList #-}
-neighbourList :: (MonadThrow m, MonadIO m) => Double -> Molecule -> m (IntMap IntSet)
+neighbourList :: (MonadThrow m) => Double -> Molecule -> m (IntMap IntSet)
 neighbourList maxNeighbourDist mol = do
   -- Gets the atom coordinates in Nx3 matrix representation.
   atomCoords <- Massiv.computeAs Massiv.S . Massiv.setComp Par <$> getCoordinatesAs3NMatrix mol
@@ -1437,11 +1440,10 @@ neighbourList maxNeighbourDist mol = do
           . Massiv.setComp Par
           $ collectedAtomSetInBins
 
-  -- Join all neighbours from the individual bins together. Unfortunately this lives
-  neighboursInDenseNumbering <- do
-    let foldingF :: IntMap IntSet -> IntMap IntSet -> IntMap IntSet
-        foldingF = IntMap.unionWith IntSet.union
-    Massiv.foldlP foldingF IntMap.empty foldingF IntMap.empty neighboursInBins
+  -- Join all neighbours from the individual bins together.
+      foldingF :: IntMap IntSet -> IntMap IntSet -> IntMap IntSet
+      foldingF = IntMap.unionWith IntSet.union
+      neighboursInDenseNumbering = unsafePerformIO $ Massiv.foldlP foldingF IntMap.empty foldingF IntMap.empty neighboursInBins
 
   -- Remap the neighbour list back to the sparse mapping, that has been originally used.
   let neighboursInSparseNumbering =
@@ -1588,7 +1590,7 @@ guessBondMatrixSimple covScaling mol = do
 -- | Linear scaling version of bond matrix guessing based on covalent radii. Constructs a
 -- neighbourlist first and only checks within the neighbour list for potential bond partners.
 {-# INLINE guessBondMatrix #-}
-guessBondMatrix :: (MonadThrow m, MonadIO m) => Maybe Double -> Molecule -> m BondMatrix
+guessBondMatrix :: (MonadThrow m) => Maybe Double -> Molecule -> m BondMatrix
 guessBondMatrix covScaling mol = do
   let -- Original IntMap of the atoms.
       atoms' :: IntMap Atom
@@ -2536,6 +2538,7 @@ updateMolWithPosVec pos mol = do
       return $ thisLayerUpdated & #subMol .~ subMolsUpdated
 
 ----------------------------------------------------------------------------------------------------
+
 -- | Reduces the search radius of a neighbour list to a smaller distance of neighbours. This should
 -- be more efficient than building a new neighbourlist with a different radius.
 shrinkNeighbourList ::
@@ -2588,3 +2591,19 @@ shrinkNeighbourList atoms oldNLs newDist
               )
               targets
       return filteredTargets
+
+----------------------------------------------------------------------------------------------------
+
+-- | Isolate a molecule layer, usually in preparation for printing. Cleaning involves:
+--  * Remove all dummy atoms
+--  * Removing all sub-molecules
+--  * Update the bond matrix and the fragments
+isolateMoleculeLayer :: Molecule -> Molecule
+isolateMoleculeLayer mol =
+  mol
+    & #atoms %~ flip IntMap.restrictKeys realAtomInds
+    & #fragment % each % #atoms %~ IntSet.intersection realAtomInds
+    & #bonds %~ flip cleanBondMatByAtomInds realAtomInds
+    & #subMol .~ mempty
+  where
+    realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ mol ^. #atoms

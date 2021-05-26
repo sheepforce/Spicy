@@ -248,9 +248,6 @@ instance (k ~ A_Lens, a ~ TheoryLayer, b ~ a) => LabelOptic "theoryLayer" k Mode
 data TheoryLayer = TheoryLayer
   { -- | Label of the layer, just for description.
     name :: Text,
-    -- | Path to a template file in Jinja syntax for the
-    --   computational chemistry program of this layer.
-    templateFile :: JFilePath,
     -- | The program to use for the computation.
     program :: Program,
     -- | Indices of the atoms for this layer. Those are the ones
@@ -274,7 +271,10 @@ data TheoryLayer = TheoryLayer
     -- | Defines the embedding type for the current layer.
     embedding :: Embedding,
     -- | Settings for the optimiser on a given layer.
-    optimisation :: Maybe Opt
+    optimisation :: Maybe Opt,
+    -- | Additional, arbitrary input string to be inserted into
+    --   the input file. Optional.
+    additionalInput :: Maybe Text
   }
   deriving (Eq, Show, Generic)
 
@@ -287,9 +287,6 @@ instance FromJSON TheoryLayer where
 -- Lenses
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "name" k TheoryLayer TheoryLayer a b where
   labelOptic = lens name $ \s b -> s {name = b}
-
-instance (k ~ A_Lens, a ~ JFilePath, b ~ a) => LabelOptic "templateFile" k TheoryLayer TheoryLayer a b where
-  labelOptic = lens templateFile $ \s b -> s {templateFile = b}
 
 instance (k ~ A_Lens, a ~ Program, b ~ a) => LabelOptic "program" k TheoryLayer TheoryLayer a b where
   labelOptic = lens program $ \s b -> s {program = b}
@@ -314,6 +311,9 @@ instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k TheoryLa
 
 instance (k ~ A_Lens, a ~ Maybe Opt, b ~ a) => LabelOptic "optimisation" k TheoryLayer TheoryLayer a b where
   labelOptic = lens optimisation $ \s b -> s {optimisation = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "additionalInput" k TheoryLayer TheoryLayer a b where
+  labelOptic = lens additionalInput $ \s b -> s {additionalInput = b}
 
 ----------------------------------------------------------------------------------------------------
 

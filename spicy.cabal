@@ -62,8 +62,9 @@ library
       Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
       Spicy.Wrapper.Internal.Generic
-      Spicy.Wrapper.Internal.Input.Shallow
-      Spicy.Wrapper.Internal.Input.XTB
+      Spicy.Wrapper.Internal.Input.IO
+      Spicy.Wrapper.Internal.Input.Language
+      Spicy.Wrapper.Internal.Input.Representation
       Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
@@ -113,6 +114,7 @@ library
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
+    , free ==5.1.*
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
@@ -121,7 +123,6 @@ library
     , pathtype >=0.8.1 && <0.9
     , rio >=0.1.13.0 && <0.2
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
@@ -160,6 +161,7 @@ executable spicy
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
+    , free ==5.1.*
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
@@ -169,7 +171,6 @@ executable spicy
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3
@@ -205,6 +206,7 @@ test-suite unittests
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
+    , free ==5.1.*
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
@@ -214,7 +216,6 @@ test-suite unittests
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.3
     , tasty-golden >=2.3.1 && <2.4
     , tasty-hunit >=0.10.0.2 && <0.11
@@ -276,6 +277,7 @@ benchmark bench
     , deepseq >=1.4.2.0 && <1.5
     , file-embed >=0.0.11.1 && <0.1
     , formatting >=6.3.7 && <8
+    , free ==5.1.*
     , integer-roots >=1.0 && <2
     , massiv >=0.6.0.0 && <0.7
     , network >=3.1.2.1 && <3.2
@@ -285,7 +287,6 @@ benchmark bench
     , rio >=0.1.13.0 && <0.2
     , spicy
     , split >=0.2.3.3 && <0.3
-    , stache >=2.1.0 && <2.3
     , tasty >=1.2.3 && <1.4
     , tasty-golden >=2.3.3 && <2.4
     , text >=1.2.3.1 && <1.3

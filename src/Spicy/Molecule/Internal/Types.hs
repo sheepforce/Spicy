@@ -93,7 +93,13 @@ module Spicy.Molecule.Internal.Types
 
     -- ** Programs
     Program (..),
-    GFN(..),
+    _XTB,
+    _Psi4,
+    isPsi4,
+    isXTB,
+    Psi4Info(..),
+    GFN (..),
+    renderGFN,
 
     -- * Local Helper Types
     FragmentAtomInfo (..),
@@ -1317,8 +1323,6 @@ data CalcInput = CalcInput
     -- | Information specific to either a QM or MM
     --   calculation.
     qMMMSpec :: !QMMMSpec,
-    -- | A Mustache template for the program.
-    template :: !Text,
     -- | The embedding type for this calculation
     --   part. Might be ignored for Inherited
     --   calculations in ONIOM (low calculation
@@ -1326,7 +1330,9 @@ data CalcInput = CalcInput
     embedding :: !Embedding,
     -- | Settings for geometry optimisations on this layer. Always given and if not specified in the
     -- input defaulting.
-    optimisation :: !Optimisation
+    optimisation :: !Optimisation,
+    -- | Additional input text, which will be inserted into the input file.
+    additionalInput :: !(Maybe Text)
   }
   deriving (Generic)
 
@@ -1364,14 +1370,14 @@ instance (k ~ A_Lens, a ~ Int, b ~ a) => LabelOptic "memory" k CalcInput CalcInp
 instance (k ~ A_Lens, a ~ QMMMSpec, b ~ a) => LabelOptic "qMMMSpec" k CalcInput CalcInput a b where
   labelOptic = lens qMMMSpec $ \s b -> s {qMMMSpec = b}
 
-instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "template" k CalcInput CalcInput a b where
-  labelOptic = lens template $ \s b -> s {template = b}
-
 instance (k ~ A_Lens, a ~ Embedding, b ~ a) => LabelOptic "embedding" k CalcInput CalcInput a b where
   labelOptic = lens embedding $ \s b -> s {embedding = b}
 
 instance (k ~ A_Lens, a ~ Optimisation, b ~ a) => LabelOptic "optimisation" k CalcInput CalcInput a b where
   labelOptic = lens optimisation $ \s b -> s {optimisation = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "additionalInput" k CalcInput CalcInput a b where
+  labelOptic = lens additionalInput $ \s b -> s {additionalInput = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1405,9 +1411,9 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 ====================================================================================================
 -}
 
--- | A known computational chemistry program to use.
+-- | A known computational chemistry program to use, and some program-specific data.
 data Program
-  = Psi4
+  = Psi4 Psi4Info
   | Nwchem
   | XTB GFN
   deriving (Eq, Show, Generic)
@@ -1418,6 +1424,47 @@ instance ToJSON Program where
 instance FromJSON Program where
   parseJSON = genericParseJSON spicyJOption
 
+_XTB :: Prism' Program GFN
+_XTB = prism' XTB $ \s -> case s of
+  XTB b -> Just b
+  _ -> Nothing
+
+_Psi4 :: Prism' Program Psi4Info
+_Psi4 = prism' Psi4 $ \s -> case s of
+  Psi4 info -> Just info
+  _ -> Nothing
+
+-- Auxilliary functions for working with Program data
+
+-- | Returns true if the program is Psi4, and false otherwise.
+isPsi4 :: Program -> Bool
+isPsi4 (Psi4 _) = True
+isPsi4 _ = False
+
+-- | Returns true if the program is XTB, and false otherwise.
+isXTB :: Program -> Bool
+isXTB (XTB _) = True
+isXTB _ = False
+
+----------------------------------------------------------------------------------------------------
+
+-- | Program specific information for Psi4. Contains the
+-- desired basis set and calculation type.
+data Psi4Info = Psi4Info
+  { -- | The requested basis set. Will be printed into the program input verbatim.
+    basisSet :: Text,
+    -- | The required calculation type (hf, ccsd,..). Will be printed
+    -- into the program input verbatim
+    calculationType :: Text
+  }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Psi4Info where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON Psi4Info where
+  parseJSON = genericParseJSON spicyJOption
+
 ----------------------------------------------------------------------------------------------------
 
 -- | Version of the GFN-Hamiltonian in XTB calculations.
@@ -1426,6 +1473,7 @@ data GFN
   | GFNOne
   | GFNTwo
   deriving (Eq, Show, Generic)
+
 -- FF hamiltonian still to do
 
 instance ToJSON GFN where
@@ -1433,6 +1481,12 @@ instance ToJSON GFN where
 
 instance FromJSON GFN where
   parseJSON = genericParseJSON spicyJOption
+
+-- | Convert the enumeration type representation to the digit expected by XTB.
+renderGFN :: GFN -> Text
+renderGFN GFNZero = "0"
+renderGFN GFNOne = "1"
+renderGFN GFNTwo = "2"
 
 {-
 ====================================================================================================

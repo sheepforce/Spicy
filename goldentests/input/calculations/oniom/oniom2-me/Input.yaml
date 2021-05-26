@@ -5,9 +5,11 @@ molecule:
   fileType: mol2
 model:
   theoryLayer:
-    templateFile: goldentests/input/calculations/oniom/oniom2-ee/hf.psi
     program:
       tag: psi4
+      contents:
+        calculationType: hf
+        basisSet: sto-3g
     name: HF/STO-3G
     embedding:
       tag: mechanical
@@ -19,9 +21,11 @@ model:
     mult: 1
     selection: [1,2,3,4,5,6,7]
     deeperLayer:
-    - templateFile: goldentests/input/calculations/oniom/oniom2-ee/ccsd.psi
-      program:
+    - program:
         tag: psi4
+        contents:
+          calculationType: ccsd
+          basisSet: cc-pvdz
       name: CCSD/cc-pVDZ
       embedding:
         tag: mechanical

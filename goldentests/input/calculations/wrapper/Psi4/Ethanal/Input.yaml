@@ -1,8 +1,8 @@
 permanent: Tests/permanent
 scratch: Tests/scratch
 molecule:
-  path: goldentests/input/molecules/Ferrocene.xyz
-  fileType: xyz
+  path: goldentests/input/molecules/Ethanal.mol2
+  fileType: mol2
 model:
   theoryLayer:
     name: BP86/def2-SVP
@@ -10,14 +10,14 @@ model:
       tag: psi4
       contents:
         calculationType: bp86
-        basisSet: def2-svp
+        basisSet: def2-tzvp
     charge: 0
     mult: 1
     execution:
       nProcesses: 1
       nThreads: 8
       memory: 5000
-    selection: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]
+    selection: [1,2,3,4,5,6,7]
     deeperLayer: []
     embedding:
       tag: electronic

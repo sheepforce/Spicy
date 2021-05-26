@@ -1,8 +1,0 @@
-$chrg {{ charge }}
-$spin {{ nopenshells }}
-$gfn
- method=2
-$embedding
- input={{ multipoles }}
-$write
- json=true

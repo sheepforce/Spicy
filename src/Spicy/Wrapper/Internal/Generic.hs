@@ -18,7 +18,7 @@ import Spicy.Molecule
 
 prepareQMMMSpec :: Program -> Int -> Int -> QMMMSpec
 prepareQMMMSpec program' charge' mult' = case program' of
-  Psi4 -> QM qmContext
+  Psi4 _ -> QM qmContext
   Nwchem -> QM qmContext
   XTB _ -> QM qmContext
   where
