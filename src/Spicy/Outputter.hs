@@ -95,7 +95,7 @@ versionInfo = displayShow . showVersion $ version
 ----------------------------------------------------------------------------------------------------
 
 sep :: Utf8Builder
-sep = display $ Text.replicate 100 "-"
+sep = display $ Text.replicate 100 "-" <> "\n"
 
 txtInput :: Utf8Builder
 txtInput = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/input.txt")
@@ -640,7 +640,7 @@ printCoords pt = case pt of
   where
     oHeader =
       "@ Coordinates (ONIOM) / Angstrom\n\
-      \------------------------\n"
+      \--------------------------------\n"
 
     lHeader i =
       let txt = "@ Coordinates (Layer " <> molID2OniomHumandID i <> ") / Angstrom"
@@ -649,7 +649,18 @@ printCoords pt = case pt of
 
     tableHeader =
       let hf = center ew ' ' F.%. builder
-       in bformat (hf F.% " | " F.% hf F.% " | " F.% hf F.% " | " F.% hf) "Atom (IX)" "x" "y" "z"
+          topRow = bformat (hf F.% " | " F.% hf F.% " | " F.% hf F.% " | " F.% hf F.% "\n") "Atom (IX)" "x" "y" "z"
+          midRule =
+            TB.fromText $
+              Text.replicate (ew + 1) "-"
+                <> "+"
+                <> Text.replicate (ew + 2) "-"
+                <> "+"
+                <> Text.replicate (ew + 2) "-"
+                <> "+"
+                <> Text.replicate (ew + 1) "-"
+                <> "\n"
+       in topRow <> midRule
 
     table atoms =
       let af = right ew ' ' F.%. (right 4 ' ' F.%. string) F.% ("(" F.% (left 7 ' ' F.%. int) F.% ")")
@@ -677,11 +688,11 @@ printTopology ::
 printTopology pt = case pt of
   ONIOM -> do
     bondMat <- view $ moleculeDirectL % #bonds
-    tell $ oHeader <> table bondMat
+    tell $ oHeader <> table bondMat <> "\n"
   Layer i -> do
     mol <- view moleculeDirectL
     let mBondMat = mol ^? molIDLensGen i % #bonds
-    tell $ lHeader i <> fromMaybe mempty (table <$> mBondMat)
+    tell $ lHeader i <> fromMaybe mempty (table <$> mBondMat) <> "\n"
   where
     oHeader =
       "@ Bond Topology (ONIOM)\n\
