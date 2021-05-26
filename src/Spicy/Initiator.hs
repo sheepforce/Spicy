@@ -126,7 +126,8 @@ inputToEnvAndRun = do
             outFile = outfile,
             printVerbosity = printVerb
           }
-  liftIO . Dir.removeFile $ outfile
+  hasOldOutput <- liftIO . Dir.doesFileExist $ outfile
+  when hasOldOutput . liftIO . Dir.removeFile $ outfile
   logThread <- async $ runReaderT loggingThread outputter
   link logThread
 

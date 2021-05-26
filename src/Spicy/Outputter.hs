@@ -354,7 +354,7 @@ getCurrPrintEvn :: (HasMolecule env, HasOutputter env) => RIO env PrintEnv
 getCurrPrintEvn = do
   mol <- view moleculeL >>= readTVarIO
   printV <- view $ outputterL % #printVerbosity
-  return PrintEnv { mol = mol, printV = printV}
+  return PrintEnv {mol = mol, printV = printV}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -692,17 +692,19 @@ printTopology pt = case pt of
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 
-    table bondMat = snd $
-      HashMap.foldlWithKey'
-        ( \(cnt, acc) (o, t) b ->
-          let newCnt = succ cnt
-              newAcc = if b
-                then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t <> if (cnt `mod` 3 == 0) then "\n" else mempty
-                else acc
-            in (newCnt, newAcc)
-        )
-        (0, mempty)
-        (makeBondMatUnidirectorial bondMat)
+    table bondMat =
+      snd $
+        HashMap.foldlWithKey'
+          ( \(cnt, acc) (o, t) b ->
+              let newCnt = cnt + 1
+                  newAcc =
+                    if b
+                      then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t <> if (cnt `mod` 3 == 0) then "\n" else mempty
+                      else acc
+               in (newCnt, newAcc)
+          )
+          (0 :: Int, mempty)
+          (makeBondMatUnidirectorial bondMat)
       where
         oF = left 8 ' ' F.%. int
         tF = right 8 ' ' F.%. int
