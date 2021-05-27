@@ -328,20 +328,20 @@ data PrintEvent
     Task StartEnd
   | -- | Final information before Spicy exits
     Spicy StartEnd
-  deriving (Eq, Generic, Hashable)
+  deriving (Show, Eq, Generic, Hashable)
 
 data MotionEvent
   = -- | The full ONIOM tree took a complete motion as a whole.
     Macro
   | -- | Anything in the ONIOM tree moved.
     Micro
-  deriving (Eq, Generic, Hashable)
+  deriving (Show, Eq, Generic, Hashable)
 
 -- | Beginning and start of tasks.
 data StartEnd
   = Start
   | End
-  deriving (Eq, Generic, Hashable)
+  deriving (Show, Eq, Generic, Hashable)
 
 -- | A print environemt, that contains necessary data.
 data PrintEnv = PrintEnv
@@ -842,6 +842,9 @@ spicyLogMol ::
   SpicyLog env
 spicyLogMol pe mi = do
   pv <- view printVerbosityL
+
+  -- Event printer.
+  tell $ "\nEvents: " <> (TB.fromText . tshow $ pe)
 
   -- Full ONIOM tree writers
   when (doLog pv #oniomE) $ printEnergy ONIOM

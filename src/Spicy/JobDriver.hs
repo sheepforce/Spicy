@@ -95,10 +95,37 @@ spicyExecMain = do
   tasks <- view $ inputFileL % #task
   forM_ tasks $ \t -> do
     case t of
-      Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+      Energy -> do
+        -- Logging.
+        energyStartPrintEnv <- getCurrPrintEvn
+        printSpicy txtSinglePoint
+        printSpicy . renderBuilder . spicyLog energyStartPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task Start]) Nothing
+
+        -- Actual calculation
+        multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+
+        -- Final logging
+        energyEndPrintEnv <- getCurrPrintEvn
+        printSpicy . renderBuilder . spicyLog energyEndPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) Nothing
       Optimise Macro -> geomMacroDriver
       Optimise Micro -> undefined
-      Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+      Frequency -> do
+        -- Logging.
+        hessStartPrintEnv <- getCurrPrintEvn
+        printSpicy txtSinglePoint
+        printSpicy . renderBuilder . spicyLog hessStartPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task Start]) Nothing
+
+        -- Actual calculation
+        multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+
+        -- Final logging.
+        hessEndPrintEnv <- getCurrPrintEvn
+        printSpicy txtSinglePoint
+        printSpicy . renderBuilder . spicyLog hessEndPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) Nothing
       MD -> do
         logError "A MD run was requested but MD is not implemented yet."
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."

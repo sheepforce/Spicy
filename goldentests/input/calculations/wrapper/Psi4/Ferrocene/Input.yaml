@@ -22,5 +22,6 @@ model:
     embedding:
       tag: electronic
       contents: [0.2,0.4]
+printLevel: High
 task:
 - energy
