@@ -241,8 +241,10 @@ geomMacroDriver = do
 
         -- Opt loop logging.
         optLoopPrintEnv <- getCurrPrintEvn
-        printSpicy . renderBuilder . spicyLog optLoopPrintEnv $
-          spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) Nothing
+        let molInfo =
+              renderBuilder . spicyLog optLoopPrintEnv $
+                spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) Nothing
+        printSpicy $ sep <> molInfo
 
         -- Get the molecule in the new structure with its forces or hessian.
         atomically . putTMVar ipiDataIn $ ipiData
