@@ -16,11 +16,14 @@ module Spicy.Outputter
 
     -- * Section Fonts
 
-    -- Generated with the ASCII art generator <https://patorjk.com/software/taag/#p=display&h=3&v=2&f=Lean&t=text%0A>
+    -- Generated with the ASCII art generator <https://patorjk.com/software/taag/#p=display&h=3&v=2&f=Slant&t=%C2%B5%20opt%0A>
     sep,
     txtInput,
     txtSetup,
-    txtGeoOpt,
+    txtDirectOpt,
+    txtMicroOpt,
+    txtSinglePoint,
+    txtMD,
 
     -- * Settings
     HasOutputter (..),
@@ -103,8 +106,17 @@ txtInput = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/t
 txtSetup :: Utf8Builder
 txtSetup = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/setup.txt")
 
-txtGeoOpt :: Utf8Builder
-txtGeoOpt = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/geoopt.txt")
+txtDirectOpt :: Utf8Builder
+txtDirectOpt = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/directopt.txt")
+
+txtMicroOpt :: Utf8Builder
+txtMicroOpt = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/microopt.txt")
+
+txtSinglePoint :: Utf8Builder
+txtSinglePoint = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/singlepoint.txt")
+
+txtMD :: Utf8Builder
+txtMD = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/md.txt")
 
 ----------------------------------------------------------------------------------------------------
 
@@ -252,7 +264,7 @@ defPrintVerbosity v = case v of
       { oniomE = f [Task End, FullTraversal],
         oniomG = f [Task End, FullTraversal],
         oniomH = f [Task End],
-        oniomC = f [Spicy Start, Spicy End],
+        oniomC = f [Spicy Start, Spicy End, Motion Macro],
         oniomT = f [Spicy Start],
         oniomMP = mempty,
         layerE = mempty,
@@ -269,7 +281,7 @@ defPrintVerbosity v = case v of
       { oniomE = f [Always],
         oniomG = f [Always],
         oniomH = f [Always],
-        oniomC = f [Spicy Start, Spicy End],
+        oniomC = f [Spicy Start, Spicy End, Motion Macro],
         oniomT = f [Spicy Start],
         oniomMP = f [Spicy End],
         layerE = f [Motion Micro],
@@ -410,7 +422,7 @@ nf = left ew ' ' F.%. fixed (ew - 8)
 
 -- | String for non-available data.
 nAv :: IsString a => a
-nAv = "(Not Available)"
+nAv = "(Not Available)\n"
 
 -- | Wether to print full ONIOM tree properties or per layer properties.
 data PrintTarget = ONIOM | Layer MolID
@@ -441,7 +453,7 @@ printEnergy pt = case pt of
     me <- view $ moleculeDirectL % #energyDerivatives % #energy
     case me of
       Nothing -> tell $ oHeader <> nAv
-      Just e -> tell $ bformat (builder F.% nf) oHeader e
+      Just e -> tell $ bformat (builder F.% nf F.% "\n") oHeader e
   Layer i -> do
     mol <- view moleculeDirectL
     let mes :: Maybe (Double, Double, Double) = do
@@ -513,7 +525,18 @@ printGradient pt = case pt of
     -- Header for the table of gradients.
     tableHeader =
       let hf = center ew ' ' F.%. builder
-       in bformat (hf F.% " | " F.% hf F.% " | " F.% hf F.% " | " F.% hf F.% "\n") "Atom (IX)" "X" "Y" "Z"
+          headerRow = bformat (hf F.% " | " F.% hf F.% " | " F.% hf F.% " | " F.% hf F.% "\n") "Atom (IX)" "X" "Y" "Z"
+          rule =
+            TB.fromText $
+              Text.replicate (ew + 1) "-"
+                <> "+"
+                <> Text.replicate (ew + 2) "-"
+                <> "+"
+                <> Text.replicate (ew + 2) "-"
+                <> "+"
+                <> Text.replicate (ew + 1) "-"
+                <> "\n"
+       in headerRow <> rule
 
     -- Atom associated gradients.
     atomGradAssoc :: MonadThrow m => IntMap Atom -> Vector S Double -> m (IntMap (Atom, Vector M Double))

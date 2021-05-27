@@ -43,19 +43,7 @@ logSource = "Initiator"
 
 ----------------------------------------------------------------------------------------------------
 spicyMain :: IO ()
-spicyMain =
-  runSimpleApp $ do
-    -- Greet with the Spicy logo and emit some version information.
-    logInfo spicyLogo
-    logInfo $ "Spicy version " <> versionInfo
-
-    -- Get command line arguments to Spicy.
-    inputArgs <- liftIO $ cmdArgs spicyArgs
-
-    -- LOG
-    logDebugS logSource $ "Running with command line arguments:\n" <> displayShow inputArgs
-
-    inputToEnvAndRun
+spicyMain = runSimpleApp inputToEnvAndRun
 
 ----------------------------------------------------------------------------------------------------
 

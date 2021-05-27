@@ -42,7 +42,7 @@ import Spicy.InputFile
 import Spicy.Logger
 import Spicy.Molecule
 import Spicy.ONIOM.Collector
-import Spicy.Outputter
+import Spicy.Outputter as Out
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.IPI.Protocol
 import Spicy.Wrapper.IPI.Pysisyphus
@@ -175,7 +175,7 @@ geomMacroDriver ::
 geomMacroDriver = do
   -- Logging.
   optStartPrintEvn <- getCurrPrintEvn
-  printSpicy txtGeoOpt
+  printSpicy txtDirectOpt
   printSpicy . renderBuilder . spicyLog optStartPrintEvn $
     spicyLogMol (HashSet.fromList [Always, Task Start]) Nothing
 
@@ -194,6 +194,11 @@ geomMacroDriver = do
 
   -- Start the loop that provides the i-PI client thread with data for the optimisation.
   loop pysisIPI
+
+  -- Final logging
+  optEndPrintEvn <- getCurrPrintEvn
+  printSpicy . renderBuilder . spicyLog optEndPrintEvn $
+    spicyLogMol (HashSet.fromList [Always, Task End]) Nothing
   where
     localExc = SpicyIndirectionException "geomMacroDriver"
 
@@ -233,6 +238,11 @@ geomMacroDriver = do
               \ calculation loop."
             throwM $
               SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
+
+        -- Opt loop logging.
+        optLoopPrintEnv <- getCurrPrintEvn
+        printSpicy . renderBuilder . spicyLog optLoopPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) Nothing
 
         -- Get the molecule in the new structure with its forces or hessian.
         atomically . putTMVar ipiDataIn $ ipiData
