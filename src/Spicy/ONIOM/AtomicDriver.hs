@@ -177,7 +177,7 @@ geomMacroDriver = do
   optStartPrintEvn <- getCurrPrintEvn
   printSpicy txtDirectOpt
   printSpicy . renderBuilder . spicyLog optStartPrintEvn $
-    spicyLogMol (HashSet.fromList [Always, Task Start]) Nothing
+    spicyLogMol (HashSet.fromList [Always, Task Start]) All
 
   -- Obtain the Pysisyphus IPI settings for communication.
   pysisIPI <-
@@ -198,7 +198,7 @@ geomMacroDriver = do
   -- Final logging
   optEndPrintEvn <- getCurrPrintEvn
   printSpicy . renderBuilder . spicyLog optEndPrintEvn $
-    spicyLogMol (HashSet.fromList [Always, Task End]) Nothing
+    spicyLogMol (HashSet.fromList [Always, Task End]) All
   where
     localExc = SpicyIndirectionException "geomMacroDriver"
 
@@ -243,7 +243,7 @@ geomMacroDriver = do
         optLoopPrintEnv <- getCurrPrintEvn
         let molInfo =
               renderBuilder . spicyLog optLoopPrintEnv $
-                spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) Nothing
+                spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
         printSpicy $ sep <> molInfo
 
         -- Get the molecule in the new structure with its forces or hessian.

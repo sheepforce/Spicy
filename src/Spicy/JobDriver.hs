@@ -56,7 +56,7 @@ spicyExecMain = do
   inputPrintEnv <- getCurrPrintEvn
   printSpicy $
     spicyLogo
-      <> ("Spicy Version " <> versionInfo <> "\n")
+      <> ("Spicy Version " <> versionInfo <> "\n\n\n")
       <> txtInput
       <> sep
       <> (displayBytesUtf8 . encodePretty defConfig $ inputFile)
@@ -109,7 +109,7 @@ spicyExecMain = do
         energyStartPrintEnv <- getCurrPrintEvn
         printSpicy txtSinglePoint
         printSpicy . renderBuilder . spicyLog energyStartPrintEnv $
-          spicyLogMol (HashSet.fromList [Always, Task Start]) Nothing
+          spicyLogMol (HashSet.fromList [Always, Task Start]) All
 
         -- Actual calculation
         multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
@@ -117,7 +117,7 @@ spicyExecMain = do
         -- Final logging
         energyEndPrintEnv <- getCurrPrintEvn
         printSpicy . renderBuilder . spicyLog energyEndPrintEnv $
-          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) Nothing
+          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
       Optimise Macro -> geomMacroDriver
       Optimise Micro -> undefined
       Frequency -> do
@@ -125,7 +125,7 @@ spicyExecMain = do
         hessStartPrintEnv <- getCurrPrintEvn
         printSpicy txtSinglePoint
         printSpicy . renderBuilder . spicyLog hessStartPrintEnv $
-          spicyLogMol (HashSet.fromList [Always, Task Start]) Nothing
+          spicyLogMol (HashSet.fromList [Always, Task Start]) All
 
         -- Actual calculation
         multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
@@ -134,7 +134,7 @@ spicyExecMain = do
         hessEndPrintEnv <- getCurrPrintEvn
         printSpicy txtSinglePoint
         printSpicy . renderBuilder . spicyLog hessEndPrintEnv $
-          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) Nothing
+          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
       MD -> do
         logError "A MD run was requested but MD is not implemented yet."
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
@@ -142,7 +142,7 @@ spicyExecMain = do
   -- Final logging.
   finalPrintEnv <- getCurrPrintEvn
   printSpicy . renderBuilder . spicyLog finalPrintEnv $
-    spicyLogMol (HashSet.fromList [Spicy End]) Nothing
+    spicyLogMol (HashSet.fromList [Spicy End]) All
   writeFileUTF8
     (getDirPath (inputFile ^. #permanent) </> Path.relFile "Final.mol2")
     =<< writeONIOM (finalPrintEnv ^. #mol)

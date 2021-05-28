@@ -499,7 +499,7 @@ writeSpicy mol =
 
 -- | An ONIOM tree can be fully represented in a MOL2 file with proper labels on the atoms and
 -- fragments.
-writeONIOM :: (MonadThrow m, MonadIO m) => Molecule -> m Text
+writeONIOM :: (MonadThrow m) => Molecule -> m Text
 writeONIOM mol = do
   --  Check sanity.
   _ <- checkMolecule mol
