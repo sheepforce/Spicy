@@ -498,7 +498,19 @@ writeSpicy mol =
 -- $layoutWriter
 
 -- | An ONIOM tree can be fully represented in a MOL2 file with proper labels on the atoms and
--- fragments.
+-- fragments. This file format uses the following conventions:
+--   - Every atom will be printed only in its deepest layer with a residue name in the spicy style.
+--   - Dummy atoms will not be printed (as they are real in a more shallow layer).
+--   - Link atoms will have the label @LA@.
+--   - Atom types will be either the Mol2 type (if known) or the element label.
+--   - Every atom will be assigned a fragment number, that it has in the deepest layer, where it is
+--     found. Therefore to get all atoms of a fragment, one must look through multiple layers
+--   - The point charge model is written for each layer individually. The charges of a layer will
+--     have the same residue name as atoms on this layer, with @_C@ appended. The point charges will
+--     have element @H@ but always label @Bq@. Every atom (dummy, link, and real atoms) will get
+--     charges, which is different than what happens in the calculations. Therefore they are not
+--     directly comparable. Furthermore, an atom might have different charge sets, for each layer it
+--     is found in.
 writeONIOM :: (MonadThrow m) => Molecule -> m Text
 writeONIOM mol = do
   --  Check sanity.
