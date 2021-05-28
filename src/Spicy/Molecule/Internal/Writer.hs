@@ -48,9 +48,14 @@ import RIO hiding
 import qualified RIO.ByteString as ByteString
 import qualified RIO.HashMap as HashMap
 import qualified RIO.List as List
+import qualified RIO.Map as Map
+import RIO.Partial (toEnum)
+import qualified RIO.Seq as Seq
 import qualified RIO.Text as Text
 import qualified RIO.Text.Lazy as TextLazy
+import RIO.Writer
 import Spicy.Common
+import Spicy.Molecule.Internal.Multipoles
 import Spicy.Molecule.Internal.Types
 import Spicy.Molecule.Internal.Util
 
@@ -490,70 +495,193 @@ writeSpicy mol =
 ####################################################################################################
 -}
 
-{-
 -- $layoutWriter
 
--- |
--- This function will write a complete molecule layout to the disk in a calculation context. This is
--- extremely useful for debugging.
-writeLayout ::
-  (HasInputFile env, HasMolecule env, HasLogFunc env) =>
-  (Molecule -> Either SomeException Text) ->
-  RIO env ()
-writeLayout writer = do
-  inputFile <- view inputFileL
-  let writerDir = getDirPath (inputFile ^. permanent) </> Path.dirPath "MoleculeLayout"
+-- | An ONIOM tree can be fully represented in a MOL2 file with proper labels on the atoms and
+-- fragments.
+writeONIOM :: (MonadThrow m, MonadIO m) => Molecule -> m Text
+writeONIOM mol = do
+  --  Check sanity.
+  _ <- checkMolecule mol
 
-  -- Create the directory for the molecule files.
-  liftIO $ Dir.createDirectoryIfMissing True writerDir
+  let -- Association from atoms to the deepest layer it is found in.
+      atomAssocs =
+        molFoldlWithMolID
+          ( \acc lid layer ->
+              let afAssocs = atomFragAssoc layer
+                  assignements = IntMap.map (\(frag, atom) -> (lid, frag, atom)) afAssocs
+               in assignements <> acc
+          )
+          mempty
+          mol
 
-  goLayers writerDir Seq.Empty
+      -- The bond matrix of all layers joined
+      fullBondMat = molFoldl (\acc m -> m ^. #bonds <> acc) mempty mol
+
+  -- Point charges as per layer.
+  layerChargeModel <-
+    molFoldlWithMolID
+      ( \acc' lid layer -> do
+          acc <- acc'
+          chargeMat <- molToPointCharges layer
+          return $ Map.insert lid chargeMat acc
+      )
+      (pure mempty)
+      mol
+
+  triposMol2Builder <- fmap snd . runWriterT $ do
+    -- Header block
+    tell "@<TRIPOS>MOLECULE\n"
+    tell "ONIOM\n"
+    tell $ bprint (int F.% " " F.% int F.% " 0 0 0\n") (IntMap.size atomAssocs) (HashMap.size fullBondMat)
+    tell "SMALL\n"
+    tell "USER_CHARGES\n\n"
+
+    -- Real atoms
+    tell "@<TRIPOS>ATOM\n"
+    atomLineBuilder <-
+      IntMap.foldlWithKey'
+        ( \acc' ak (mid, fragId, a) -> do
+            acc <- acc'
+            xCoord <- getVectorS (a ^. #coordinates) Massiv.!? 0
+            yCoord <- getVectorS (a ^. #coordinates) Massiv.!? 1
+            zCoord <- getVectorS (a ^. #coordinates) Massiv.!? 2
+
+            let aType = case a ^. #ffType of
+                  FFMol2 l -> l <> if (isAtomLink $ a ^. #isLink) then ".LA" else mempty
+                  _ -> (tshow $ a ^. #element) <> if (isAtomLink $ a ^. #isLink) then ".LA" else mempty
+                aLine =
+                  bprint
+                    fullFormatter
+                    ak
+                    (a ^. #label)
+                    xCoord
+                    yCoord
+                    zCoord
+                    aType
+                    fragId
+                    (molID2OniomHumandID mid)
+                    0
+
+            return $ acc <> aLine
+        )
+        (pure mempty)
+        atomAssocs
+    tell atomLineBuilder
+
+    -- Point charges in the atoms
+    maxAtomKey <- getMaxAtomIndex mol
+    pointChargeBuilder <-
+      Map.foldlWithKey'
+        ( \acc' lid pcMat -> do
+            (maxKey, lineAcc) <- acc'
+            let Sz (_ :. nPts) = Massiv.size pcMat
+                aLines = pcLines maxKey lid pcMat
+            return (maxKey + nPts, lineAcc <> aLines)
+        )
+        (pure (maxAtomKey, mempty))
+        layerChargeModel
+    tell . snd $ pointChargeBuilder
+
+    -- Bonds
+    tell "@<TRIPOS>BOND\n"
+    tell . bondLines $ fullBondMat
+
+  return . sformat builder $ triposMol2Builder
   where
-    -- Removes all submolecules in preparation for a writer.
-    removeSubMols :: Molecule -> Molecule
-    removeSubMols mol = mol & molecule_SubMol .~ IntMap.empty
+    keyFmt = left 6 ' ' %. int
+    labelFmt = right 6 ' ' %. stext
+    coordFmt = left 10 ' ' %. fixed 4
+    ffFmt = right 6 ' ' %. stext
+    fragnumFmt = left 6 ' ' %. int
+    fragFmt = right 10 ' ' %. stext
+    chrgFmt = coordFmt
+    fullFormatter =
+      (keyFmt F.% " ")
+        F.% (labelFmt F.% " ")
+        F.% (coordFmt F.% " ")
+        F.% (coordFmt F.% " ")
+        F.% (coordFmt F.% " ")
+        F.% (ffFmt F.% " ")
+        F.% (fragnumFmt F.% " ")
+        F.% (fragFmt F.% " ")
+        F.% chrgFmt
+        F.% "\n"
 
-    -- Recursively write all layers of a molecule.
-    goLayers :: (HasMolecule env, HasLogFunc env) => Path.AbsRelDir -> MolID -> RIO env ()
-    goLayers writerDir molID = do
-      topMol <- view moleculeL
-      writeMolFromID writerDir molID
-      thisMol <- getMolByID topMol molID
-      let nextMolIDs = fmap (molID |>) . Seq.fromList . IntMap.keys $ thisMol ^. molecule_SubMol
-      mapM_ (goLayers writerDir) nextMolIDs
+    pcLines :: Int -> MolID -> Matrix S Double -> TextBuilder.Builder
+    pcLines maxKey mid pcMat =
+      let slices = innerSlices pcMat
+          aLines =
+            ifoldMono
+              ( \i pc ->
+                  let x = pc Massiv.! 0
+                      y = pc Massiv.! 1
+                      z = pc Massiv.! 2
+                      c = pc Massiv.! 3
+                   in bprint
+                        fullFormatter
+                        (maxKey + i)
+                        "Bq"
+                        x
+                        y
+                        z
+                        "Bq"
+                        0
+                        (molID2OniomHumandID mid)
+                        c
+              )
+              slices
+       in aLines
 
-    -- Write a single layer specified by its MolID to a file in a unique directory.
-    writeMolFromID :: (HasMolecule env, HasLogFunc env) => Path.AbsRelDir -> MolID -> RIO env ()
-    writeMolFromID writerDir molID = do
-      molTop <- view moleculeL
-      let molLayerOfInterest = getMolByID molTop molID
-          layerONIOMHumanID =
-            Text.unpack . removeWhiteSpace . textDisplay . molID2OniomHumandID $ molID
-          molWriterText = writer =<< removeSubMols <$> molLayerOfInterest
-          molFilePath = writerDir </> Path.relFile layerONIOMHumanID
+    bondLines :: BondMatrix -> TextBuilder.Builder
+    bondLines bm =
+      let uniBonds = makeBondMatUnidirectorial bm
+          nFmt = left 6 ' ' %. int
+          sndPartFmt = " " F.% nFmt F.% " " F.% nFmt F.% "     1\n"
+          bondLinesSndPart =
+            fmap snd
+              . HashMap.toList
+              . HashMap.mapWithKey (\(ixO, ixT) val -> if val then bprint sndPartFmt ixO ixT else "")
+              $ uniBonds
+          bLines =
+            List.map (\(n, sndPart) -> bprint (nFmt F.% builder) n sndPart)
+              . List.zip [1 ..]
+              $ bondLinesSndPart
+       in foldl' (<>) mempty bLines
 
-      -- Try writing the current layer to a file.
-      case molWriterText of
-        Left exception ->
-          logWarnS "writeLayout" $
-            "Writing molecule "
-              <> molID2OniomHumandID molID
-              <> " (MolID "
-              <> displayShow molID
-              <> ") failed with: "
-              <> (text2Utf8Builder . tShow $ exception)
-        Right molText -> do
-          hasMolFileAlready <- liftIO $ Dir.doesFileExist molFilePath
-          if hasMolFileAlready
-            then do
-              logWarnS "writeLayout" $
-                "Molecule file for "
-                  <> molID2OniomHumandID molID
-                  <> " (MolID "
-                  <> displayShow molID
-                  <> ") does already exist at "
-                  <> path2Utf8Builder molFilePath
-                  <> ". Overwriting it."
-              writeFileUTF8 molFilePath molText
-            else writeFileUTF8 molFilePath molText
--}
+    -- Find the first matching set in an IntMap, that contains the search key.
+    firstMatch :: Int -> IntMap Fragment -> Maybe Int
+    firstMatch s m =
+      IntMap.foldlWithKey'
+        ( \acc fragId frag -> case acc of
+            Just x -> Just x
+            Nothing ->
+              if s `IntSet.member` (frag ^. #atoms)
+                then Just fragId
+                else Nothing
+        )
+        Nothing
+        m
+
+    -- Associates every atom with its fragment in this layer.
+    atomFragAssoc :: Molecule -> IntMap (Int, Atom)
+    atomFragAssoc m =
+      let frags = m ^. #fragment
+          atoms = m ^. #atoms
+       in IntMap.mapWithKey (\ak a -> (fromMaybe 0 $ firstMatch ak frags, a)) atoms
+
+    --
+    molID2OniomHumandID :: MolID -> Text
+    molID2OniomHumandID Seq.Empty = "0"
+    molID2OniomHumandID molID =
+      let depth = Seq.length molID
+          idTree =
+            foldr'
+              ( \currentID textAcc ->
+                  let offSet = fromEnum 'A'
+                      idLetter = toEnum $ currentID + offSet
+                   in textAcc `Text.snoc` idLetter
+              )
+              (tShow depth)
+              molID
+       in Text.pack . show $ idTree
