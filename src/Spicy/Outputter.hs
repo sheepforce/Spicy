@@ -465,20 +465,14 @@ printEnergy pt = do
         Just e -> tell $ bformat (builder F.% nf F.% "\n") oHeader e
     Layer i -> do
       mol <- view moleculeDirectL
-      let mes :: Maybe (Double, Double, Double) = do
-            layer <- mol ^? molIDLensGen i
-            e <- layer ^. #energyDerivatives % #energy
-            el <- layer ^? #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #energy % _Just
-            eh <- layer ^? #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #energy % _Just
-            return (e, el, eh)
-      case mes of
-        Nothing -> tell $ lHeader i <> nAv
-        Just (e, el, eh) ->
-          tell $
-            lHeader i
-              <> bformat ("  ONIOM SubTree -> " F.% nf F.% "\n") e
-              <> bformat ("  High Level    -> " F.% nf F.% "\n") eh
-              <> bformat ("  Low Level     -> " F.% nf F.% "\n") el
+      let layer = mol ^? molIDLensGen i
+          e = layer ^? _Just % #energyDerivatives % #energy % _Just
+          el = layer ^? _Just % #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #energy % _Just
+          eh = layer ^? _Just % #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #energy % _Just
+      tell $ lHeader i
+      tell $ "  ONIOM SubTree -> " <> fromMaybe nAv (bformat (nf F.% "\n") <$> e)
+      tell $ "  High Level    -> " <> fromMaybe nAv (bformat (nf F.% "\n") <$> eh)
+      tell $ "  Low Level     -> " <> fromMaybe nAv (bformat (nf F.% "\n") <$> el)
     All -> do
       mol <- view moleculeDirectL
       printEnergy ONIOM
@@ -509,24 +503,18 @@ printGradient pt = removeDummy $ do
         Just g -> tell $ oHeader <> tableHeader <> tableContent g
     Layer i -> do
       mol <- view moleculeDirectL
-      let atoms = mol ^. #atoms
-          mgs = do
-            layer <- mol ^? molIDLensGen i
-            VectorS g <- layer ^. #energyDerivatives % #gradient
-            VectorS gl <- layer ^? #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #gradient % _Just
-            VectorS gh <- layer ^? #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #gradient % _Just
-            aG <- atomGradAssoc atoms g
-            aGL <- atomGradAssoc atoms gl
-            aGH <- atomGradAssoc atoms gh
-            return (aG, aGL, aGH)
-      case mgs of
-        Nothing -> tell $ lHeader i <> nAv
-        Just (g, gl, gh) -> do
-          tell $
-            lHeader i
-              <> ("ONIOM SubTree ->\n" <> tableHeader <> tableContent g)
-              <> ("High Level    ->\n" <> tableHeader <> tableContent gh)
-              <> ("Low Level     ->\n" <> tableHeader <> tableContent gl)
+      let layer = mol ^? molIDLensGen i
+          atoms = layer ^? _Just % #atoms
+          g = layer ^? _Just % #energyDerivatives % #gradient % _Just
+          aG = join $ atomGradAssoc <$> atoms <*> (getVectorS <$> g)
+          gl = layer ^? _Just % #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #gradient % _Just
+          aGL = join $ atomGradAssoc <$> atoms <*> (getVectorS <$> gl)
+          gh = layer ^? _Just % #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #gradient % _Just
+          aGH = join $ atomGradAssoc <$> atoms <*> (getVectorS <$> gh)
+      tell $ lHeader i
+      tell $ "  ONIOM SubTree ->\n" <> fromMaybe nAv (tableContent <$> aG)
+      tell $ "  High Level    ->\n" <> fromMaybe nAv (tableContent <$> aGL)
+      tell $ "  Low Level     ->\n" <> fromMaybe nAv (tableContent <$> aGH)
     All -> do
       mol <- view moleculeDirectL
       printGradient ONIOM
@@ -596,26 +584,21 @@ printHessian pt = removeDummy $ do
       msh <- view $ moleculeDirectL % #energyDerivatives % #hessian
       atoms <- view $ moleculeDirectL % #atoms
       let mh = getMatrixS <$> msh
+      tell oHeader
       case mh of
-        Nothing -> tell $ oHeader <> nAv
-        Just h -> tell $ oHeader <> fromMaybe mempty (tableContent atoms h)
+        Nothing -> tell nAv
+        Just h -> tell $ fromMaybe mempty (tableContent atoms h)
     Layer i -> do
       mol <- view moleculeDirectL
       let atoms = mol ^. #atoms
-          mhs = do
-            layer <- mol ^? molIDLensGen i
-            MatrixS h <- layer ^. #energyDerivatives % #hessian
-            MatrixS hl <- layer ^? #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #hessian % _Just
-            MatrixS hh <- layer ^? #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #hessian % _Just
-            return (h, hl, hh)
-      case mhs of
-        Nothing -> tell $ lHeader i <> nAv
-        Just (h, hl, hh) ->
-          tell $
-            lHeader i
-              <> ("ONIOM SubTree ->\n" <> fromMaybe mempty (tableContent atoms h))
-              <> ("High Level    ->\n" <> fromMaybe mempty (tableContent atoms hh))
-              <> ("Low Level     ->\n" <> fromMaybe mempty (tableContent atoms hl))
+          layer = mol ^? molIDLensGen i
+          h = layer ^? _Just % #energyDerivatives % #hessian % _Just
+          hl = layer ^? _Just % #calcContext % ix (ONIOMKey Inherited) % #output % _Just % #energyDerivatives % #hessian % _Just
+          hh = layer ^? _Just % #calcContext % ix (ONIOMKey Original) % #output % _Just % #energyDerivatives % #hessian % _Just
+      tell $ lHeader i
+      tell $ "  ONIOM SubTree ->\n" <> fromMaybe nAv (h >>= \(MatrixS h') -> tableContent atoms h')
+      tell $ "  High Level    ->\n" <> fromMaybe nAv (hh >>= \(MatrixS hh') -> tableContent atoms hh')
+      tell $ "  Low Level     ->\n" <> fromMaybe nAv (hl >>= \(MatrixS hl') -> tableContent atoms hl')
     All -> do
       mol <- view moleculeDirectL
       printHessian ONIOM
