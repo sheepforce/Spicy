@@ -32,6 +32,8 @@ import Spicy.ONIOM.Layout
 import Spicy.Outputter hiding (Macro, Micro)
 import Spicy.RuntimeEnv
 import Spicy.Wrapper
+import System.Path ((</>))
+import qualified System.Path as Path
 
 logSource :: LogSource
 logSource = "JobDriver"
@@ -63,6 +65,10 @@ spicyExecMain = do
              printCoords ONIOM
              printTopology ONIOM
          )
+  -- Writing the ONIOM tree to a file
+  writeFileUTF8
+    (getDirPath (inputFile ^. #permanent) </> Path.relFile "Input.mol2")
+    =<< writeONIOM (inputPrintEnv ^. #mol)
 
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
@@ -90,6 +96,9 @@ spicyExecMain = do
              printCoords (Layer i)
              printTopology (Layer i)
          )
+  writeFileUTF8
+    (getDirPath (inputFile ^. #permanent) </> Path.relFile "Setup.mol2")
+    =<< writeONIOM (setupPrintEnv ^. #mol)
 
   -- Perform the specified tasks on the input file.
   tasks <- view $ inputFileL % #task
@@ -134,12 +143,16 @@ spicyExecMain = do
   finalPrintEnv <- getCurrPrintEvn
   printSpicy . renderBuilder . spicyLog finalPrintEnv $
     spicyLogMol (HashSet.fromList [Spicy End]) Nothing
+  writeFileUTF8
+    (getDirPath (inputFile ^. #permanent) </> Path.relFile "Final.mol2")
+    =<< writeONIOM (finalPrintEnv ^. #mol)
+  printSpicy $ sep <> "Spicy execution finished. May the sheep be with you and your results!"
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread
 
   -- LOG
-  logInfo "Spicy execution finished. Wup Wup!"
+  logInfo "Spicy execution finished. May the sheep be with you and your results!"
 
 ----------------------------------------------------------------------------------------------------
 
