@@ -744,7 +744,9 @@ printTopology pt = do
               let newCnt = cnt + 1
                   newAcc =
                     if b
-                      then acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t <> if (cnt `mod` 3 == 0) then "\n" else mempty
+                      then
+                        acc <> bformat ("    " F.% oF F.% " - " F.% tF) o t
+                          <> if cnt + 1 `mod` 3 == 0 then "\n" else mempty
                       else acc
                in (newCnt, newAcc)
           )

@@ -116,7 +116,7 @@ module Spicy.Molecule
     writeMOL2,
     writePDB,
     writeSpicy,
-    -- writeLayout,
+    writeONIOM,
   )
 where
 

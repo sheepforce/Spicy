@@ -16,7 +16,7 @@ module Spicy.Molecule.Internal.Writer
     writeMOL2,
     writePDB,
     writeSpicy,
-    -- writeLayout,
+    writeONIOM,
   )
 where
 
@@ -518,25 +518,18 @@ writeONIOM mol = do
       -- The bond matrix of all layers joined
       fullBondMat = molFoldl (\acc m -> m ^. #bonds <> acc) mempty mol
 
-  -- Point charges as per layer.
+  -- Point charges as per layer. Converts all atoms to dummies first, so that all get a point charge.
   layerChargeModel <-
     molFoldlWithMolID
       ( \acc' lid layer -> do
           acc <- acc'
-          chargeMat <- molToPointCharges layer
+          chargeMat <- molToPointCharges $ layer & #atoms % each % #isDummy .~ True
           return $ Map.insert lid chargeMat acc
       )
       (pure mempty)
       mol
 
-  triposMol2Builder <- fmap snd . runWriterT $ do
-    -- Header block
-    tell "@<TRIPOS>MOLECULE\n"
-    tell "ONIOM\n"
-    tell $ bprint (int F.% " " F.% int F.% " 0 0 0\n") (IntMap.size atomAssocs) (HashMap.size fullBondMat)
-    tell "SMALL\n"
-    tell "USER_CHARGES\n\n"
-
+  (nAtoms, atomBlock) <- runWriterT $ do
     -- Real atoms
     tell "@<TRIPOS>ATOM\n"
     atomLineBuilder <-
@@ -548,19 +541,23 @@ writeONIOM mol = do
             zCoord <- getVectorS (a ^. #coordinates) Massiv.!? 2
 
             let aType = case a ^. #ffType of
-                  FFMol2 l -> l <> if (isAtomLink $ a ^. #isLink) then ".LA" else mempty
-                  _ -> (tshow $ a ^. #element) <> if (isAtomLink $ a ^. #isLink) then ".LA" else mempty
+                  FFMol2 l -> l
+                  _ -> tshow $ a ^. #element
+                aLabel
+                  | isAtomLink $ a ^. #isLink = "LA"
+                  | a ^. #label == mempty = "X"
+                  | otherwise = a ^. #label
                 aLine =
                   bprint
                     fullFormatter
                     ak
-                    (a ^. #label)
+                    aLabel
                     xCoord
                     yCoord
                     zCoord
                     aType
                     fragId
-                    (molID2OniomHumandID mid)
+                    ("L" <> molID2OniomHumandID mid)
                     0
 
             return $ acc <> aLine
@@ -571,7 +568,7 @@ writeONIOM mol = do
 
     -- Point charges in the atoms
     maxAtomKey <- getMaxAtomIndex mol
-    pointChargeBuilder <-
+    (nAtomLines, pointChargeBuilder) <-
       Map.foldlWithKey'
         ( \acc' lid pcMat -> do
             (maxKey, lineAcc) <- acc'
@@ -581,13 +578,25 @@ writeONIOM mol = do
         )
         (pure (maxAtomKey, mempty))
         layerChargeModel
-    tell . snd $ pointChargeBuilder
+    tell pointChargeBuilder
+    return nAtomLines
 
+  (nBonds, bondBlock) <- runWriterT $ do
     -- Bonds
     tell "@<TRIPOS>BOND\n"
-    tell . bondLines $ fullBondMat
+    let (nb, bl) = bondLines fullBondMat
+    tell bl
+    return nb
 
-  return . sformat builder $ triposMol2Builder
+  (_, header) <- runWriterT $ do
+    -- Header block
+    tell "@<TRIPOS>MOLECULE\n"
+    tell "ONIOM\n"
+    tell $ bprint (int F.% " " F.% int F.% " 0 0 0\n") nAtoms nBonds
+    tell "SMALL\n"
+    tell "USER_CHARGES\n\n"
+
+  return . sformat builder $ header <> atomBlock <> bondBlock
   where
     keyFmt = left 6 ' ' %. int
     labelFmt = right 6 ' ' %. stext
@@ -620,20 +629,20 @@ writeONIOM mol = do
                       c = pc Massiv.! 3
                    in bprint
                         fullFormatter
-                        (maxKey + i)
+                        (maxKey + 1 + i)
                         "Bq"
                         x
                         y
                         z
-                        "Bq"
+                        "H"
                         0
-                        (molID2OniomHumandID mid)
+                        ("L" <> molID2OniomHumandID mid <> "_C")
                         c
               )
               slices
        in aLines
 
-    bondLines :: BondMatrix -> TextBuilder.Builder
+    bondLines :: BondMatrix -> (Int, TextBuilder.Builder)
     bondLines bm =
       let uniBonds = makeBondMatUnidirectorial bm
           nFmt = left 6 ' ' %. int
@@ -647,7 +656,8 @@ writeONIOM mol = do
             List.map (\(n, sndPart) -> bprint (nFmt F.% builder) n sndPart)
               . List.zip [1 ..]
               $ bondLinesSndPart
-       in foldl' (<>) mempty bLines
+          nBonds = HashMap.size uniBonds
+       in (nBonds, foldl' (<>) mempty bLines)
 
     -- Find the first matching set in an IntMap, that contains the search key.
     firstMatch :: Int -> IntMap Fragment -> Maybe Int
@@ -667,7 +677,7 @@ writeONIOM mol = do
     atomFragAssoc :: Molecule -> IntMap (Int, Atom)
     atomFragAssoc m =
       let frags = m ^. #fragment
-          atoms = m ^. #atoms
+          atoms = IntMap.filter (\a -> not $ a ^. #isDummy) $ m ^. #atoms
        in IntMap.mapWithKey (\ak a -> (fromMaybe 0 $ firstMatch ak frags, a)) atoms
 
     --
@@ -684,4 +694,4 @@ writeONIOM mol = do
               )
               (tShow depth)
               molID
-       in Text.pack . show $ idTree
+       in idTree
