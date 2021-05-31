@@ -30,16 +30,6 @@ extra-source-files:
 # common to point users to the README.md file.
 description: Please see the README on GitLab at <https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy>
 
-flags:
-  dev:
-    description: "Will not turn compiler warnings into errors and disable optimisations."
-    manual: true
-    default: false
-  llvm:
-    description: "Will compile Spicy with the LLVM backend."
-    manual: true
-    default: false
-
 dependencies:
   - base >= 4.7 && <5
   - optics >= 0.3 && < 0.5
@@ -77,19 +67,6 @@ ghc-options:
   - -Wincomplete-uni-patterns
   - -Wpartial-fields
   - -Wredundant-constraints
-
-when:
-  - condition: flag(dev)
-    then:
-      ghc-options:
-        - -O0
-    else:
-      ghc-options:
-        - -Werror
-        - -O2
-  - condition: flag(llvm)
-    ghc-options:
-      - -fllvm
 
 library:
   source-dirs: src
@@ -131,7 +108,7 @@ executables:
     ghc-options:
      - -threaded
      - -rtsopts
-     - -with-rtsopts=-N2
+     - -with-rtsopts=-N
 
 tests:
   unittests:
