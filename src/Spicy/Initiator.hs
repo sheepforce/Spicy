@@ -121,7 +121,12 @@ inputToEnvAndRun = do
 
   -- Construct the LogFunction and return the runtime environment
   logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
-  let logOptions = setLogUseTime True logOptions'
+  canUseColour <- hIsTerminalDevice stdout
+  let logOptions =
+        setLogVerboseFormat True
+          . setLogUseTime True
+          . setLogUseColor canUseColour
+          $ logOptions'
   withLogFunc logOptions $ \lf -> do
     let spicyEnv =
           SpicyEnv
