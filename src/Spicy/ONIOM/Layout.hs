@@ -33,7 +33,6 @@ import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.InputFile
 import Spicy.Molecule
-import Spicy.Outputter
 import System.Path as Path
 
 mcOniomNLayout :: (HasInputFile env, HasMolecule env) => RIO env ()
@@ -98,7 +97,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
   scratchDirAbs <- liftIO . Path.genericMakeAbsoluteFromCwd . getDirPath $ scratchDir
   opt <- optSettings <$> defIO
   let calcInheritOld = parentMol ^? #calcContext % ix (ONIOMKey Original) % #input
-      childComment = "Layer" <> molID2OniomHumandID (parentID |> childKey)
+      childComment = "Layer" <> molID2OniomHumanID (parentID |> childKey)
       childID = parentID |> childKey
       pysisSocket = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relFile "pysis.socket"
       pysisDir = dirByIDAndCalc workDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"

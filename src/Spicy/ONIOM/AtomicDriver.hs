@@ -67,7 +67,7 @@ oniomCalcDriver calcID wTask = do
 
   -- LOG
   logInfoS "calc-driver" $
-    "Running layer " <> (display . molID2OniomHumandID $ layerID) <> ", " <> case calcK of
+    "Running layer " <> (display . molID2OniomHumanID $ layerID) <> ", " <> case calcK of
       ONIOMKey Original -> "high level calculation"
       ONIOMKey Inherited -> "low level calculation"
 

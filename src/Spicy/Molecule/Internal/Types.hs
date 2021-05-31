@@ -98,7 +98,7 @@ module Spicy.Molecule.Internal.Types
     _Psi4,
     isPsi4,
     isXTB,
-    Psi4Info(..),
+    Psi4Info (..),
     GFN (..),
     renderGFN,
 
@@ -423,9 +423,17 @@ instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighb
   labelOptic = lens (\s -> neighbourlist s) $ \s b -> s {neighbourlist = b}
 
 -- Reader Class
+
+-- | Access to the shared state of the 'Molecule' in a shared variable. This is a stateful
+-- representation of the molecule.
 class HasMolecule env where
   moleculeL :: Lens' env (TVar Molecule)
 
+-- | RIO style reader constraint class, where there is direct (pure) access to the 'Molecule' in the
+-- environemt. While 'HasMolecule' gives access to the current state of the 'Molecule' in the
+-- runtime environemt and therefore requires 'IO', this is the direct access to an immutable
+-- 'Molecule' in the environment. While the runtime environemt does not hold this type, it is a
+-- useful accessor for pure 'MonadReader' stacks.
 class HasDirectMolecule env where
   moleculeDirectL :: Lens' env Molecule
 
