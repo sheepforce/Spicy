@@ -104,6 +104,10 @@ inputToEnvAndRun = do
   scratchExists <- liftIO . Dir.doesDirectoryExist $ scratchDirAbs
   when scratchExists . liftIO . Dir.removeDirectoryRecursive $ scratchDirAbs
 
+  -- Make sure the permanent directory exists.
+  let permaDir = getDirPath $ inputFile ^. #permanent
+  liftIO . Dir.createDirectoryIfMissing True $ permaDir
+
   -- Initialise the outputter thread and make sure to remove old log files.
   outQ <- newTBQueueIO 100
   let outfile = fromMaybe (Path.file "spicy.out") (Path.file <$> inputArgs ^. #logfile)

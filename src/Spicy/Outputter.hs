@@ -442,7 +442,7 @@ molID2OniomHumandID molID =
           )
           (tShow depth)
           molID
-   in Text.pack . show $ idTree
+   in idTree
 
 -- | Removes the dummy atoms from the molecule, so that printers only print real atoms.
 removeDummy :: (HasDirectMolecule env, MonadReader env m) => m a -> m a

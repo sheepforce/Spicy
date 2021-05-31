@@ -66,6 +66,8 @@ spicyExecMain = do
              printTopology ONIOM
          )
   -- Writing the ONIOM tree to a file
+  let initLayoutFile = getDirPath (inputFile ^. #permanent) </> Path.relFile "Input.mol2"
+  logInfoS logSource $ "Writing input structure as parsed to: " <> displayShow (Path.toString initLayoutFile)
   writeFileUTF8
     (getDirPath (inputFile ^. #permanent) </> Path.relFile "Input.mol2")
     =<< writeONIOM (inputPrintEnv ^. #mol)

@@ -98,7 +98,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
   scratchDirAbs <- liftIO . Path.genericMakeAbsoluteFromCwd . getDirPath $ scratchDir
   opt <- optSettings <$> defIO
   let calcInheritOld = parentMol ^? #calcContext % ix (ONIOMKey Original) % #input
-      childComment = textDisplay $ "Layer" <> molID2OniomHumandID (parentID |> childKey)
+      childComment = "Layer" <> molID2OniomHumandID (parentID |> childKey)
       childID = parentID |> childKey
       pysisSocket = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relFile "pysis.socket"
       pysisDir = dirByIDAndCalc workDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"

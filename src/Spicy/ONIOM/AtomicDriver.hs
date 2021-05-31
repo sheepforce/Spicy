@@ -66,8 +66,8 @@ oniomCalcDriver calcID wTask = do
       calcK = calcID ^. #calcKey
 
   -- LOG
-  logInfo $
-    "Layer " <> (display . molID2OniomHumandID $ layerID) <> ", " <> case calcK of
+  logInfoS "calc-driver" $
+    "Running layer " <> (display . molID2OniomHumandID $ layerID) <> ", " <> case calcK of
       ONIOMKey Original -> "high level calculation"
       ONIOMKey Inherited -> "low level calculation"
 
@@ -232,7 +232,7 @@ geomMacroDriver = do
             molWithHessian <- readTVarIO molT
             molToHessianData molWithHessian
           Done -> do
-            logError
+            logErrorS "direct-opt"
               "The macro geometry driver should be done but has entered an other\
               \ calculation loop."
             throwM $
