@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           spicy
-version:        0.0.0.1
+version:        0.0.1
 description:    Please see the README on GitLab at <https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy>
 author:         Phillip Seeber, Sebastian Seidenath
 maintainer:     phillip.seeber@uni-jena.de

@@ -1,5 +1,5 @@
 name:                spicy
-version:             0.0.0.1
+version:             0.0.1
 git:                 https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy
 license:             GPL-3
 author:              "Phillip Seeber, Sebastian Seidenath"
