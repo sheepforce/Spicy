@@ -49,8 +49,6 @@ import qualified RIO.ByteString as ByteString
 import qualified RIO.HashMap as HashMap
 import qualified RIO.List as List
 import qualified RIO.Map as Map
-import RIO.Partial (toEnum)
-import qualified RIO.Seq as Seq
 import qualified RIO.Text as Text
 import qualified RIO.Text.Lazy as TextLazy
 import RIO.Writer
@@ -569,7 +567,7 @@ writeONIOM mol = do
                     zCoord
                     aType
                     fragId
-                    ("L" <> molID2OniomHumandID mid)
+                    ("L" <> molID2OniomHumanID mid)
                     0
 
             return $ acc <> aLine
@@ -648,7 +646,7 @@ writeONIOM mol = do
                         z
                         "H"
                         0
-                        ("L" <> molID2OniomHumandID mid <> "_C")
+                        ("L" <> molID2OniomHumanID mid <> "_C")
                         c
               )
               slices
@@ -691,19 +689,3 @@ writeONIOM mol = do
       let frags = m ^. #fragment
           atoms = IntMap.filter (\a -> not $ a ^. #isDummy) $ m ^. #atoms
        in IntMap.mapWithKey (\ak a -> (fromMaybe 0 $ firstMatch ak frags, a)) atoms
-
-    --
-    molID2OniomHumandID :: MolID -> Text
-    molID2OniomHumandID Seq.Empty = "0"
-    molID2OniomHumandID molID =
-      let depth = Seq.length molID
-          idTree =
-            foldr'
-              ( \currentID textAcc ->
-                  let offSet = fromEnum 'A'
-                      idLetter = toEnum $ currentID + offSet
-                   in textAcc `Text.snoc` idLetter
-              )
-              (tShow depth)
-              molID
-       in idTree

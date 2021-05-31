@@ -60,6 +60,7 @@ module Spicy.Molecule.Internal.Util
     updateMolWithPosVec,
     shrinkNeighbourList,
     isolateMoleculeLayer,
+    molID2OniomHumanID,
   )
 where
 
@@ -94,8 +95,10 @@ import qualified RIO.HashMap as HashMap
 import qualified RIO.HashSet as HashSet
 import qualified RIO.List as List
 import qualified RIO.Map as Map
+import RIO.Partial (toEnum)
 import RIO.Seq (Seq (..))
 import qualified RIO.Seq as Seq
+import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Data
 import Spicy.Math
@@ -1440,7 +1443,7 @@ neighbourList maxNeighbourDist mol = do
           . Massiv.setComp Par
           $ collectedAtomSetInBins
 
-  -- Join all neighbours from the individual bins together.
+      -- Join all neighbours from the individual bins together.
       foldingF :: IntMap IntSet -> IntMap IntSet -> IntMap IntSet
       foldingF = IntMap.unionWith IntSet.union
       neighboursInDenseNumbering = unsafePerformIO $ Massiv.foldlP foldingF IntMap.empty foldingF IntMap.empty neighboursInBins
@@ -2607,3 +2610,21 @@ isolateMoleculeLayer mol =
     & #subMol .~ mempty
   where
     realAtomInds = IntMap.keysSet . IntMap.filter (\a -> not $ a ^. #isDummy) $ mol ^. #atoms
+
+----------------------------------------------------------------------------------------------------
+
+-- | Spicy tree notation string for identifying an ONIOM node in the tree.
+molID2OniomHumanID :: MolID -> Text
+molID2OniomHumanID Seq.Empty = "0"
+molID2OniomHumanID molID =
+  let depth = Seq.length molID
+      idTree =
+        foldr'
+          ( \currentID textAcc ->
+              let offSet = fromEnum 'A'
+                  idLetter = toEnum $ currentID + offSet
+               in textAcc `Text.snoc` idLetter
+          )
+          (tShow depth)
+          molID
+   in idTree

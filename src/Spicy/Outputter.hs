@@ -76,7 +76,6 @@ import Paths_spicy (version)
 import RIO hiding (Lens, Lens', Vector, lens, view, (%~), (.~), (^.), (^?))
 import qualified RIO.HashMap as HashMap
 import qualified RIO.HashSet as HashSet
-import qualified RIO.Partial as RIO'
 import qualified RIO.Seq as Seq
 import qualified RIO.Text as Text
 import RIO.Writer
@@ -428,22 +427,6 @@ nAv = "(Not Available)\n"
 -- | Wether to print full ONIOM tree properties or per layer properties.
 data PrintTarget = ONIOM | Layer MolID | All
 
--- | Conversion of a molecular ID into the human readable version.
-molID2OniomHumandID :: MolID -> Text
-molID2OniomHumandID Seq.Empty = "0"
-molID2OniomHumandID molID =
-  let depth = Seq.length molID
-      idTree =
-        foldr'
-          ( \currentID textAcc ->
-              let offSet = fromEnum 'A'
-                  idLetter = RIO'.toEnum $ currentID + offSet
-               in textAcc `Text.snoc` idLetter
-          )
-          (tShow depth)
-          molID
-   in idTree
-
 -- | Removes the dummy atoms from the molecule, so that printers only print real atoms.
 removeDummy :: (HasDirectMolecule env, MonadReader env m) => m a -> m a
 removeDummy = local (& moleculeDirectL %~ molMap rmDummies)
@@ -483,7 +466,7 @@ printEnergy pt = do
       "@ Energy (ONIOM) / Hartree\n\
       \--------------------------\n"
     lHeader i =
-      let txt = "@ Energy (Layer " <> molID2OniomHumandID i <> " ) / Hartree"
+      let txt = "@ Energy (Layer " <> molID2OniomHumanID i <> " ) / Hartree"
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 
@@ -526,7 +509,7 @@ printGradient pt = removeDummy $ do
       \-----------------------------------------\n"
 
     lHeader i =
-      let txt = "@ Gradient (Layer " <> molID2OniomHumandID i <> ") / (Hartree / Angstrom)"
+      let txt = "@ Gradient (Layer " <> molID2OniomHumanID i <> ") / (Hartree / Angstrom)"
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 
@@ -610,7 +593,7 @@ printHessian pt = removeDummy $ do
       \------------------------------------------\n"
 
     lHeader i =
-      let txt = "@ Hessian (Layer " <> molID2OniomHumandID i <> ") / (Hartree / Angstrom^2)"
+      let txt = "@ Hessian (Layer " <> molID2OniomHumanID i <> ") / (Hartree / Angstrom^2)"
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 
@@ -681,7 +664,7 @@ printCoords pt = removeDummy $ do
       \--------------------------------\n"
 
     lHeader i =
-      let txt = "@ Coordinates (Layer " <> molID2OniomHumandID i <> ") / Angstrom"
+      let txt = "@ Coordinates (Layer " <> molID2OniomHumanID i <> ") / Angstrom"
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 
@@ -743,7 +726,7 @@ printTopology pt = removeDummy $ do
       \-----------------------\n"
 
     lHeader i =
-      let txt = "@ Bond Topology (Layer" <> molID2OniomHumandID i <> ")"
+      let txt = "@ Bond Topology (Layer" <> molID2OniomHumanID i <> ")"
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 
@@ -791,7 +774,7 @@ printMultipoles pt = removeDummy $ do
       \----------------------------------------\n"
 
     lHeader i =
-      let txt = "\n\n@ Multipoles (Layer " <> molID2OniomHumandID i <> ") / ea_0^k for rank k"
+      let txt = "\n\n@ Multipoles (Layer " <> molID2OniomHumanID i <> ") / ea_0^k for rank k"
           line = Text.replicate (Text.length txt) "-"
        in TB.fromText . Text.unlines $ [txt, line]
 

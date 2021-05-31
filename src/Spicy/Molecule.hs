@@ -109,6 +109,7 @@ module Spicy.Molecule
     updateMolWithPosVec,
     shrinkNeighbourList,
     isolateMoleculeLayer,
+    molID2OniomHumanID,
 
     -- * Writer
     writeXYZ,
