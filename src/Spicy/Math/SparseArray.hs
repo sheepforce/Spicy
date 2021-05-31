@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Math.SparseArray
 -- Description : Sparse arrays in the style of the standard array package.
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental

@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Generic
 -- Description : Common data types and functions
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -1675,7 +1675,7 @@ vectorToGroups accessorF' vec' = go accessorF' vec' []
 
 ----------------------------------------------------------------------------------------------------
 
--- | Build a matrix from a vector of grouped elements. Groups are of fixed size and will be padded 
+-- | Build a matrix from a vector of grouped elements. Groups are of fixed size and will be padded
 -- with a default argument. The function fails if one of the groups exceeds the maximum size.
 matrixFromGroupVector ::
   (Source r Ix1 a, Stream r Ix1 a, MonadThrow m, Eq b, Show a) =>

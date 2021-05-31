@@ -2,9 +2,9 @@ name:                spicy
 version:             0.0.0.1
 git:                 https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy
 license:             GPL-3
-author:              "Phillip Seeber"
+author:              "Phillip Seeber, Sebastian Seidenath"
 maintainer:          "phillip.seeber@uni-jena.de"
-copyright:           "2020 Phillip Seeber"
+copyright:           "2021 Phillip Seeber, Sebastian Seidenath"
 
 build-type: Simple
 #build-type: Custom

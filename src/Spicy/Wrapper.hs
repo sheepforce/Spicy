@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Wrapper
 -- Description : Abstract routines to perform calculations with external software.
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental

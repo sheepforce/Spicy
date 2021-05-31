@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.JobDriver
 -- Description : Combination of steps to full ONIOM jobs
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -75,16 +75,16 @@ spicyExecMain = do
   link calcSlotThread
 
   -- Building an inital neighbourlist for large distances.
-  logInfo "Constructing initial neighbour list for molecule ..."
+  logInfoS logSource "Constructing initial neighbour list for molecule ..."
   initNeighbourList
 
   -- Apply topology updates as given in the input file to the molecule.
-  logInfo "Applying changes to the input topology ..."
+  logInfoS logSource "Applying changes to the input topology ..."
   changeTopologyOfMolecule
 
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
-  logInfo "Preparing layout for a MC-ONIOMn calculation ..."
+  logInfoS logSource "Preparing layout for a MC-ONIOMn calculation ..."
   layoutMoleculeForCalc
 
   -- setupPhase printing. Show the layouted molecules and topologies in hierarchical order.
@@ -136,7 +136,7 @@ spicyExecMain = do
         printSpicy . renderBuilder . spicyLog hessEndPrintEnv $
           spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
       MD -> do
-        logError "A MD run was requested but MD is not implemented yet."
+        logErrorS logSource "A MD run was requested but MD is not implemented yet."
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
 
   -- Final logging.
@@ -152,7 +152,7 @@ spicyExecMain = do
   cancel calcSlotThread
 
   -- LOG
-  logInfo "Spicy execution finished. May the sheep be with you and your results!"
+  logInfoS logSource "Spicy execution finished. May the sheep be with you and your results!"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -192,20 +192,23 @@ changeTopologyOfMolecule = do
           additionPairs = fromMaybe [] $ topoChanges ^. #bondsToAdd
 
       -- Show what will be done to the topology:
-      logInfo $
-        "  Guessing new bonds (scaling factor): "
+      logInfoS logSource $
+        "Guessing new bonds (scaling factor): "
           <> if topoChanges ^. #guessBonds
             then display covScalingFactor
             else "No"
-      logInfo "  Removing bonds between atom pairs:"
-      mapM_ (logInfo . ("    " <>) . utf8Show) $ chunksOf 5 removalPairs
-      logInfo "  Adding bonds between atom pairs:"
-      mapM_ (logInfo . ("    " <>) . utf8Show) $ chunksOf 5 additionPairs
+      logInfoS logSource $
+        "Removing bonds between atom pairs: "
+          <> utf8Show (chunksOf 5 removalPairs)
+      logInfoS logSource $
+        "Adding bonds between atom pairs: "
+          <> utf8Show (chunksOf 5 additionPairs)
 
       -- Apply changes to the topology
       let bondMatrixFromInput = mol ^. #bonds
       unless (HashMap.null bondMatrixFromInput) $
-        logWarn
+        logWarnS
+          logSource
           "The input file format contains topology information such as bonds\
           \ but manipulations were requested anyway."
 

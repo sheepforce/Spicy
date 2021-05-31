@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Molecule
 -- Description : Handling molecular informations
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental

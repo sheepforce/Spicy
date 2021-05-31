@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Formats.FChk
 -- Description : Functions to work with FChk files
--- Copyright   : Phillip Seeber, 2019
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental

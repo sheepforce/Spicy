@@ -30,7 +30,6 @@ import RIO.Process
 import Spicy.Common
 import Spicy.Formats.FChk
 import Spicy.Molecule
-import Spicy.Outputter
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.IO
 import Spicy.Wrapper.Internal.Output.GDMA
@@ -60,14 +59,6 @@ runCalculation ::
   CalcID ->
   RIO env Molecule
 runCalculation calcID = do
-  -- LOG
-  logInfo $
-    "Running calculation with ID \""
-      <> displayShow (calcID ^. #calcKey)
-      <> "\" on "
-      <> (display . molID2OniomHumandID $ calcID ^. #molID)
-      <> "."
-
   -- Create the lenses for accessing calculation and molecule.
   let calcLens = calcIDLensGen calcID
 
@@ -152,7 +143,7 @@ executePsi4 calcID = do
 
   -- Check if this function is appropiate to execute the calculation at all.
   unless (software & isPsi4) $ do
-    logError
+    logErrorS "psi4"
       "A calculation should be done with the Psi4 driver function,\
       \ but the calculation is not a Psi4 calculation."
     throwM $
@@ -178,7 +169,7 @@ executePsi4 calcID = do
         ]
 
   -- Debug logging before execution of Psi4.
-  logDebug $ "Starting Psi4 with command line arguments: " <> displayShow psi4CmdArgs
+  logDebugS "psi4" $ "Starting Psi4 with command line arguments: " <> displayShow psi4CmdArgs
 
   -- Launch the Psi4 process and read its stdout and stderr.
   (exitCode, psi4Out, psi4Err) <-
@@ -190,9 +181,9 @@ executePsi4 calcID = do
 
   -- Provide some information if something went wrong.
   unless (exitCode == ExitSuccess) $ do
-    logError $ "Psi4 execution terminated abnormally. Got exit code: " <> displayShow exitCode
-    logError $ "Psi4 error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Err)
-    logError $ "Psi4 stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
+    logErrorS "psi4" $ "Execution terminated abnormally. Got exit code: " <> displayShow exitCode
+    logErrorS "psi4" $ "Error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Err)
+    logErrorS "psi4" $ "Stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ psi4Out)
     throwM $ WrapperGenericException "executePsi4" "Psi4 execution terminated abnormally."
 
 -- | Run a given XTB calculation. This function will write its own input files.
@@ -226,7 +217,7 @@ executeXTB calcID = do
 
   -- Check if this function is appropiate to execute the calculation at all.
   unless (thisSoftware & isXTB) $ do
-    logError
+    logErrorS "xtb"
       "A calculation should be done with the XTB driver function,\
       \ but the calculation is not a XTB calculation."
     throwM $
@@ -256,7 +247,7 @@ executeXTB calcID = do
         ]
 
   -- Debug logging before execution of XTB.
-  logDebug $ "Starting XTB with command line arguments: " <> displayShow xtbCmdArgs
+  logDebugS "xtb" $ "Starting XTB with command line arguments: " <> displayShow xtbCmdArgs
 
   -- Launch the XTB process and read its stdout and stderr.
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
@@ -271,9 +262,9 @@ executeXTB calcID = do
 
   -- Provide some information if something went wrong.
   unless (exitCode == ExitSuccess) $ do
-    logError $ "xtb execution terminated abnormally. Got exit code: " <> displayShow exitCode
-    logError $ "xtb error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbErr)
-    logError $ "xtb stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbOut)
+    logErrorS "xtb" $ "Execution terminated abnormally. Got exit code: " <> displayShow exitCode
+    logErrorS "xtb" $ "Error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbErr)
+    logErrorS "xtb" $ "Stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbOut)
     throwM $ WrapperGenericException "executeXTB" "XTB execution terminated abnormally."
 
 ----------------------------------------------------------------------------------------------------
@@ -337,12 +328,12 @@ gdmaAnalysis fchkPath atoms expOrder = do
       (readProcess . setStdin (byteStringInput gdmaInput))
 
   unless (exitCode == ExitSuccess) $ do
-    logError $ "GDMA execution terminated abnormally. Got exit code: " <> displayShow exitCode
-    logError "GDMA error messages:"
-    logError . displayShow $ gdmaErr
-    logError "GDMA stdout messages:"
-    logError . displayShow $ gdmaOut
-    throwM . localExcp $ "GDMA run uncessfull"
+    logErrorS "gdma" $ "Execution terminated abnormally. Got exit code: " <> displayShow exitCode
+    logErrorS "gdma" "Error messages:"
+    logErrorS "gdma" . displayShow $ gdmaErr
+    logErrorS "gdma" "Stdout messages:"
+    logErrorS "gdma" . displayShow $ gdmaOut
+    throwM . localExcp $ "Run uncessfull"
 
   -- Parse the GDMA output and rejoin them with the model atoms.
   modelMultipoleList <-
@@ -361,7 +352,7 @@ gdmaAnalysis fchkPath atoms expOrder = do
 
   -- Message if something is wrong with the number of poles expected and obtained.
   unless (List.length modelMultipoleList == List.length modelAtomKeys) $ do
-    logError
+    logErrorS "gdma"
       "Number of model atoms and number of multipole expansions centres obtained from GDMA\
       \ do not match."
     throwM . localExcp $ "Problematic behaviour in GDMA multipole analysis."
@@ -410,7 +401,7 @@ analysePsi4 calcID = do
       hessianPath = permanentDir </> Path.relFile prefixName <.> ".hess"
       task' = calcContext ^. #input % #task
 
-  logDebug $ "Reading the formatted checkpoint file: " <> path2Utf8Builder fchkPath
+  logDebugS "psi4" $ "Reading the formatted checkpoint file: " <> path2Utf8Builder fchkPath
 
   -- Read the formatted checkpoint file from the permanent directory.
   fChkOutput <- getResultsFromFChk =<< readFileUTF8 (Path.toAbsRel fchkPath)
@@ -418,7 +409,7 @@ analysePsi4 calcID = do
   -- If the task was a hessian calculation, also parse the numpy array with the hessian.
   hessianOutput <- case task' of
     WTHessian -> do
-      logDebug $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
+      logDebugS "psi4" $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
       hessianContent <- readFileUTF8 (Path.toAbsRel hessianPath)
       hessian <- parse' doubleSquareMatrix hessianContent
       return . Just $ hessian
@@ -467,7 +458,7 @@ analyseXTB calcID = do
   gradientOutput <- case task' of
     WTEnergy -> return Nothing
     _ -> do
-      logDebug $ "Reading gradient file " <> path2Utf8Builder gradientPath
+      logDebugS "xtb" $ "Reading gradient file " <> path2Utf8Builder gradientPath
       gradientContent <- readFileUTF8 $ Path.toAbsRel gradientPath
       gradient <- parse' parseXTBgradient gradientContent
       return . Just $ gradient
@@ -475,14 +466,14 @@ analyseXTB calcID = do
   -- If the task was a hessian calculation, also parse the array with the hessian.
   hessianOutput <- case task' of
     WTHessian -> do
-      logDebug $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
+      logDebugS "xtb" $ "Reading the hessian file: " <> path2Utf8Builder hessianPath
       hessianContent <- readFileUTF8 (Path.toAbsRel hessianPath)
       hessian <- parse' parseXTBhessian hessianContent
       return . Just $ hessian
     _ -> return Nothing
 
   -- Get multipoles from the output json.
-  logDebug $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
+  logDebugS "xtb" $ "Reading the XTB json file: " <> path2Utf8Builder jsonPath
   (energy, modelMultipoleList) <- fromXTBout =<< readFileBinary (Path.toString jsonPath)
 
   -- Assign multipoles to the correct keys

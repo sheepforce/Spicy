@@ -7,9 +7,9 @@ cabal-version: 1.12
 name:           spicy
 version:        0.0.0.1
 description:    Please see the README on GitLab at <https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy>
-author:         Phillip Seeber
+author:         Phillip Seeber, Sebastian Seidenath
 maintainer:     phillip.seeber@uni-jena.de
-copyright:      2020 Phillip Seeber
+copyright:      2021 Phillip Seeber, Sebastian Seidenath
 license:        GPL-3
 license-file:   LICENSE
 build-type:     Simple
@@ -59,11 +59,9 @@ library
       Spicy.RuntimeEnv
       Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
-      Spicy.Wrapper.Internal.Generic
       Spicy.Wrapper.Internal.Input.IO
       Spicy.Wrapper.Internal.Input.Language
       Spicy.Wrapper.Internal.Input.Representation
-      Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
       Spicy.Wrapper.Internal.Output.XTB
