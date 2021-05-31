@@ -17,8 +17,8 @@ import Optics hiding (view)
 import RIO hiding (view, (^.))
 import RIO.Process
 import Spicy.Common
-import Spicy.Logger
 import Spicy.Molecule
+import Spicy.Outputter
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Executor
 
@@ -50,8 +50,8 @@ provideCalcSlot = do
     -- LOG
     logDebugS logSource $
       "Got calculation:\n"
-        <> ("  Layer: " <> molID2OniomHumandID (calcID ^. #molID))
-        <> ( "  Type : " <> case (calcID ^. #calcKey) of
+        <> ("  Layer: " <> (display . molID2OniomHumandID $ calcID ^. #molID))
+        <> ( "  Type : " <> case calcID ^. #calcKey of
                ONIOMKey Original -> "high level calculation"
                ONIOMKey Inherited -> "low level calculation"
            )

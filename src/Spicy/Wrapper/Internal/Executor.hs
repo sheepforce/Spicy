@@ -29,8 +29,8 @@ import qualified RIO.List as List
 import RIO.Process
 import Spicy.Common
 import Spicy.Formats.FChk
-import Spicy.Logger
 import Spicy.Molecule
+import Spicy.Outputter
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.IO
 import Spicy.Wrapper.Internal.Output.GDMA
@@ -65,15 +65,14 @@ runCalculation calcID = do
     "Running calculation with ID \""
       <> displayShow (calcID ^. #calcKey)
       <> "\" on "
-      <> molID2OniomHumandID (calcID ^. #molID)
+      <> (display . molID2OniomHumandID $ calcID ^. #molID)
       <> "."
 
   -- Create the lenses for accessing calculation and molecule.
   let calcLens = calcIDLensGen calcID
 
   -- Gather the information for this calculation.
-  molT <- view moleculeL
-  mol <- atomically . readTVar $ molT
+  mol <- view moleculeL >>= readTVarIO
   (calcContext, _) <- maybe2MThrow (localExc "Requested to perform a calculation, which does not exist") $ getCalcByID mol calcID
   unless (isNothing $ calcContext ^. #output) . throwM . localExc $ "Requested to perform a calculation, which has already been performed."
 
@@ -137,7 +136,7 @@ executePsi4 calcID = do
   let calcLens = calcIDLensGen calcID
 
   -- Gather information for the execution of Psi4
-  mol <- view moleculeL >>= atomically . readTVar
+  mol <- view moleculeL >>= readTVarIO
   let calcContextM = mol ^? calcLens
   calcContext <- case calcContextM of
     Nothing ->
@@ -216,7 +215,7 @@ executeXTB calcID = do
   let calcLens = calcIDLensGen calcID
 
   -- Gather information for the execution of XTB
-  mol <- view moleculeL >>= atomically . readTVar
+  mol <- view moleculeL >>= readTVarIO
 
   calcContext <-
     maybe2MThrow
@@ -395,9 +394,9 @@ analysePsi4 calcID = do
       calcLens = calcIDLensGen calcID
 
   -- Gather information about the run which to analyse.
-  mol <- view moleculeL >>= atomically . readTVar
+  mol <- view moleculeL >>= readTVarIO
   localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
-  calcContext <- case (mol ^? calcLens) of
+  calcContext <- case mol ^? calcLens of
     Just x -> return x
     Nothing ->
       throwM $
@@ -451,7 +450,7 @@ analyseXTB calcID = do
       calcLens = calcIDLensGen calcID
 
   -- Gather information about the run which to analyse.
-  mol <- view moleculeL >>= atomically . readTVar
+  mol <- view moleculeL >>= readTVarIO
   localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
   calcContext <-
     maybe2MThrow

@@ -39,7 +39,6 @@ import qualified RIO.Vector.Storable as VectorS
 import Spicy.Common
 import Spicy.Data
 import Spicy.InputFile
-import Spicy.Logger
 import Spicy.Molecule
 import Spicy.ONIOM.Collector
 import Spicy.Outputter as Out
@@ -68,7 +67,7 @@ oniomCalcDriver calcID wTask = do
 
   -- LOG
   logInfo $
-    "Layer " <> molID2OniomHumandID layerID <> ", " <> case calcK of
+    "Layer " <> (display . molID2OniomHumandID $ layerID) <> ", " <> case calcK of
       ONIOMKey Original -> "high level calculation"
       ONIOMKey Inherited -> "low level calculation"
 

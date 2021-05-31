@@ -32,8 +32,8 @@ import qualified RIO.Seq as Seq
 import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.InputFile
-import Spicy.Logger
 import Spicy.Molecule
+import Spicy.Outputter
 import System.Path as Path
 
 mcOniomNLayout :: (HasInputFile env, HasMolecule env) => RIO env ()

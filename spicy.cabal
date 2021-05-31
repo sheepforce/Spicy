@@ -16,8 +16,6 @@ build-type:     Simple
 extra-source-files:
     README.md
     LICENSE
-    data/Fonts/JobDriver.txt
-    data/Fonts/SpicyLogo.txt
     goldentests/input/
     goldentests/goldenfiles/
 
@@ -45,7 +43,6 @@ library
       Spicy.Initiator
       Spicy.InputFile
       Spicy.JobDriver
-      Spicy.Logger
       Spicy.Math
       Spicy.Math.SparseArray
       Spicy.Math.Spherical

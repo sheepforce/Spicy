@@ -46,6 +46,7 @@ module Spicy.Outputter
     PrintTarget (..),
     SpicyLog,
     spicyLog,
+    molID2OniomHumandID,
     printEnergy,
     printGradient,
     printHessian,
