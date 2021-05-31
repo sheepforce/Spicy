@@ -126,7 +126,7 @@ class HasOutputter env where
 data Outputter = Outputter
   { outChan :: TBQueue Utf8Builder,
     outFile :: Path.AbsRelFile,
-    printVerbosity :: PrintVerbosity HashSet
+    printVerbosity :: PrintVerbosity
   }
 
 instance HasOutputter Outputter where
@@ -138,7 +138,7 @@ instance (k ~ A_Lens, a ~ TBQueue Utf8Builder, b ~ a) => LabelOptic "outChan" k 
 instance (k ~ A_Lens, a ~ Path.AbsRelFile, b ~ a) => LabelOptic "outFile" k Outputter Outputter a b where
   labelOptic = lens outFile $ \s b -> s {outFile = b}
 
-instance (k ~ A_Lens, a ~ PrintVerbosity HashSet, b ~ a) => LabelOptic "printVerbosity" k Outputter Outputter a b where
+instance (k ~ A_Lens, a ~ PrintVerbosity, b ~ a) => LabelOptic "printVerbosity" k Outputter Outputter a b where
   labelOptic = lens printVerbosity $ \s b -> s {printVerbosity = b}
 
 ----------------------------------------------------------------------------------------------------
@@ -157,90 +157,90 @@ instance FromJSON Verbosity
 
 -- | Environments, that provide print verbosity depending on the event.
 class HasPrintVerbosity env where
-  printVerbosityL :: Lens' env (PrintVerbosity HashSet)
+  printVerbosityL :: Lens' env PrintVerbosity
 
 -- | Information that can be printed and when to print.
-data PrintVerbosity f = PrintVerbosity
+data PrintVerbosity = PrintVerbosity
   { -- | Energy of the full ONIOM tree
-    oniomE :: f PrintEvent,
+    oniomE :: HashSet PrintEvent,
     -- | Gradient of the full ONIOM tree
-    oniomG :: f PrintEvent,
+    oniomG :: HashSet PrintEvent,
     -- | Hessian of the full ONIOM tree
-    oniomH :: f PrintEvent,
+    oniomH :: HashSet PrintEvent,
     -- | Coordinates of the full ONIOM tree
-    oniomC :: f PrintEvent,
+    oniomC :: HashSet PrintEvent,
     -- | Bond topology on the full ONIOM tree
-    oniomT :: f PrintEvent,
+    oniomT :: HashSet PrintEvent,
     -- | ONIOM multipoles of the real system
-    oniomMP :: f PrintEvent,
+    oniomMP :: HashSet PrintEvent,
     -- | High and low level energy of a layer
-    layerE :: f PrintEvent,
+    layerE :: HashSet PrintEvent,
     -- | High and low level gradient of a layer
-    layerG :: f PrintEvent,
+    layerG :: HashSet PrintEvent,
     -- | High and low level hessian of a layer
-    layerH :: f PrintEvent,
+    layerH :: HashSet PrintEvent,
     -- | Coordinates of a layer
-    layerC :: f PrintEvent,
+    layerC :: HashSet PrintEvent,
     -- | Bond topology on the full ONIOM tree
-    layerT :: f PrintEvent,
+    layerT :: HashSet PrintEvent,
     -- | High and low level multipole moments of a layer
-    layerMP :: f PrintEvent,
+    layerMP :: HashSet PrintEvent,
     -- | Optimisation information
-    opt :: f PrintEvent,
+    opt :: HashSet PrintEvent,
     -- | MD information
-    md :: f PrintEvent
+    md :: HashSet PrintEvent
   }
 
-instance HasPrintVerbosity (PrintVerbosity HashSet) where
+instance HasPrintVerbosity PrintVerbosity where
   printVerbosityL = castOptic simple
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomE" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "oniomE" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens oniomE $ \s b -> s {oniomE = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomG" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "oniomG" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens oniomG $ \s b -> s {oniomG = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomH" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "oniomH" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens oniomH $ \s b -> s {oniomH = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomC" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "oniomC" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens oniomC $ \s b -> s {oniomC = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomT" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "oniomT" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens oniomT $ \s b -> s {oniomT = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "oniomMP" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "oniomMP" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens oniomMP $ \s b -> s {oniomMP = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "layerE" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "layerE" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens layerE $ \s b -> s {layerE = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "layerG" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "layerG" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens layerG $ \s b -> s {layerG = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "layerH" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "layerH" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens layerH $ \s b -> s {layerH = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "layerC" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "layerC" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens layerC $ \s b -> s {layerC = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "layerT" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "layerT" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens layerT $ \s b -> s {layerT = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "layerMP" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "layerMP" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens layerMP $ \s b -> s {layerMP = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "opt" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "opt" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens opt $ \s b -> s {opt = b}
 
-instance (k ~ A_Lens, a ~ f PrintEvent, b ~ a) => LabelOptic "md" k (PrintVerbosity f) (PrintVerbosity f) a b where
+instance (k ~ A_Lens, a ~ HashSet PrintEvent, b ~ a) => LabelOptic "md" k PrintVerbosity PrintVerbosity a b where
   labelOptic = lens md $ \s b -> s {md = b}
 
-instance Default (PrintVerbosity HashSet) where
+instance Default PrintVerbosity where
   def = defPrintVerbosity Medium
 
 -- | Predefined print verbosities.
-defPrintVerbosity :: Verbosity -> PrintVerbosity HashSet
+defPrintVerbosity :: Verbosity -> PrintVerbosity
 defPrintVerbosity v = case v of
   Low ->
     PrintVerbosity
@@ -346,7 +346,7 @@ data StartEnd
 -- | A print environemt, that contains necessary data.
 data PrintEnv = PrintEnv
   { mol :: Molecule,
-    printV :: PrintVerbosity HashSet
+    printV :: PrintVerbosity
   }
 
 instance HasDirectMolecule PrintEnv where
@@ -358,7 +358,7 @@ instance HasPrintVerbosity PrintEnv where
 instance (k ~ A_Lens, a ~ Molecule, b ~ a) => LabelOptic "mol" k PrintEnv PrintEnv a b where
   labelOptic = lens mol $ \s b -> s {mol = b}
 
-instance (k ~ A_Lens, a ~ PrintVerbosity HashSet, b ~ a) => LabelOptic "printV" k PrintEnv PrintEnv a b where
+instance (k ~ A_Lens, a ~ PrintVerbosity, b ~ a) => LabelOptic "printV" k PrintEnv PrintEnv a b where
   labelOptic = lens printV $ \s b -> s {printV = b}
 
 -- | From the current runtime environment make a logging environment.
@@ -873,7 +873,7 @@ spicyLogMol pe pt = do
 
   tell . TB.fromText . textDisplay $ sep
   where
-    doLog :: PrintVerbosity HashSet -> Lens' (PrintVerbosity HashSet) (HashSet PrintEvent) -> Bool
+    doLog :: PrintVerbosity -> Lens' PrintVerbosity (HashSet PrintEvent) -> Bool
     doLog pv l =
       let pvt = pv ^. l
        in not . HashSet.null $ pvt `HashSet.intersection` pe
