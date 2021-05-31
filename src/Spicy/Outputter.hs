@@ -400,7 +400,7 @@ type SpicyLog r = LogM r TB.Builder
 
 -- | Runs the 'LogM' monad with a given environment to read from.
 execLogM :: r -> LogM r w -> w
-execLogM r lm = snd . (\rm -> runReader rm r) . runWriterT $ lm
+execLogM r lm = flip runReader r . execWriterT $ lm
 
 -- | Runs the Spicy Logger monad to obtain a 'Utf8Builder' log value.
 spicyLog :: r -> SpicyLog r -> TB.Builder
