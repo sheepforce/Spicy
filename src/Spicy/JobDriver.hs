@@ -1,9 +1,7 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 -- |
 -- Module      : Spicy.JobDriver
 -- Description : Combination of steps to full ONIOM jobs
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -15,16 +13,14 @@ module Spicy.JobDriver
   )
 where
 
-import Data.FileEmbed
 import Data.List.Split
 import qualified Data.Map as Map
+import Data.Yaml.Pretty
 import Optics hiding (view)
-import RIO hiding
-  ( view,
-    (.~),
-    (^.),
-  )
+import RIO hiding (view, (.~), (^.))
+import RIO.ByteString (hPutStr)
 import qualified RIO.HashMap as HashMap
+import qualified RIO.HashSet as HashSet
 import RIO.Process
 import Spicy.Common
 import Spicy.Data
@@ -33,19 +29,14 @@ import Spicy.Molecule
 import Spicy.ONIOM.AtomicDriver
 import Spicy.ONIOM.Collector
 import Spicy.ONIOM.Layout
+import Spicy.Outputter hiding (Macro, Micro)
 import Spicy.RuntimeEnv
 import Spicy.Wrapper
+import System.Path ((</>))
 import qualified System.Path as Path
 
 logSource :: LogSource
 logSource = "JobDriver"
-
-----------------------------------------------------------------------------------------------------
-
--- | The Spicy Logo as ASCII art.
-jobDriverText :: Text
-jobDriverText =
-  decodeUtf8Lenient $(embedFile . Path.toString . Path.relFile $ "data/Fonts/JobDriver.txt")
 
 ----------------------------------------------------------------------------------------------------
 spicyExecMain ::
@@ -54,48 +45,116 @@ spicyExecMain ::
     HasLogFunc env,
     HasWrapperConfigs env,
     HasProcessContext env,
-    HasCalcSlot env
+    HasCalcSlot env,
+    HasOutputter env
   ) =>
   RIO env ()
 spicyExecMain = do
+  -- Starting the output log.
+  hPutStr stderr spicyLogoColour
+  inputFile <- view inputFileL
+  inputPrintEnv <- getCurrPrintEvn
+  printSpicy $
+    spicyLogo
+      <> ("Spicy Version " <> versionInfo <> "\n\n\n")
+      <> txtInput
+      <> sep
+      <> (displayBytesUtf8 . encodePretty defConfig $ inputFile)
+      <> sep
+      <> ( renderBuilder . spicyLog inputPrintEnv $ do
+             printCoords ONIOM
+             printTopology ONIOM
+         )
+  -- Writing the ONIOM tree to a file
+  let initLayoutFile = getDirPath (inputFile ^. #permanent) </> Path.relFile "Input.mol2"
+  logInfoS logSource $ "Writing input structure as parsed to: " <> displayShow (Path.toString initLayoutFile)
+  writeFileUTF8
+    (getDirPath (inputFile ^. #permanent) </> Path.relFile "Input.mol2")
+    =<< writeONIOM (inputPrintEnv ^. #mol)
+
   -- Start the companion threads for i-PI, Pysis and the calculations.
   calcSlotThread <- async provideCalcSlot
   link calcSlotThread
 
   -- Building an inital neighbourlist for large distances.
-  logInfo "Constructing initial neighbour list for molecule ..."
+  logInfoS logSource "Constructing initial neighbour list for molecule ..."
   initNeighbourList
 
   -- Apply topology updates as given in the input file to the molecule.
-  logInfo "Applying changes to the input topology ..."
+  logInfoS logSource "Applying changes to the input topology ..."
   changeTopologyOfMolecule
 
   -- The molecule as loaded from the input file must be layouted to fit the current calculation
   -- type.
-  logInfo "Preparing layout for a MC-ONIOMn calculation ..."
+  logInfoS logSource "Preparing layout for a MC-ONIOMn calculation ..."
   layoutMoleculeForCalc
+
+  -- setupPhase printing. Show the layouted molecules and topologies in hierarchical order.
+  setupPrintEnv <- getCurrPrintEvn
+  let molIDHierarchy = getAllMolIDsHierarchically $ setupPrintEnv ^. #mol
+  printSpicy $
+    txtSetup
+      <> ( renderBuilder . spicyLog setupPrintEnv . forM_ molIDHierarchy $ \i -> do
+             printCoords (Layer i)
+             printTopology (Layer i)
+         )
+  writeFileUTF8
+    (getDirPath (inputFile ^. #permanent) </> Path.relFile "Setup.mol2")
+    =<< writeONIOM (setupPrintEnv ^. #mol)
 
   -- Perform the specified tasks on the input file.
   tasks <- view $ inputFileL % #task
   forM_ tasks $ \t -> do
     case t of
-      Energy -> multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+      Energy -> do
+        -- Logging.
+        energyStartPrintEnv <- getCurrPrintEvn
+        printSpicy txtSinglePoint
+        printSpicy . renderBuilder . spicyLog energyStartPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task Start]) All
+
+        -- Actual calculation
+        multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+
+        -- Final logging
+        energyEndPrintEnv <- getCurrPrintEvn
+        printSpicy . renderBuilder . spicyLog energyEndPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
       Optimise Macro -> geomMacroDriver
       Optimise Micro -> undefined
-      Frequency -> multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+      Frequency -> do
+        -- Logging.
+        hessStartPrintEnv <- getCurrPrintEvn
+        printSpicy txtSinglePoint
+        printSpicy . renderBuilder . spicyLog hessStartPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task Start]) All
+
+        -- Actual calculation
+        multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+
+        -- Final logging.
+        hessEndPrintEnv <- getCurrPrintEvn
+        printSpicy txtSinglePoint
+        printSpicy . renderBuilder . spicyLog hessEndPrintEnv $
+          spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
       MD -> do
-        logError "A MD run was requested but MD is not implemented yet."
+        logErrorS logSource "A MD run was requested but MD is not implemented yet."
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
 
-  -- LOG
-  -- finalMol <- view moleculeL >>= atomically . readTVar
-  -- logDebug . display . writeSpicy $ finalMol
+  -- Final logging.
+  finalPrintEnv <- getCurrPrintEvn
+  printSpicy . renderBuilder . spicyLog finalPrintEnv $
+    spicyLogMol (HashSet.fromList [Spicy End]) All
+  writeFileUTF8
+    (getDirPath (inputFile ^. #permanent) </> Path.relFile "Final.mol2")
+    =<< writeONIOM (finalPrintEnv ^. #mol)
+  printSpicy $ sep <> "Spicy execution finished. May the sheep be with you and your results!"
 
   -- Kill the companion threads after we are done.
   cancel calcSlotThread
 
   -- LOG
-  logInfo "Spicy execution finished. Wup Wup!"
+  logInfoS logSource "Spicy execution finished. May the sheep be with you and your results!"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -135,20 +194,23 @@ changeTopologyOfMolecule = do
           additionPairs = fromMaybe [] $ topoChanges ^. #bondsToAdd
 
       -- Show what will be done to the topology:
-      logInfo $
-        "  Guessing new bonds (scaling factor): "
+      logInfoS logSource $
+        "Guessing new bonds (scaling factor): "
           <> if topoChanges ^. #guessBonds
             then display covScalingFactor
             else "No"
-      logInfo "  Removing bonds between atom pairs:"
-      mapM_ (logInfo . ("    " <>) . utf8Show) $ chunksOf 5 removalPairs
-      logInfo "  Adding bonds between atom pairs:"
-      mapM_ (logInfo . ("    " <>) . utf8Show) $ chunksOf 5 additionPairs
+      logInfoS logSource $
+        "Removing bonds between atom pairs: "
+          <> utf8Show (chunksOf 5 removalPairs)
+      logInfoS logSource $
+        "Adding bonds between atom pairs: "
+          <> utf8Show (chunksOf 5 additionPairs)
 
       -- Apply changes to the topology
       let bondMatrixFromInput = mol ^. #bonds
       unless (HashMap.null bondMatrixFromInput) $
-        logWarn
+        logWarnS
+          logSource
           "The input file format contains topology information such as bonds\
           \ but manipulations were requested anyway."
 

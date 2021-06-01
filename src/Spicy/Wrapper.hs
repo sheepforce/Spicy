@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Wrapper
 -- Description : Abstract routines to perform calculations with external software.
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -17,7 +17,6 @@ import Optics hiding (view)
 import RIO hiding (view, (^.))
 import RIO.Process
 import Spicy.Common
-import Spicy.Logger
 import Spicy.Molecule
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Executor
@@ -50,8 +49,8 @@ provideCalcSlot = do
     -- LOG
     logDebugS logSource $
       "Got calculation:\n"
-        <> ("  Layer: " <> molID2OniomHumandID (calcID ^. #molID))
-        <> ( "  Type : " <> case (calcID ^. #calcKey) of
+        <> ("  Layer: " <> (display . molID2OniomHumanID $ calcID ^. #molID))
+        <> ( "  Type : " <> case calcID ^. #calcKey of
                ONIOMKey Original -> "high level calculation"
                ONIOMKey Inherited -> "low level calculation"
            )

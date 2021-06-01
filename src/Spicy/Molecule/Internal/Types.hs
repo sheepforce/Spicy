@@ -4,7 +4,7 @@
 -- |
 -- Module      : Spicy.Molecule.Internal.Types
 -- Description : Definitions of a molecule and its context
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -28,6 +28,7 @@ module Spicy.Molecule.Internal.Types
     Atom (..),
     Molecule (..),
     HasMolecule (..),
+    HasDirectMolecule (..),
     LinkInfo (..),
     _NotLink,
     _IsLink,
@@ -97,7 +98,7 @@ module Spicy.Molecule.Internal.Types
     _Psi4,
     isPsi4,
     isXTB,
-    Psi4Info(..),
+    Psi4Info (..),
     GFN (..),
     renderGFN,
 
@@ -254,9 +255,6 @@ instance ToJSON Element where
 
 instance FromJSON Element where
   parseJSON = genericParseJSON spicyJOption
-
-instance PrettyPrint Element where
-  prettyP = displayShow
 
 ----------------------------------------------------------------------------------------------------
 
@@ -425,8 +423,22 @@ instance (k ~ A_Lens, a ~ Map Double NeighbourList, b ~ a) => LabelOptic "neighb
   labelOptic = lens (\s -> neighbourlist s) $ \s b -> s {neighbourlist = b}
 
 -- Reader Class
+
+-- | Access to the shared state of the 'Molecule' in a shared variable. This is a stateful
+-- representation of the molecule.
 class HasMolecule env where
   moleculeL :: Lens' env (TVar Molecule)
+
+-- | RIO style reader constraint class, where there is direct (pure) access to the 'Molecule' in the
+-- environemt. While 'HasMolecule' gives access to the current state of the 'Molecule' in the
+-- runtime environemt and therefore requires 'IO', this is the direct access to an immutable
+-- 'Molecule' in the environment. While the runtime environemt does not hold this type, it is a
+-- useful accessor for pure 'MonadReader' stacks.
+class HasDirectMolecule env where
+  moleculeDirectL :: Lens' env Molecule
+
+instance HasDirectMolecule Molecule where
+  moleculeDirectL = castOptic simple
 
 ----------------------------------------------------------------------------------------------------
 
@@ -678,9 +690,6 @@ instance Default Multipoles where
         hexadecapole = Nothing
       }
 
-instance PrettyPrint Multipoles where
-  prettyP = ppMultipoles
-
 -- Lenses
 instance (k ~ A_Lens, a ~ Maybe Monopole, b ~ a) => LabelOptic "monopole" k Multipoles Multipoles a b where
   labelOptic = lens monopole $ \s b -> s {monopole = b}
@@ -711,9 +720,6 @@ instance ToJSON Monopole where
 instance FromJSON Monopole where
   parseJSON = genericParseJSON spicyJOption
 
-instance PrettyPrint Monopole where
-  prettyP = ppMonopole
-
 type MultipoleR0 = Monopole
 
 -- Lenses
@@ -735,9 +741,6 @@ instance ToJSON Dipole where
 
 instance FromJSON Dipole where
   parseJSON = genericParseJSON spicyJOption
-
-instance PrettyPrint Dipole where
-  prettyP = ppDipole
 
 type MultipoleR1 = Dipole
 
@@ -768,9 +771,6 @@ instance ToJSON Quadrupole where
 
 instance FromJSON Quadrupole where
   parseJSON = genericParseJSON spicyJOption
-
-instance PrettyPrint Quadrupole where
-  prettyP = ppQuadrupole
 
 type MultipoleR2 = Quadrupole
 
@@ -809,9 +809,6 @@ instance ToJSON Octopole where
 
 instance FromJSON Octopole where
   parseJSON = genericParseJSON spicyJOption
-
-instance PrettyPrint Octopole where
-  prettyP = ppOctopole
 
 type MultipoleR3 = Octopole
 
@@ -858,9 +855,6 @@ instance ToJSON Hexadecapole where
 
 instance FromJSON Hexadecapole where
   parseJSON = genericParseJSON spicyJOption
-
-instance PrettyPrint Hexadecapole where
-  prettyP = ppHexadecapole
 
 type MultipoleR4 = Hexadecapole
 
@@ -1526,87 +1520,6 @@ fMP components =
     . chunksOf 5
     . fmap ((<> "  ") . fMPComp)
     $ components
-
--- | PrettyPrinter for Monopoles.
-ppMonopole :: Monopole -> Utf8Builder
-ppMonopole pole = fMP [("Q00", pole ^. #q00)]
-
--- | PrettyPrinter for Dipoles.
-ppDipole :: Dipole -> Utf8Builder
-ppDipole pole =
-  let magnitude = sqrt $ (pole ^. #q11c) ** 2 + (pole ^. #q11s) ** 2
-   in fMP
-        [ ("|Q1|", magnitude),
-          ("Q11c", pole ^. #q11c),
-          ("Q11s", pole ^. #q11s)
-        ]
-
--- | PrettyPrinter for Quadrupoles.
-ppQuadrupole :: Quadrupole -> Utf8Builder
-ppQuadrupole pole =
-  let magnitude =
-        sqrt $
-          (pole ^. #q20) ** 2
-            + (pole ^. #q22c) ** 2
-            + (pole ^. #q22s) ** 2
-   in fMP
-        [ ("|Q2|", magnitude),
-          ("Q20", pole ^. #q20),
-          ("Q22c", pole ^. #q22c),
-          ("Q22s", pole ^. #q22s)
-        ]
-
--- | PrettyPrinter for Quadrupoles.
-ppOctopole :: Octopole -> Utf8Builder
-ppOctopole pole =
-  let magnitude =
-        sqrt $
-          (pole ^. #q31c) ** 2
-            + (pole ^. #q31s) ** 2
-            + (pole ^. #q33c) ** 2
-            + (pole ^. #q33s) ** 2
-   in fMP
-        [ ("|Q3|", magnitude),
-          ("Q31c", pole ^. #q31c),
-          ("Q31s", pole ^. #q31s),
-          ("Q33c", pole ^. #q33c),
-          ("Q33s", pole ^. #q33s)
-        ]
-
--- | PrettyPrinter for Quadrupoles.
-ppHexadecapole :: Hexadecapole -> Utf8Builder
-ppHexadecapole pole =
-  let magnitude =
-        sqrt $
-          (pole ^. #q40) ** 2
-            + (pole ^. #q42c) ** 2
-            + (pole ^. #q42s) ** 2
-            + (pole ^. #q44c) ** 2
-            + (pole ^. #q44s) ** 2
-   in fMP
-        [ ("|Q4|", magnitude),
-          ("Q40", pole ^. #q40),
-          ("Q42c", pole ^. #q42c),
-          ("Q42s", pole ^. #q42s),
-          ("Q44c", pole ^. #q44c),
-          ("Q44s", pole ^. #q44s)
-        ]
-
--- | PrettyPrinter for the Multipoles.
-ppMultipoles :: Multipoles -> Utf8Builder
-ppMultipoles mp =
-  let mono = prettyP <$> mp ^. #monopole
-      di = prettyP <$> mp ^. #dipole
-      quadru = prettyP <$> mp ^. #quadrupole
-      octo = prettyP <$> mp ^. #octopole
-      hexadeca = prettyP <$> mp ^. #hexadecapole
-   in "Multipole moments / atomic units (ea_0^k for rank k):\n"
-        <> (if mp == def then "x" else mempty)
-        <> (fromMaybe mempty mono <> "\n")
-        <> (fromMaybe mempty di <> "\n")
-        <> (fromMaybe mempty quadru <> "\n")
-        <> (fromMaybe mempty octo <> "\n")
-        <> (fromMaybe mempty hexadeca <> "\n")
 
 {-
 ####################################################################################################

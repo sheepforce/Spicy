@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Generic
 -- Description : Common data types and functions
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -22,7 +22,6 @@ module Spicy.Common
     -- * Abstract and Generic Classes
     -- $class
     Check (..),
-    PrettyPrint (..),
     DefaultIO (..),
 
     -- * Parser Helper Functions
@@ -71,6 +70,7 @@ module Spicy.Common
     -- ** UTF8 Builder
     -- $utf8builderOperations
     utf8Show,
+    appendFileUtf8,
 
     -- ** ByteString
     -- $byteStringOperations
@@ -151,7 +151,7 @@ module Spicy.Common
     vectorToVectorGroups,
     vectorToGroups,
     matrixFromGroupVector,
-    chunksOfNColumns,
+    innerChunksOfN,
 
     -- * RIO And Error Handlings
     -- $rioAndErrors
@@ -163,6 +163,7 @@ where
 
 import Data.Aeson hiding (Array)
 import Data.Attoparsec.Text
+import qualified Data.ByteString.Builder as BB
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as BL
 import Data.Foldable
@@ -326,13 +327,6 @@ class Check a where
 
 ----------------------------------------------------------------------------------------------------
 
--- | A class for data, that can be printed nicely to a human friendly format with the purpose of
--- logging. Each line is a separate 'UTF8Builder', which allows prepending the log info string
--- before each line.
-class PrettyPrint a where
-  prettyP :: a -> Utf8Builder
-
-----------------------------------------------------------------------------------------------------
 
 -- | A class of default values, which need to be initialised by IO.
 class DefaultIO a where
@@ -396,7 +390,7 @@ fortranDouble = do
   mexp <- optional $ signed decimal
   case mexp of
     Nothing -> return prefix
-    Just (n::Int) -> return $ prefix * 10^n
+    Just (n :: Int) -> return $ prefix * 10 ^ n
 
 ----------------------------------------------------------------------------------------------------
 
@@ -711,6 +705,14 @@ fE width precision a =
 
 utf8Show :: Show a => a -> Utf8Builder
 utf8Show = text2Utf8Builder . tShow
+
+----------------------------------------------------------------------------------------------------
+
+-- | Append an 'Utf8Builder' to a file.
+appendFileUtf8 :: MonadIO m => Path.AbsRelFile -> Utf8Builder -> m ()
+appendFileUtf8 path' (Utf8Builder b) = liftIO . Path.withFile path' Path.AppendMode $ \h -> do
+  hSetEncoding h utf8
+  BB.hPutBuilder h b
 
 {-
 ====================================================================================================
@@ -1673,9 +1675,8 @@ vectorToGroups accessorF' vec' = go accessorF' vec' []
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Build a matrix from a vector of grouped elements. Groups are of fixed size and will be padded with
--- a default argument. The function fails if one of the groups exceeds the maximum size.
+-- | Build a matrix from a vector of grouped elements. Groups are of fixed size and will be padded
+-- with a default argument. The function fails if one of the groups exceeds the maximum size.
 matrixFromGroupVector ::
   (Source r Ix1 a, Stream r Ix1 a, MonadThrow m, Eq b, Show a) =>
   (a -> b) ->
@@ -1685,26 +1686,25 @@ matrixFromGroupVector ::
   m (Matrix DL a)
 matrixFromGroupVector accessorF nColumns defElem vec = do
   groups <- vectorToVectorGroups accessorF nColumns defElem vec
-  let groupsExpandedToMatrix1 = fmap (Massiv.expandOuter (Sz 1) (\a _ -> a)) groups
+  let groupsExpandedToMatrix1 = fmap (Massiv.expandOuter (Sz 1) const) groups
   matrix <- Massiv.concatM 2 groupsExpandedToMatrix1
   return matrix
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Takes up to N columns from a matrix and groups them. Behaves otherwise similiar to 'chunksOf'.
-chunksOfNColumns ::
-  (Mutable r1 Ix2 e, Manifest r2 Ix2 e) =>
+-- | Takes up to N columns from a matrix and groups them. Behaves otherwise similiar to 'chunksOf'.
+innerChunksOfN ::
+  (Mutable r1 ix e, Manifest r2 ix e) =>
   -- | Size of the chunks to obtain.
   Int ->
-  Massiv.Array r2 Ix2 e ->
-  Seq (Massiv.Array r1 Ix2 e)
-chunksOfNColumns n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) Empty
+  Massiv.Array r2 ix e ->
+  Seq (Massiv.Array r1 ix e)
+innerChunksOfN n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) Empty
   where
-    go :: Int -> Matrix M a -> Seq (Matrix M a) -> Seq (Matrix M a)
+    go :: Index ix => Int -> Massiv.Array M ix a -> Seq (Massiv.Array M ix a) -> Seq (Massiv.Array M ix a)
     go n' restMatrix groupAcc = case Massiv.splitAtM (Dim 1) n' restMatrix of
       Nothing ->
-        let (Sz (_ :. nColsRemaining)) = Massiv.size restMatrix
+        let (_ , Sz nColsRemaining) = Massiv.unsnocSz . Massiv.size $  restMatrix
          in if nColsRemaining == 0 then groupAcc else groupAcc |> restMatrix
       Just (thisChunk, restMinusThisChunk) -> go n' restMinusThisChunk (groupAcc |> thisChunk)
 

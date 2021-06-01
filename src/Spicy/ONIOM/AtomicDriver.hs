@@ -31,6 +31,7 @@ import RIO hiding
     (^..),
     (^?),
   )
+import qualified RIO.HashSet as HashSet
 import qualified RIO.Map as Map
 import RIO.Process
 import RIO.Seq (Seq (..))
@@ -38,9 +39,9 @@ import qualified RIO.Vector.Storable as VectorS
 import Spicy.Common
 import Spicy.Data
 import Spicy.InputFile
-import Spicy.Logger
 import Spicy.Molecule
 import Spicy.ONIOM.Collector
+import Spicy.Outputter as Out
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.IPI.Protocol
 import Spicy.Wrapper.IPI.Pysisyphus
@@ -65,8 +66,8 @@ oniomCalcDriver calcID wTask = do
       calcK = calcID ^. #calcKey
 
   -- LOG
-  logInfo $
-    "Layer " <> molID2OniomHumandID layerID <> ", " <> case calcK of
+  logInfoS "calc-driver" $
+    "Running layer " <> (display . molID2OniomHumanID $ layerID) <> ", " <> case calcK of
       ONIOMKey Original -> "high level calculation"
       ONIOMKey Inherited -> "low level calculation"
 
@@ -166,10 +167,17 @@ geomMacroDriver ::
     HasInputFile env,
     HasCalcSlot env,
     HasProcessContext env,
-    HasWrapperConfigs env
+    HasWrapperConfigs env,
+    HasOutputter env
   ) =>
   RIO env ()
 geomMacroDriver = do
+  -- Logging.
+  optStartPrintEvn <- getCurrPrintEvn
+  printSpicy txtDirectOpt
+  printSpicy . renderBuilder . spicyLog optStartPrintEvn $
+    spicyLogMol (HashSet.fromList [Always, Task Start]) All
+
   -- Obtain the Pysisyphus IPI settings for communication.
   pysisIPI <-
     view moleculeL >>= readTVarIO >>= \mol -> do
@@ -185,6 +193,11 @@ geomMacroDriver = do
 
   -- Start the loop that provides the i-PI client thread with data for the optimisation.
   loop pysisIPI
+
+  -- Final logging
+  optEndPrintEvn <- getCurrPrintEvn
+  printSpicy . renderBuilder . spicyLog optEndPrintEvn $
+    spicyLogMol (HashSet.fromList [Always, Task End]) All
   where
     localExc = SpicyIndirectionException "geomMacroDriver"
 
@@ -219,11 +232,18 @@ geomMacroDriver = do
             molWithHessian <- readTVarIO molT
             molToHessianData molWithHessian
           Done -> do
-            logError
+            logErrorS "direct-opt"
               "The macro geometry driver should be done but has entered an other\
               \ calculation loop."
             throwM $
               SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
+
+        -- Opt loop logging.
+        optLoopPrintEnv <- getCurrPrintEvn
+        let molInfo =
+              renderBuilder . spicyLog optLoopPrintEnv $
+                spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
+        printSpicy $ sep <> molInfo
 
         -- Get the molecule in the new structure with its forces or hessian.
         atomically . putTMVar ipiDataIn $ ipiData

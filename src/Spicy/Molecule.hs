@@ -1,7 +1,7 @@
 -- |
 -- Module      : Spicy.Molecule
 -- Description : Handling molecular informations
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -14,6 +14,7 @@ module Spicy.Molecule
     Atom (..),
     Molecule (..),
     HasMolecule (..),
+    HasDirectMolecule (..),
     MolID,
 
     -- ** Calculations
@@ -108,6 +109,7 @@ module Spicy.Molecule
     updateMolWithPosVec,
     shrinkNeighbourList,
     isolateMoleculeLayer,
+    molID2OniomHumanID,
 
     -- * Writer
     writeXYZ,
@@ -115,7 +117,7 @@ module Spicy.Molecule
     writeMOL2,
     writePDB,
     writeSpicy,
-    -- writeLayout,
+    writeONIOM,
   )
 where
 

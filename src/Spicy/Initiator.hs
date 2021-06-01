@@ -1,9 +1,7 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 -- |
 -- Module      : Spicy.Initiator
 -- Description : Translator of inputs to initial state
--- Copyright   : Phillip Seeber, 2020
+-- Copyright   : Phillip Seeber, 2021
 -- License     : GPL-3
 -- Maintainer  : phillip.seeber@uni-jena.de
 -- Stability   : experimental
@@ -16,12 +14,9 @@ module Spicy.Initiator
 where
 
 import Data.Char
-import Data.FileEmbed
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Version (showVersion)
 import Optics hiding (view)
-import Paths_spicy (version)
 import RIO hiding
   ( to,
     view,
@@ -35,6 +30,7 @@ import Spicy.Common
 import Spicy.InputFile
 import Spicy.JobDriver
 import Spicy.Molecule
+import Spicy.Outputter hiding (Motion)
 import Spicy.RuntimeEnv
 import System.Console.CmdArgs hiding (def)
 import System.Environment
@@ -46,32 +42,8 @@ logSource :: LogSource
 logSource = "Initiator"
 
 ----------------------------------------------------------------------------------------------------
-
--- | The Spicy Logo as ASCII art.
-spicyLogo :: Utf8Builder
-spicyLogo = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/Fonts/SpicyLogo.txt")
-
-----------------------------------------------------------------------------------------------------
-
--- | Get information from the build by TemplateHaskell to be able to show a reproducible version.
-versionInfo :: Utf8Builder
-versionInfo = displayShow . showVersion $ version
-
-----------------------------------------------------------------------------------------------------
 spicyMain :: IO ()
-spicyMain =
-  runSimpleApp $ do
-    -- Greet with the Spicy logo and emit some version information.
-    logInfo spicyLogo
-    logInfo $ "Spicy version " <> versionInfo
-
-    -- Get command line arguments to Spicy.
-    inputArgs <- liftIO $ cmdArgs spicyArgs
-
-    -- LOG
-    logDebugS logSource $ "Running with command line arguments:\n" <> displayShow inputArgs
-
-    inputToEnvAndRun
+spicyMain = runSimpleApp inputToEnvAndRun
 
 ----------------------------------------------------------------------------------------------------
 
@@ -132,9 +104,33 @@ inputToEnvAndRun = do
   scratchExists <- liftIO . Dir.doesDirectoryExist $ scratchDirAbs
   when scratchExists . liftIO . Dir.removeDirectoryRecursive $ scratchDirAbs
 
+  -- Make sure the permanent directory exists.
+  let permaDir = getDirPath $ inputFile ^. #permanent
+  liftIO . Dir.createDirectoryIfMissing True $ permaDir
+
+  -- Initialise the outputter thread and make sure to remove old log files.
+  outQ <- newTBQueueIO 100
+  let outfile = fromMaybe (Path.file "spicy.out") (Path.file <$> inputArgs ^. #logfile)
+      printVerb = defPrintVerbosity . fromMaybe Medium $ inputFile ^. #printLevel
+      outputter =
+        Outputter
+          { outChan = outQ,
+            outFile = outfile,
+            printVerbosity = printVerb
+          }
+  hasOldOutput <- liftIO . Dir.doesFileExist $ outfile
+  when hasOldOutput . liftIO . Dir.removeFile $ outfile
+  logThread <- async $ runReaderT loggingThread outputter
+  link logThread
+
   -- Construct the LogFunction and return the runtime environment
   logOptions' <- logOptionsHandle stdout (inputArgs ^. #verbose)
-  let logOptions = setLogUseTime True logOptions'
+  canUseColour <- hIsTerminalDevice stdout
+  let logOptions =
+        setLogVerboseFormat True
+          . setLogUseTime True
+          . setLogUseColor canUseColour
+          $ logOptions'
   withLogFunc logOptions $ \lf -> do
     let spicyEnv =
           SpicyEnv
@@ -144,7 +140,8 @@ inputToEnvAndRun = do
               motion = motionT,
               procCntxt = procCntxt',
               logFunc = lf,
-              calcSlot = calcSlot
+              calcSlot = calcSlot,
+              outputter = outputter
             }
 
     -- The spicy main thread.

@@ -38,5 +38,6 @@ model:
       mult: 1
       selection: [2,6,7]
       deeperLayer: []
+printLevel: Debug
 task:
 - energy

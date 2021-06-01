@@ -5,35 +5,23 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           spicy
-version:        0.0.0.1
+version:        0.0.1
 description:    Please see the README on GitLab at <https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy>
-author:         Phillip Seeber
+author:         Phillip Seeber, Sebastian Seidenath
 maintainer:     phillip.seeber@uni-jena.de
-copyright:      2020 Phillip Seeber
+copyright:      2021 Phillip Seeber, Sebastian Seidenath
 license:        GPL-3
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
     README.md
     LICENSE
-    data/Fonts/JobDriver.txt
-    data/Fonts/SpicyLogo.txt
     goldentests/input/
     goldentests/goldenfiles/
 
 source-repository head
   type: git
   location: https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy
-
-flag dev
-  description: Will not turn compiler warnings into errors and disable optimisations.
-  manual: True
-  default: False
-
-flag llvm
-  description: Will compile Spicy with the LLVM backend.
-  manual: True
-  default: False
 
 library
   exposed-modules:
@@ -45,7 +33,6 @@ library
       Spicy.Initiator
       Spicy.InputFile
       Spicy.JobDriver
-      Spicy.Logger
       Spicy.Math
       Spicy.Math.SparseArray
       Spicy.Math.Spherical
@@ -58,14 +45,13 @@ library
       Spicy.ONIOM.AtomicDriver
       Spicy.ONIOM.Collector
       Spicy.ONIOM.Layout
+      Spicy.Outputter
       Spicy.RuntimeEnv
       Spicy.Wrapper
       Spicy.Wrapper.Internal.Executor
-      Spicy.Wrapper.Internal.Generic
       Spicy.Wrapper.Internal.Input.IO
       Spicy.Wrapper.Internal.Input.Language
       Spicy.Wrapper.Internal.Input.Representation
-      Spicy.Wrapper.Internal.Output
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
       Spicy.Wrapper.Internal.Output.XTB
@@ -129,12 +115,6 @@ library
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
   default-language: Haskell2010
 
 executable spicy
@@ -147,7 +127,7 @@ executable spicy
       BangPatterns
       OverloadedStrings
       NoImplicitPrelude
-  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N2
+  ghc-options: -Wall -Wno-unused-top-binds -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson >=1.4.4.0 && <1.6
     , aeson-pretty >=0.8.7 && <0.9
@@ -177,12 +157,6 @@ executable spicy
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
   default-language: Haskell2010
 
 test-suite unittests
@@ -223,12 +197,6 @@ test-suite unittests
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
   default-language: Haskell2010
 
 benchmark bench
@@ -293,10 +261,4 @@ benchmark bench
     , vector >=0.12.1.2 && <0.13
     , vector-binary-instances >=0.2.5.1 && <0.3
     , yaml >=0.11.2.0 && <0.12
-  if flag(dev)
-    ghc-options: -O0
-  else
-    ghc-options: -Werror -O2
-  if flag(llvm)
-    ghc-options: -fllvm
   default-language: Haskell2010

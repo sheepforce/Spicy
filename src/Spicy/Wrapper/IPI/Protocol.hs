@@ -64,17 +64,16 @@ ipiClient ipi = do
     logWarnS logSource $ "Could not connect to the socket. Got exception: " <> displayShow e
     threadDelay 2000000
     ipiClient ipi
-  logDebugS logSource "Connected!"
+  logInfoS logSource $ "Succesfully connected to an i-PI socket at: " <> displayShow (ipi ^. #socketAddr)
 
   -- Start the loops.
-  logDebugS logSource "Starting the communication loops ..."
+  logInfoS logSource "Starting the communication loop ..."
   loop
-  logDebugS logSource "Finished communication loop."
+  logInfoS logSource "Finished communication loop."
 
   -- Disconnect the socket.
-  logDebugS logSource "Closing the socket connection ..."
+  logInfoS logSource $ "Closing the socket connection at " <> displayShow (ipi ^. #socketAddr)
   liftIO $ gracefulClose (ipi ^. #socket) 2000
-  logDebugS logSource "Closed!"
   where
     -- The i-PI communication loop.
     loop = do
@@ -97,11 +96,11 @@ ipiClient ipi = do
       case sndStatus of
         -- Done with motion of atoms.
         "EXIT" -> do
-          logDebugS logSource "Got EXIT from the server. Stoppin i-PI client."
+          logInfoS logSource "Got EXIT from the server. Stoppin i-PI client."
           atomically . putTMVar (ipi ^. #status) $ Done
         -- Continue to process data.
         "STATUS" -> do
-          logDebugS logSource "Server status OK."
+          logInfoS logSource "Server status OK."
 
           -- We send "READY" again and expect another status message. Not documented.
           logDebugS logSource "Sending READY to server."
@@ -114,7 +113,7 @@ ipiClient ipi = do
           iCell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
           nAtoms' <- liftIO $ recv sckt intBytes
           let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
-          logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
+          logInfoS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
           coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
           let cell = decode cell'
               iCell = decode iCell'
@@ -144,26 +143,26 @@ ipiClient ipi = do
           logDebugS logSource $ "Got response from server: " <> showMsg getRequest
           case getRequest of
             "GETFORCE" -> do
-              logDebugS logSource "Server wants force data. Preparing calculation."
+              logInfoS logSource "Server wants force data. Requesting calculation."
               atomically . putTMVar (ipi ^. #status) $ WantForces
               forceData <- atomically . takeTMVar $ inp
               logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
               liftIO . sendAll sckt . encode $ ForceReady
               liftIO . sendAll sckt . encode $ forceData
-              logDebugS logSource "Sent energies and forces to server."
+              logInfoS logSource "Sent energies and forces to server."
             "GETHESSIAN" -> do
-              logDebugS logSource "Server wants hessian data. Preparing calculation."
+              logInfoS logSource "Server wants hessian data. Requesting calculation."
               atomically . putTMVar (ipi ^. #status) $ WantHessian
               hessianData <- atomically . takeTMVar $ inp
               liftIO . sendAll sckt . encode $ HessianReady
               liftIO . sendAll sckt . encode $ hessianData
-              logDebugS logSource "Sent energies and hessian to server."
+              logInfoS logSource "Sent energies and hessian to server."
             string -> statusExc string
 
           logDebugS logSource "Sent data to server."
 
           -- Next communication loop begins.
-          logDebugS logSource "Finished i-PI client loop. Reiterating ..."
+          logInfoS logSource "Finished i-PI client loop. Reiterating ..."
           loop
         -- Invalid messages
         msg -> statusExc msg

@@ -51,7 +51,7 @@ providePysis ::
   ) =>
   RIO env (Async (), Async ())
 providePysis = do
-  logDebugS logSource "Starting pysisyphus companion threads ..."
+  logInfoS logSource "Starting companion threads ..."
   molT <- view moleculeL
   pysisIPI <-
     readTVarIO molT >>= \mol ->
@@ -105,7 +105,7 @@ runPysisServer = do
   liftIO $ Path.createDirectoryIfMissing True scratchDir
 
   -- LOG
-  logDebugS logSource $
+  logInfoS logSource $
     "Pysisyphus-server companion thread. Preparing to start pysisyphus:\n"
       <> ("  UNIX socket      : " <> displayShow socketPath <> "\n")
       <> ("  Pysisphus wrapper: " <> displayShow (Path.toString pysisWrapper) <> "\n")
@@ -115,8 +115,7 @@ runPysisServer = do
   initCoordFileAbs <- liftIO . Path.genericMakeAbsoluteFromCwd $ initCoordFile
   writeXYZ mol >>= writeFileUTF8 (Path.toAbsRel initCoordFile)
 
-  logDebugS logSource $
-    "Wrote initial coordinates for Pysisyphus to " <> path2Utf8Builder initCoordFileAbs
+  logInfoS logSource $ "Wrote initial coordinates for to " <> path2Utf8Builder initCoordFileAbs
 
   -- Construct a pysisyphus input file.
   pysisInput <- opt2Pysis initCoordFileAbs optSettings
@@ -127,7 +126,7 @@ runPysisServer = do
   writeFileUTF8 pysisYamlPath pysisYaml
 
   -- LOG
-  logDebugS logSource $ "Wrote Pysisyphus YAML input to " <> path2Utf8Builder pysisYamlPath
+  logInfoS logSource $ "Wrote YAML input to " <> path2Utf8Builder pysisYamlPath
 
   -- Build Pysis command line arguments.
   let pysisCmdArgs = [Path.toString . Path.takeFileName $ pysisYamlPath]
@@ -137,7 +136,7 @@ runPysisServer = do
   (exitCode, pysisOut, pysisErr) <-
     withWorkingDir (Path.toString pysisWorkDir) $
       proc (Path.toString pysisWrapper) pysisCmdArgs readProcess
-  logDebugS logSource "Pysisyphus sever terminated."
+  logInfoS logSource "Pysisyphus sever terminated."
 
   -- Pysisyphus output.
   writeFileBinary
@@ -148,7 +147,7 @@ runPysisServer = do
   -- Final check if everything went well. Then return.
   unless (exitCode == ExitSuccess) $ do
     logErrorS logSource $
-      "Pysisyphus terminated abnormally with error messages:\n"
+      "Terminated abnormally with error messages:\n"
         <> (displayBytesUtf8 . toStrictBytes $ pysisErr)
     throwM . PysisException $ "Pysisyphus terminated abnormally with errors."
   where
