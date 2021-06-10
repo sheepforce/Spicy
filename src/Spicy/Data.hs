@@ -22,8 +22,7 @@ import qualified RIO.Map as Map
 import qualified RIO.Seq as Seq
 import Spicy.Molecule.Internal.Types
 
--- |
--- Covalent radii of elements in Angstrom taken from
+-- | Covalent radii of elements in Angstrom taken from
 -- <https://en.wikipedia.org/wiki/Covalent_radius Wikipedia>
 covalentRadii :: Map Element Double
 covalentRadii =
@@ -128,15 +127,13 @@ covalentRadii =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Default scaling factor for search of covalent bonds in a molecule.
+-- | Default scaling factor for search of covalent bonds in a molecule.
 defCovScaling :: Double
 defCovScaling = 1.3
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Default scaling factors for electronic embedding in ONIOM as given in the literature. The first
+-- | Default scaling factors for electronic embedding in ONIOM as given in the literature. The first
 -- value in the sequence will be used to scale the multipoles one bond away from a capped atom, the
 -- second entry multipoles two bonds away and so on.
 
@@ -146,14 +143,12 @@ defElectronicScalingFactors = Seq.fromList [0.2, 0.4, 0.6, 0.8]
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Conversion from Angstrom to Bohr.
+-- | Conversion from Angstrom to Bohr.
 angstrom2Bohr :: Double -> Double
 angstrom2Bohr lenghtInAngstrom = lenghtInAngstrom * 1.889725989
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Conversion from Bohr to Angstrom.
+-- | Conversion from Bohr to Angstrom.
 bohr2Angstrom :: Double -> Double
 bohr2Angstrom lengthInBohr = lengthInBohr / (angstrom2Bohr 1)

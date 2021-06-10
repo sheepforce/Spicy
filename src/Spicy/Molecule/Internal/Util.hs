@@ -66,6 +66,7 @@ module Spicy.Molecule.Internal.Util
     gradDense2Sparse
     calcGeomConv
     multipoleTransfer
+    getCoordsNetVec,
   )
 where
 
@@ -85,6 +86,7 @@ import Data.Massiv.Array as Massiv hiding
     toList,
   )
 import qualified Data.Massiv.Array as Massiv
+import Data.Massiv.Array.Manifest.Vector as Massiv
 import Data.Massiv.Core.Operations ()
 import Data.Maybe
 import Optics hiding (Empty, element, (:>))
@@ -109,6 +111,7 @@ import Spicy.Common
 import Spicy.Data
 import Spicy.Math
 import Spicy.Molecule.Internal.Types
+import Spicy.Wrapper.IPI.Types
 import System.IO.Unsafe
 
 {-
@@ -2740,3 +2743,14 @@ multipoleTransfer mol = do
     atomsNeedingPoles =
       IntMap.filter (\a -> not $ (isAtomLink . isLink $ a) || isDummy a) atoms
     localExc = MolLogicException "multipoleTransfer"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Get the coordinates of the real system atoms. **The coordinates will be converted to Bohr!**
+getCoordsNetVec :: MonadThrow m => Molecule -> m NetVec
+getCoordsNetVec mol = do
+  coordVecMassiv <-
+    compute @S . Massiv.map angstrom2Bohr . flatten . compute @S
+      <$> getCoordinatesAs3NMatrix mol
+
+  return . NetVec . Massiv.toVector $ coordVecMassiv
