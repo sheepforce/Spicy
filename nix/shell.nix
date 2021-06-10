@@ -1,16 +1,15 @@
 let
-  # Package setup.
-  pkgs = import ./nixpkgs.nix {};
+  pkgs = import ./pkgs.nix;
   hsPkgs = import ./default.nix { wrap = false; };
 
   # Spicy runtime configuration setup.
   spicyrc = pkgs.writeTextFile {
     name = "spicyrc";
     text = pkgs.lib.generators.toYAML {} {
-      "psi4" = "${pkgs.psi4Unstable}/bin/psi4";
-      "gdma" = "${pkgs.gdma}/bin/gdma";
-      "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
-      "xtb" = "${pkgs.xtb}/bin/xtb";
+      "psi4" = "${pkgs.qchem.psi4Unstable}/bin/psi4";
+      "gdma" = "${pkgs.qchem.gdma}/bin/gdma";
+      "pysisyphus" = "${pkgs.qchem.pysisyphus}/bin/pysis";
+      "xtb" = "${pkgs.qchem.xtb}/bin/xtb";
     };
   };
 in
@@ -36,11 +35,11 @@ in
 
     # Some you may need to get some other way.
     buildInputs = [
-      pkgs.llvm_9
-      pkgs.pysisyphus
-      pkgs.psi4Unstable
-      pkgs.gdma
-      pkgs.xtb
+      pkgs.niv
+      pkgs.qchem.pysisyphus
+      pkgs.qchem.psi4Unstable
+      pkgs.qchem.gdma
+      pkgs.qchem.xtb
     ];
 
     # Setup a runtime with QC wrappers available.

@@ -203,53 +203,78 @@ geomMacroDriver = do
 
     -- The optimisation loop.
     loop pysisIPI = do
+      -- Get communication variables with the i-PI client and Spicy.
+      let ipiDataIn = pysisIPI ^. #input
+          ipiPosOut = pysisIPI ^. #output
+      molT <- view moleculeL
+
       -- Check if the client is still runnning and expects us to provide new data.
       ipiServerWants <- atomically . takeTMVar $ pysisIPI ^. #status
-      unless (ipiServerWants == Done) $ do
-        -- Get communication variables with the i-PI client and Spicy.
-        let ipiDataIn = pysisIPI ^. #input
-            ipiPosOut = pysisIPI ^. #output
-        molT <- view moleculeL
+      case ipiServerWants of
+        -- Terminate the loop in case the i-PI server signals convergence
+        Done -> return ()
+        -- Pysisyphus extensions. Performs a client -> server position update and then loops back.
+        WantPos -> do
+          -- Obtain current molecule geometry, serialise them, and communicate them to the client,
+          -- which then updates the server.
+          molCurrent <- readTVarIO molT
+          molCoords <- getCoordsNetVec molCurrent
+          atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
 
-        -- Obtain the molecule before i-PI modifications.
-        molOld <- readTVarIO molT
-        posData <- atomically . takeTMVar $ ipiPosOut
-        posVec <- case posData ^. #coords of
-          NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
-        molNewStruct <- updateMolWithPosVec posVec molOld
-        atomically . writeTVar molT $ molNewStruct
+          -- Reiterating
+          loop pysisIPI
 
-        -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
-        ipiData <- case ipiServerWants of
-          WantForces -> do
-            multicentreOniomNDriver WTGradient
-            multicentreOniomNCollector WTGradient
-            molWithForces <- readTVarIO molT
-            molToForceData molWithForces
-          WantHessian -> do
-            multicentreOniomNDriver WTHessian
-            multicentreOniomNCollector WTHessian
-            molWithHessian <- readTVarIO molT
-            molToHessianData molWithHessian
-          Done -> do
-            logErrorS "direct-opt"
-              "The macro geometry driver should be done but has entered an other\
-              \ calculation loop."
-            throwM $
-              SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
+        -- Standard i-PI behaviour with server -> client position updates and client -> sever force/
+        -- hessian updates.
+        _ -> do
+          -- Obtain the molecule before i-PI modifications.
+          molOld <- readTVarIO molT
+          posData <- atomically . takeTMVar $ ipiPosOut
+          posVec <- case posData ^. #coords of
+            NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
+          molNewStruct <- updateMolWithPosVec posVec molOld
+          atomically . writeTVar molT $ molNewStruct
 
-        -- Opt loop logging.
-        optLoopPrintEnv <- getCurrPrintEvn
-        let molInfo =
-              renderBuilder . spicyLog optLoopPrintEnv $
-                spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
-        printSpicy $ sep <> molInfo
+          -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
+          ipiData <- case ipiServerWants of
+            WantForces -> do
+              multicentreOniomNDriver WTGradient
+              multicentreOniomNCollector WTGradient
+              molWithForces <- readTVarIO molT
+              molToForceData molWithForces
+            WantHessian -> do
+              multicentreOniomNDriver WTHessian
+              multicentreOniomNCollector WTHessian
+              molWithHessian <- readTVarIO molT
+              molToHessianData molWithHessian
+            Done -> do
+              logErrorS
+                "geomMacroDriver"
+                "The macro geometry driver should be done but has entered an other\
+                \ calculation loop."
+              throwM $
+                SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
+            WantPos -> do
+              logErrorS
+                "geomMacroDriver"
+                "The i-PI server wants a position update, but position updates must not occur here."
+              throwM $
+                SpicyIndirectionException
+                  "geomMacroDriver"
+                  "Position update requested but must not happen here."
 
-        -- Get the molecule in the new structure with its forces or hessian.
-        atomically . putTMVar ipiDataIn $ ipiData
+          -- Opt loop logging.
+          optLoopPrintEnv <- getCurrPrintEvn
+          let molInfo =
+                renderBuilder . spicyLog optLoopPrintEnv $
+                  spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
+          printSpicy $ sep <> molInfo
 
-        -- Reiterating
-        loop pysisIPI
+          -- Get the molecule in the new structure with its forces or hessian.
+          atomically . putTMVar ipiDataIn $ ipiData
+
+          -- Reiterating
+          loop pysisIPI
 
 ----------------------------------------------------------------------------------------------------
 

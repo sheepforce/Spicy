@@ -110,6 +110,7 @@ module Spicy.Molecule
     shrinkNeighbourList,
     isolateMoleculeLayer,
     molID2OniomHumanID,
+    getCoordsNetVec,
 
     -- * Writer
     writeXYZ,

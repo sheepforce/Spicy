@@ -96,8 +96,31 @@ ipiClient ipi = do
       case sndStatus of
         -- Done with motion of atoms.
         "EXIT" -> do
-          logInfoS logSource "Got EXIT from the server. Stoppin i-PI client."
+          logInfoS logSource "Got EXIT from the server. Stopping i-PI client."
           atomically . putTMVar (ipi ^. #status) $ Done
+
+        -- Pysisyphus extension to allow for client -> server position updates.
+        "NEEDPOS" -> do
+          logInfoS logSource "Server wants position update."
+          atomically . putTMVar (ipi ^. #status) $ WantPos
+
+          -- Get current positions from the server.
+          liftIO . sendAll sckt . encode $ HavePos
+          nAtoms' <- liftIO $ recv sckt intBytes
+          let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
+          serverCoords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
+          let _serverCoords = decode @NetVec $ nAtoms' <> serverCoords'
+          logDebugS logSource "Received current (old) positions from server."
+
+          -- Get new positions from Spicy main thread and send them to the i-PI server.
+          newPos <- atomically . takeTMVar $ inp
+          liftIO . sendAll sckt . encode $ newPos
+          logInfoS logSource "Sent new positions to i-PI server."
+
+          -- Next communication loop begins.
+          logInfoS logSource "Finished i-PI client loop. Reiterating ..."
+          loop
+
         -- Continue to process data.
         "STATUS" -> do
           logInfoS logSource "Server status OK."
@@ -113,7 +136,7 @@ ipiClient ipi = do
           iCell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
           nAtoms' <- liftIO $ recv sckt intBytes
           let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
-          logInfoS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
+          logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
           coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
           let cell = decode cell'
               iCell = decode iCell'

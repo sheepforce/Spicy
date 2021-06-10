@@ -110,10 +110,11 @@ instance Binary NetVec where
 
 ----------------------------------------------------------------------------------------------------
 
--- | Possible status messages from the i-PI server.
+-- | Possible status messages of the client to the i-PI server.
 data Status
   = NeedInit
   | Ready
+  | HavePos
   | HaveData
   | ForceReady
   | HessianReady
@@ -123,6 +124,7 @@ data Status
 instance Binary Status where
   put NeedInit = putByteString "NEEDINIT    "
   put Ready = putByteString "READY       "
+  put HavePos = putByteString "HAVEPOS     "
   put HaveData = putByteString "HAVEDATA    "
   put ForceReady = putByteString "FORCEREADY  "
   put HessianReady = putByteString "HESSIANREADY"
@@ -132,13 +134,17 @@ instance Binary Status where
     case msg of
       "NEEDINIT" -> return NeedInit
       "READY" -> return Ready
+      "HAVEPOS" -> return HavePos
       "HAVEDATA" -> return HaveData
       "FORCEREADY" -> return ForceReady
       "HESSIANREADY" -> return HessianReady
       _ -> fail "invalid status message"
 
+-- | Data that the server has requested from the i-PI server and that need to be delivered from the
+-- Spicy main thread.
 data DataRequest
   = Done
+  | WantPos
   | WantForces
   | WantHessian
   deriving (Eq, Show)
@@ -241,6 +247,7 @@ data InputData
         -- matrix.
         hessian :: Matrix S Double
       }
+  | PosUpdateData {positions :: NetVec}
 
 -- Serialisation
 instance Binary InputData where
@@ -258,5 +265,6 @@ instance Binary InputData where
         hessianVec = toStorableVector . flatten $ hessian
     putInt32host . fromIntegral $ nAtoms
     genericPutVectorWith (\_ -> putInt32host . fromIntegral $ nAtoms) putDoublehost hessianVec
+  put PosUpdateData {positions} = put positions
 
-  get = error "Decoding force or hessian data is not possible"
+  get = error "Decoding force, hessian and position update data is not possible"
