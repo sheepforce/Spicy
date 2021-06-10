@@ -61,6 +61,7 @@ module Spicy.Molecule.Internal.Util
     shrinkNeighbourList,
     isolateMoleculeLayer,
     molID2OniomHumanID,
+    getCoordsNetVec,
   )
 where
 
@@ -79,6 +80,7 @@ import Data.Massiv.Array as Massiv hiding
     sum,
     toList,
   )
+import Data.Massiv.Array.Manifest.Vector as Massiv
 import Data.Massiv.Core.Operations ()
 import Data.Maybe
 import Optics hiding (Empty, element, (:>))
@@ -103,6 +105,7 @@ import Spicy.Common
 import Spicy.Data
 import Spicy.Math
 import Spicy.Molecule.Internal.Types
+import Spicy.Wrapper.IPI.Types
 import System.IO.Unsafe
 
 {-
@@ -2628,3 +2631,14 @@ molID2OniomHumanID molID =
           (tShow depth)
           molID
    in idTree
+
+----------------------------------------------------------------------------------------------------
+
+-- | Get the coordinates of the real system atoms. **The coordinates will be converted to Bohr!**
+getCoordsNetVec :: MonadThrow m => Molecule -> m NetVec
+getCoordsNetVec mol = do
+  coordVecMassiv <-
+    compute @S . Massiv.map angstrom2Bohr . flatten . compute @S
+      <$> getCoordinatesAs3NMatrix mol
+
+  return . NetVec . Massiv.toVector $ coordVecMassiv

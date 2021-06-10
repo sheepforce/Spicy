@@ -1,42 +1,39 @@
 # Spicy
+[![built with nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
+[![pipeline status](https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy/badges/develop/pipeline.svg)](https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy/-/commits/develop)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 Spicy is a Haskell program for quantum chemistry and quantum dynamics and aims at providing a set of composable ONIOM methods, that are not widely available.
 Spicy will not implement quantum chemistry calculations itself, but rather wrap different quantum chemistry programs.
 
 ## Installing / Building
-Spicy is written in Haskell and developed with [Stack](https://docs.haskellstack.org/en/stable/README/), which provides an easy to use build system.
-
-To install/build Spicy from source follow the following steps:
-
-1. Make sure to have all the dependencies installed. These are:
-  - [Stack](https://docs.haskellstack.org/en/stable/README/)
-  - LLVM 6.0.x and LLVM 8.0.x (both are necessary) in the dynamically linked version
-  - libffi
-  - Optional
-    - [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
-
-2. Make sure, `libffi.so.7`, the LLVM libraries and the LLVM executables are available in your path.
-If you want to build with NVidia GPU support, also everything from the CUDA toolkit needs to be available on your path.
-
-3. Clone the Spicy repository and build the code.
-Cabal flags are available to use, to switch to a development build (faster and warnings are not errors), or enable NVidia GPU support. The flags are `dev` and `cuda` and can be added to the stack build line with `--flag spicy:dev` and `--flag spicy:cuda`. For example:
+### Nix
+Spicy can be build with Nix.
+This guarantees fully reproducible builds and saves you from the hurdles of installing *many* packages yourself.
+Make sure to have the [Nix package manager installed on your system](https://nixos.org/download.html).
+To save some time (aka many hours and gigabytes of RAM ...) during building, you may want to add the [Haskell.nix hydra cache](https://input-output-hk.github.io/haskell.nix/tutorials/getting-started/#setting-up-the-binary-cache).
+From within the `nix` directory execute
 ```
-git clone https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy.git
-cd Spicy
-stack install --flag spicy:cuda
+nix-build --arg wrap true -A spicy.components.exes
 ```
-It is recommended to run the test suite for Spicy by executing
+or to obtain a Haskell development shell with toolings in the top-level directory
 ```
-stack test
+nix-shell
 ```
-with the same flags, as the `stack install` command.
 
-4. (Optional) If you require the documentation of the source code, build the docs with
-```
-stack haddock
-```
-with the same flags as used above.
+### Manually
+To build Spicy without Nix, you will need a [working Haskell toolchain](https://www.haskell.org/platform/#linux-generic) including a recent GHC (8.10) and cabal.
+The runtime dependencies (quantum chemistry software) need to be installed and configured manually configured.
+- [Psi4](https://psicode.org/)
+- [GDMA](https://gitlab.com/anthonyjs/gdma)
+- [XTB](https://xtb-docs.readthedocs.io/en/latest/contents.html#)
+- [Pysisyphus](https://pysisyphus.readthedocs.io/en/latest/)
 
-Alternatively, you can use the executables provided for point releases for linux systems, which require no Haskell libraries and dependencies but LLVM 8.0.x with shared libraries.
-
-## Contributing and Code
-For coding style and for how to contribute, see [CONTRIBUTING.md](https://gitlab.com/theoretical-chemistry-jena/quantum-chemistry/Spicy/blob/develop/CONTRIBUTING.md).
+A YAML file is required to point Spicy to the executables (or wrapper scripts with same call convention), e.g.
+```yaml
+psi4: /opt/psi4/bin/psi4
+xtb: /opt/xtb/bin/xtb
+gdma: /opt/gdma/bin/gdma
+pysisyphus: /opt/pysisyphus/bin/pysis
+```
+The environment variable `SPICYRC` should point to this YAML file.
