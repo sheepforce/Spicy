@@ -354,7 +354,7 @@ geomMicroDriver = do
 
   -- Perform the optimisations steps in a mindblowing recursion ...
   -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
-  -- up. When converged the function will terminate.
+  -- up. When converged, the function will terminate.
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
 
   -- Terminate all the companion threads.
@@ -515,89 +515,113 @@ optAtDepth depth' microOptSettings'
       let realAtoms = molPreStep ^. #atoms
 
       -- Obtain a new geometry from Pysisyphus (ignores the status for now).
-      void . atomically . takeTMVar $ ipiStatusVar
-      posVec <- do
-        d <- atomically . takeTMVar $ ipiPosOut
-        let v = getNetVec $ d ^. #coords
-        Massiv.fromVectorM Par (Sz $ VectorS.length v) v
-      molNewCoords <- updatePositionsPosVec posVec atomDepthSelection molPreStep
-      atomically . writeTVar molT $ molNewCoords
+      ipiServerWants <- atomically . takeTMVar $ ipiStatusVar
+      case ipiServerWants of
+        -- Terminate the optimisation loop in case the i-PI server signals convergence.
+        Done -> return ()
+        -- Provide new positions to the i-PI server.
+        WantPos -> do
+          -- Obtain current molecular geometry, serialise them, communicate them to the client and
+          -- let the client update the server positions.
+          molCurrent <- readTVarIO molT
+          molCoords <- getCoordsNetVec molCurrent
+          atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
 
-      -- Recalculate the gradients above. The position update may invalidate the old ones.
-      forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
-      molInvalidG <- readTVarIO molT
-      unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
+          -- Reiterate on this layer.
+          untilConvergence depth microOptSettings
 
-      -- Optimise the layers above.
-      optAtDepth (depth - 1) microOptSettings
+        -- Micro-cycle optimisation cannot use Hessian information at the moment, as I haven't
+        -- thought about sub-tree hessian updates, yet.
+        WantHessian -> do
+          logErrorS
+            "geomMicroDriver"
+            "The i-PI server wants a hessian update, but hessian updates subtrees are not implemented yet."
+          throwM $ SpicyIndirectionException "geomMicroDriver" "Hessian updates not implemented yet."
 
-      -- Calculate forces in the new geometry for the current layer only.
-      calcAtDepth depth WTGradient
-      molPostStep <- readTVarIO molT >>= collectorDepth depth
-      atomically . writeTVar molT $ molPostStep
+        -- Normal i-PI update, where the client communicates current forces to the the server.
+        WantForces -> do
+          posVec <- do
+            d <- atomically . takeTMVar $ ipiPosOut
+            let v = getNetVec $ d ^. #coords
+            Massiv.fromVectorM Par (Sz $ VectorS.length v) v
+          molNewCoords <- updatePositionsPosVec posVec atomDepthSelection molPreStep
+          atomically . writeTVar molT $ molNewCoords
 
-      -- Construct force data, that we send to i-PI for this slice and send it.
-      let molHSlices = horizontalSlices molPostStep
-          molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
-          molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
-          zeroAtomGrad = toManifest $ Massiv.replicate @U @Ix1 @Double Seq (Sz 3) 0
-      gradsAtDepth <- combineSparseGradients molsAtDepth
-      gradsAbove <- combineSparseGradients molsAbove
-      let gradientsSparse = gradsAtDepth <> gradsAbove
-          gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomDepthSelection
-          realZeroGrad = IntMap.map (const zeroAtomGrad) realAtoms
-          realGrads = gradientsOfInterestSparse `IntMap.union` realZeroGrad
-          gradientsOfInterestDense = compute @U . concat' 1 $ realGrads
-          forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
-          forceData =
-            ForceData
-              { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
-                forces = NetVec . Massiv.toVector $ forcesBohr,
-                virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
-                optionalData = mempty
-              }
-      atomically . putTMVar ipiDataIn $ forceData
+          -- Recalculate the gradients above. The position update invalidates the old ones.
+          forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
+          molInvalidG <- readTVarIO molT
+          unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
 
-      -- Calculate geometry convergence and update the motion environment.
-      geomChange <- calcGeomConv atomDepthSelection molPreStep molPostStep
-      let newMotion = case motionHist of
-            Empty ->
-              Spicy.RuntimeEnv.Motion
-                { geomChange = geomChange,
-                  molecule = Nothing,
-                  outerCycle = 0,
-                  microCycle = (depth, 0)
-                }
-            _ :|> Spicy.RuntimeEnv.Motion {outerCycle, microCycle} ->
-              Spicy.RuntimeEnv.Motion
-                { geomChange = geomChange,
-                  molecule = Nothing,
-                  outerCycle = outerCycle,
-                  microCycle =
-                    if fst microCycle == depth
-                      then (depth, snd microCycle + 1)
-                      else (depth, 1)
-                }
-          nextMotion = motionHist |> newMotion
-      atomically . writeTVar motionT $ nextMotion
+          -- Optimise the layers above.
+          optAtDepth (depth - 1) microOptSettings
 
-      traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
-      traceM $
-        "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #eDiff)
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsForce)
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsDisp)
-          <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #maxForce)
-          <> (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
+          -- Calculate forces in the new geometry for the current layer only.
+          calcAtDepth depth WTGradient
+          molPostStep <- readTVarIO molT >>= collectorDepth depth
+          atomically . writeTVar molT $ molPostStep
 
-      -- Write history file
-      xyzHist <- writeXYZ molPostStep
-      liftIO . appendFile "OptHist.xyz" $ xyzHist
+          -- Construct force data, that we send to i-PI for this slice and send it.
+          let molHSlices = horizontalSlices molPostStep
+              molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
+              molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
+              zeroAtomGrad = toManifest $ Massiv.replicate @U @Ix1 @Double Seq (Sz 3) 0
+          gradsAtDepth <- combineSparseGradients molsAtDepth
+          gradsAbove <- combineSparseGradients molsAbove
+          let gradientsSparse = gradsAtDepth <> gradsAbove
+              gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomDepthSelection
+              realZeroGrad = IntMap.map (const zeroAtomGrad) realAtoms
+              realGrads = gradientsOfInterestSparse `IntMap.union` realZeroGrad
+              gradientsOfInterestDense = compute @U . concat' 1 $ realGrads
+              forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
+              forceData =
+                ForceData
+                  { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
+                    forces = NetVec . Massiv.toVector $ forcesBohr,
+                    virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+                    optionalData = mempty
+                  }
+          atomically . putTMVar ipiDataIn $ forceData
 
-      -- Decide if to do more iterations.
-      if geomChange < geomConvCriteria
-        then return ()
-        else untilConvergence depth microOptSettings
+          -- Calculate geometry convergence and update the motion environment.
+          geomChange <- calcGeomConv atomDepthSelection molPreStep molPostStep
+          let newMotion = case motionHist of
+                Empty ->
+                  Spicy.RuntimeEnv.Motion
+                    { geomChange = geomChange,
+                      molecule = Nothing,
+                      outerCycle = 0,
+                      microCycle = (depth, 0)
+                    }
+                _ :|> Spicy.RuntimeEnv.Motion {outerCycle, microCycle} ->
+                  Spicy.RuntimeEnv.Motion
+                    { geomChange = geomChange,
+                      molecule = Nothing,
+                      outerCycle = outerCycle,
+                      microCycle =
+                        if fst microCycle == depth
+                          then (depth, snd microCycle + 1)
+                          else (depth, 1)
+                    }
+              nextMotion = motionHist |> newMotion
+          atomically . writeTVar motionT $ nextMotion
+
+          traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
+          traceM $
+            "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
+              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #eDiff)
+              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsForce)
+              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsDisp)
+              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #maxForce)
+              <> (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
+
+          -- Write history file
+          xyzHist <- writeXYZ molPostStep
+          liftIO . appendFile "OptHist.xyz" $ xyzHist
+
+          -- Decide if to do more iterations.
+          if geomChange < geomConvCriteria
+            then return ()
+            else untilConvergence depth microOptSettings
 
     -- Conversion of gradients from Angstrom to Bohr.
     allAbove d = if d >= 0 then [0 .. d - 1] else []
