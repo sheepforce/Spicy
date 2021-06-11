@@ -62,10 +62,10 @@ module Spicy.Molecule.Internal.Util
     shrinkNeighbourList,
     isolateMoleculeLayer,
     molID2OniomHumanID,
-    horizontalSlices
-    gradDense2Sparse
-    calcGeomConv
-    multipoleTransfer
+    horizontalSlices,
+    gradDense2Sparse,
+    calcGeomConv,
+    multipoleTransfer,
     getCoordsNetVec,
   )
 where

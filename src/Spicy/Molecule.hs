@@ -91,7 +91,6 @@ module Spicy.Molecule
     getCalcByID,
     getMolByID,
     getMaxAtomIndex,
-    getMolByID,
     newSubLayer,
     createLinkAtom,
     addAtom,
@@ -118,6 +117,7 @@ module Spicy.Molecule
     gradDense2Sparse,
     calcGeomConv,
     multipoleTransfer,
+    getCoordsNetVec,
 
     -- * Writer
     writeXYZ,

@@ -46,7 +46,7 @@ spicyExecMain ::
     HasWrapperConfigs env,
     HasProcessContext env,
     HasCalcSlot env,
-    HasOutputter env
+    HasOutputter env,
     HasMotion env
   ) =>
   RIO env ()
@@ -115,7 +115,7 @@ spicyExecMain = do
           spicyLogMol (HashSet.fromList [Always, Task Start]) All
 
         -- Actual calculation
-        multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector WTEnergy
+        multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector
 
         -- Final logging
         energyEndPrintEnv <- getCurrPrintEvn
@@ -131,7 +131,7 @@ spicyExecMain = do
           spicyLogMol (HashSet.fromList [Always, Task Start]) All
 
         -- Actual calculation
-        multicentreOniomNDriver WTHessian *> multicentreOniomNCollector WTHessian
+        multicentreOniomNDriver WTHessian *> multicentreOniomNCollector
 
         -- Final logging.
         hessEndPrintEnv <- getCurrPrintEvn

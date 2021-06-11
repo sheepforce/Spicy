@@ -26,6 +26,9 @@ import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
 import Data.Massiv.Array.Manifest.Vector as Massiv
+import Data.Text.IO (appendFile)
+import Formatting hiding ((%))
+import qualified Formatting as F
 import Network.Socket
 import Optics hiding (Empty, view)
 import RIO hiding
@@ -58,9 +61,6 @@ import Spicy.Wrapper.IPI.Pysisyphus
 import Spicy.Wrapper.IPI.Types
 import System.Path ((</>))
 import qualified System.Path as Path
-import Data.Text.IO (appendFile)
-import qualified Formatting as F
-import Formatting hiding ((%))
 
 -- | A primitive driver, that executes a given calculation on a given layer. No results will be
 -- transered from the calculation output to the actual fields of the molecule.
@@ -223,6 +223,19 @@ geomMacroDriver = do
     localExc = MolLogicException "geomMacroDriver"
 
     -- The optimisation loop.
+    loop ::
+      ( HasMolecule env,
+        HasLogFunc env,
+        HasInputFile env,
+        HasCalcSlot env,
+        HasProcessContext env,
+        HasWrapperConfigs env,
+        HasOutputter env
+      ) =>
+      IPI ->
+      GeomConv ->
+      IntSet ->
+      RIO env ()
     loop pysisIPI convThresh selAtoms = do
       -- Get communication variables with the i-PI client and Spicy.
       let ipiDataIn = pysisIPI ^. #input
@@ -243,7 +256,7 @@ geomMacroDriver = do
           atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
 
           -- Reiterating
-          loop pysisIPI
+          loop pysisIPI convThresh selAtoms
 
         -- Standard i-PI behaviour with server -> client position updates and client -> sever force/
         -- hessian updates.
@@ -253,19 +266,19 @@ geomMacroDriver = do
           posData <- atomically . takeTMVar $ ipiPosOut
           posVec <- case posData ^. #coords of
             NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
-          molNewStruct <- updateMolWithPosVec posVec molOld
+          molNewStruct <- updatePositionsPosVec posVec selAtoms molOld
           atomically . writeTVar molT $ molNewStruct
 
           -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
           ipiData <- case ipiServerWants of
             WantForces -> do
               multicentreOniomNDriver WTGradient
-              multicentreOniomNCollector WTGradient
+              multicentreOniomNCollector
               molWithForces <- readTVarIO molT
               molToForceData molWithForces
             WantHessian -> do
               multicentreOniomNDriver WTHessian
-              multicentreOniomNCollector WTHessian
+              multicentreOniomNCollector
               molWithHessian <- readTVarIO molT
               molToHessianData molWithHessian
             Done -> do
@@ -291,15 +304,18 @@ geomMacroDriver = do
                   spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
           printSpicy $ sep <> molInfo
 
-        -- If converged terminate the i-PI server by putting a "converged" file in its working
-        -- directory
-        molNewWithEDerivs <- readTVarIO molT
-        geomChange <- calcGeomConv (IntMap.keysSet $ molOld ^. #atoms) molOld molNewWithEDerivs
-        let isConverged = geomChange < convThresh
-        when isConverged $ writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
+          -- Get the molecule in the new structure with its forces or hessian.
+          atomically . putTMVar ipiDataIn $ ipiData
 
-        -- Reiterating
-        loop pysisIPI convThresh selAtoms
+          -- If converged terminate the i-PI server by putting a "converged" file in its working
+          -- directory
+          molNewWithEDerivs <- readTVarIO molT
+          geomChange <- calcGeomConv (IntMap.keysSet $ molOld ^. #atoms) molOld molNewWithEDerivs
+          let isConverged = geomChange < convThresh
+          when isConverged $ writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
+
+          -- Reiterating
+          loop pysisIPI convThresh selAtoms
 
 {-
 ====================================================================================================
@@ -546,14 +562,14 @@ optAtDepth depth' microOptSettings'
       geomChange <- calcGeomConv atomDepthSelection molPreStep molPostStep
       let newMotion = case motionHist of
             Empty ->
-              Motion
+              Spicy.RuntimeEnv.Motion
                 { geomChange = geomChange,
                   molecule = Nothing,
                   outerCycle = 0,
                   microCycle = (depth, 0)
                 }
-            _ :|> Motion {outerCycle, microCycle} ->
-              Motion
+            _ :|> Spicy.RuntimeEnv.Motion {outerCycle, microCycle} ->
+              Spicy.RuntimeEnv.Motion
                 { geomChange = geomChange,
                   molecule = Nothing,
                   outerCycle = outerCycle,
@@ -577,7 +593,6 @@ optAtDepth depth' microOptSettings'
       -- Write history file
       xyzHist <- writeXYZ molPostStep
       liftIO . appendFile "OptHist.xyz" $ xyzHist
-
 
       -- Decide if to do more iterations.
       if geomChange < geomConvCriteria
