@@ -41,7 +41,6 @@ import RIO hiding
     (^..),
     (^?),
   )
-import qualified RIO.Directory as Dir
 import qualified RIO.HashSet as HashSet
 import qualified RIO.Map as Map
 import RIO.Process
@@ -249,11 +248,17 @@ geomMacroDriver = do
         Done -> return ()
         -- Pysisyphus extensions. Performs a client -> server position update and then loops back.
         WantPos -> do
-          -- Obtain current molecule geometry, serialise them, and communicate them to the client,
-          -- which then updates the server.
-          molCurrent <- readTVarIO molT
-          molCoords <- getCoordsNetVec molCurrent
-          atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
+          -- Obtain current molecule geometry and update with the new coordinates from server.
+          molOld <- readTVarIO molT
+          posData <- atomically . takeTMVar $ ipiPosOut
+          posVec <- case posData ^. #coords of
+            NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
+          molNewStruct <- updatePositionsPosVec posVec selAtoms molOld
+          atomically . writeTVar molT $ molNewStruct
+
+          -- Also write the new coordinates as position update.
+          newCoords <- getCoordsNetVec molNewStruct
+          atomically . putTMVar ipiDataIn . PosUpdateData $ newCoords
 
           -- Reiterating
           loop pysisIPI convThresh selAtoms
@@ -510,10 +515,6 @@ optAtDepth depth' microOptSettings'
           ipiPosOut = microSettingsAtDepth ^. #pysisIPI % #output
           ipiStatusVar = microSettingsAtDepth ^. #pysisIPI % #status
 
-      -- Obtain the molecule before the step.
-      molPreStep <- readTVarIO molT
-      let realAtoms = molPreStep ^. #atoms
-
       -- Obtain a new geometry from Pysisyphus (ignores the status for now).
       ipiServerWants <- atomically . takeTMVar $ ipiStatusVar
       case ipiServerWants of
@@ -521,11 +522,16 @@ optAtDepth depth' microOptSettings'
         Done -> return ()
         -- Provide new positions to the i-PI server.
         WantPos -> do
-          -- Obtain current molecular geometry, serialise them, communicate them to the client and
-          -- let the client update the server positions.
+          -- Obtain a step from the server, update the molecule in selected coordinates and send new
+          -- structure with all atoms in correct positions back.
           molCurrent <- readTVarIO molT
           molCoords <- getCoordsNetVec molCurrent
           atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
+
+          -- DEBUG
+          updateXYZ <- writeXYZ molCurrent
+          traceM $ "Coords spicy -> pysis update (" <> tshow depth <> ")\n" <> updateXYZ
+          -- END DEBUG
 
           -- Reiterate on this layer.
           untilConvergence depth microOptSettings
@@ -540,6 +546,16 @@ optAtDepth depth' microOptSettings'
 
         -- Normal i-PI update, where the client communicates current forces to the the server.
         WantForces -> do
+          -- Obtain the molecule before the step.
+          molPreStep <- readTVarIO molT
+          let realAtoms = molPreStep ^. #atoms
+
+          -- DEBUG
+          preStepXYZ <- writeXYZ molPreStep
+          traceM $ "Coords pre displacement(" <> tshow depth <> ")\n" <> preStepXYZ
+          -- END DEBUG
+
+          -- Do the position update.
           posVec <- do
             d <- atomically . takeTMVar $ ipiPosOut
             let v = getNetVec $ d ^. #coords
@@ -547,18 +563,44 @@ optAtDepth depth' microOptSettings'
           molNewCoords <- updatePositionsPosVec posVec atomDepthSelection molPreStep
           atomically . writeTVar molT $ molNewCoords
 
+          -- DEBUG
+          postStepCoords <- writeXYZ molNewCoords
+          traceM $ "Coords post displacement(" <> tshow depth <> ")\n" <> postStepCoords
+          -- END DEBUG
+
           -- Recalculate the gradients above. The position update invalidates the old ones.
           forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
           molInvalidG <- readTVarIO molT
           unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
 
+          {-
+          -- DEBUG
+          molPostAbove <- readTVarIO molT
+          coordsPostAbove <- writeXYZ molPostAbove
+          traceM $ "Coords post above gradient update(" <> tshow depth <> ")\n" <> coordsPostAbove
+          -- END DEBUG
+          -}
+
           -- Optimise the layers above.
           optAtDepth (depth - 1) microOptSettings
+
+          -- DEBUG
+          molPostAboveOpt <- readTVarIO molT
+          coordsPostAboveOpt <- writeXYZ molPostAboveOpt
+          traceM $ "Coords post above geometry update(" <> tshow depth <> ")\n" <> coordsPostAboveOpt
+          -- END DEBUG
 
           -- Calculate forces in the new geometry for the current layer only.
           calcAtDepth depth WTGradient
           molPostStep <- readTVarIO molT >>= collectorDepth depth
           atomically . writeTVar molT $ molPostStep
+
+          {-
+          -- DEBUG
+          coordsPostStep <- writeXYZ molPostAboveOpt
+          traceM $ "Coords for new force calculation(" <> tshow depth <> ")\n" <> coordsPostStep
+          -- END DEBUG
+          -}
 
           -- Construct force data, that we send to i-PI for this slice and send it.
           let molHSlices = horizontalSlices molPostStep

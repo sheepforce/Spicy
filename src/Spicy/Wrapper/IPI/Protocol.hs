@@ -109,11 +109,19 @@ ipiClient ipi = do
           nAtoms' <- liftIO $ recv sckt intBytes
           let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
           serverCoords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
-          let _serverCoords = decode @NetVec $ nAtoms' <> serverCoords'
-          logDebugS logSource "Received current (old) positions from server."
+          let serverCoords = decode @NetVec $ nAtoms' <> serverCoords'
+              cell = CellVecs {a = T 1 0 0, b = T 0 1 0, c = T 0 0 1}
+              inverseCell = cell
+              posDataBohr = PosData {cell, inverseCell, coords = serverCoords}
+              posDataAngstrom = posDataToAngstrom posDataBohr
+          logDebugS logSource $ "Coordinate vector:\n" <> displayShow serverCoords
+          logDebugS logSource "Providing Spicy with position data from server."
+          atomically . putTMVar out $ posDataAngstrom
+          logDebugS logSource "Waiting for coordinate update from Spicy."
 
           -- Get new positions from Spicy main thread and send them to the i-PI server.
           newPos <- atomically . takeTMVar $ inp
+          logDebugS logSource $ "Coordinates to send to Pysisyphus:\n" <> displayShow newPos
           liftIO . sendAll sckt . encode $ newPos
           logInfoS logSource "Sent new positions to i-PI server."
 
@@ -139,20 +147,16 @@ ipiClient ipi = do
           logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
           coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
           let cell = decode cell'
-              iCell = decode iCell'
-              posDataBohr =
-                PosData
-                  { cell = cell,
-                    inverseCell = iCell,
-                    coords = decode $ nAtoms' <> coords'
-                  }
+              inverseCell = decode iCell'
+              coords = decode $ nAtoms' <> coords'
+              posDataBohr = PosData {cell, inverseCell, coords}
               posDataAngstrom = posDataToAngstrom posDataBohr
           logDebugS logSource $ "Cell:\n" <> displayShow cell
-          logDebugS logSource $ "Inverse Cell:\n" <> displayShow iCell
-          logDebugS logSource $ "Coordinate vector:\n" <> displayShow (coords posDataAngstrom)
+          logDebugS logSource $ "Inverse Cell:\n" <> displayShow inverseCell
+          logDebugS logSource $ "Coordinate vector:\n" <> displayShow coords
 
           -- The posdata are given back to the ONIOM main loop in the shared variable.
-          logDebugS logSource "Providing Spicy with Position data from server."
+          logDebugS logSource "Providing Spicy with position data from server."
           atomically . putTMVar out $ posDataAngstrom
           logDebugS logSource "Waiting for energies and forces from Spicy."
 

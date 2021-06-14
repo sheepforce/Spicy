@@ -248,6 +248,7 @@ data InputData
         hessian :: Matrix S Double
       }
   | PosUpdateData {positions :: NetVec}
+  deriving (Show)
 
 -- Serialisation
 instance Binary InputData where
