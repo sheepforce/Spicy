@@ -1,40 +1,21 @@
 let
   pkgs = import ./pkgs.nix;
-  hsPkgs = import ./default.nix { wrap = false; };
-
-  # Pysisyphus development version.
-  pysisyphusDev =
-    let version = "dev";
-        pname = "pysisyphus";
-        repo = pkgs.fetchFromGitHub {
-          owner = "eljost";
-          repo = "pysisyphus";
-          rev = "a5b687919091a7e6158875b4d74d5eebde94204f";
-          sha256 = "0nk7h0gi08vcxy7msbzfs9anz3fxbf6b4iqqda40ffcffk771jna";
-        };
-    in pkgs.python3Packages.callPackage "${repo}/nix/pysisyphus.nix" {
-         orca = null;
-         turbomole = null;
-         gaussian = null;
-         gamess-us = null;
-         cfour = null;
-         molpro = null;
-         mopac = null;
-         psi4 = null;
-       };
+  haskellPkgs = pkgs.haskellPkgs;
+  nixpkgs = pkgs.nixpkgs;
+  spicyPkgs = import ./default.nix { wrap = false; };
 
   # Spicy runtime configuration setup.
-  spicyrc = pkgs.writeTextFile {
+  spicyrc = with nixpkgs;writeTextFile {
     name = "spicyrc";
-    text = pkgs.lib.generators.toYAML {} {
-      "psi4" = "${pkgs.qchem.psi4Unstable}/bin/psi4";
-      "gdma" = "${pkgs.qchem.gdma}/bin/gdma";
-      "pysisyphus" = "${pkgs.qchem.pysisyphus}/bin/pysis";
-      "xtb" = "${pkgs.qchem.xtb}/bin/xtb";
+    text = lib.generators.toYAML {} {
+      "psi4" = "${qchem.psi4Unstable}/bin/psi4";
+      "gdma" = "${qchem.gdma}/bin/gdma";
+      "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
+      "xtb" = "${qchem.xtb}/bin/xtb";
     };
   };
 in
-  hsPkgs.shellFor {
+  spicyPkgs.shellFor {
     # Include only the *local* packages of your project.
     packages = ps: with ps; [
       spicy
@@ -55,16 +36,16 @@ in
     };
 
     # Some you may need to get some other way.
-    buildInputs = [
-      pkgs.niv
-      pkgs.qchem.pysisyphus
-      pkgs.qchem.psi4Unstable
-      pkgs.qchem.gdma
-      pkgs.qchem.xtb
+    buildInputs = with nixpkgs; [
+      niv
+      qchem.pysisyphus
+      qchem.psi4Unstable
+      qchem.gdma
+      qchem.xtb
     ];
 
     # Setup a runtime with QC wrappers available.
-    shellHook = with hsPkgs; ''
+    shellHook = ''
       export SPICYRC=${spicyrc}
     '';
 

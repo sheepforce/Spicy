@@ -16,10 +16,7 @@ let
       };
     };
 
-  # FIXME - would be better to use sources.nixpkgs instead of haskellNix.sources.nixpkgs-unstable.
-  # Blocked by https://github.com/input-output-hk/haskell.nix/issues/1127
-  # Also blocks further NixOS-QChem updates (require newer nixpkgs-unstable versions)
-  pkgs = import haskellNix.sources.nixpkgs-unstable (haskellNix.nixpkgsArgs // {
+  haskellPkgs = import haskellNix.sources.nixpkgs-unstable (haskellNix.nixpkgsArgs // {
     overlays = haskellNix.nixpkgsArgs.overlays ++ [ qchem postOverlay ];
     config = haskellNix.nixpkgsArgs.config // {
       allowUnfree = true;
@@ -29,4 +26,18 @@ let
       };
     };
   });
-in pkgs
+
+  nixpkgs = import sources.nixpkgs {
+    overlays = [ qchem postOverlay ];
+    config = haskellNix.nixpkgsArgs.config // {
+      allowUnfree = true;
+      qchem-config = {
+        allowEnv = true;
+        optAVX = false;
+      };
+    };
+  };
+
+  # Pysisyphus development version
+  pysisyphus = nixpkgs.python3.pkgs.callPackage "${sources.pysisyphus}/nix" { };
+in { inherit haskellPkgs nixpkgs pysisyphus; }
