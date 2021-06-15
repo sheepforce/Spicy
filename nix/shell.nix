@@ -38,7 +38,7 @@ in
     # Some you may need to get some other way.
     buildInputs = with nixpkgs; [
       niv
-      qchem.pysisyphus
+      pkgs.pysisyphus
       qchem.psi4Unstable
       qchem.gdma
       qchem.xtb
