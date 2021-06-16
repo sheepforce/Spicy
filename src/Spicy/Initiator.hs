@@ -14,8 +14,6 @@ module Spicy.Initiator
 where
 
 import Data.Char
-import qualified Data.Map as Map
-import Data.FileEmbed
 import Data.Maybe
 import Optics hiding (view)
 import RIO hiding

@@ -248,17 +248,12 @@ geomMacroDriver = do
         Done -> return ()
         -- Pysisyphus extensions. Performs a client -> server position update and then loops back.
         WantPos -> do
-          -- Obtain current molecule geometry and update with the new coordinates from server.
-          molOld <- readTVarIO molT
-          posData <- atomically . takeTMVar $ ipiPosOut
-          posVec <- case posData ^. #coords of
-            NetVec vec -> Massiv.fromVectorM Par (Sz $ VectorS.length vec) vec
-          molNewStruct <- updatePositionsPosVec posVec selAtoms molOld
-          atomically . writeTVar molT $ molNewStruct
+          -- Consume an old geometry from the server and discard.
+          void . atomically . takeTMVar $ ipiPosOut
 
-          -- Also write the new coordinates as position update.
-          newCoords <- getCoordsNetVec molNewStruct
-          atomically . putTMVar ipiDataIn . PosUpdateData $ newCoords
+          -- Obtain current molecule geometry and update the server with those.
+          updateCoords <- readTVarIO molT >>= getCoordsNetVec
+          atomically . putTMVar ipiDataIn . PosUpdateData $ updateCoords
 
           -- Reiterating
           loop pysisIPI convThresh selAtoms
@@ -504,12 +499,14 @@ optAtDepth depth' microOptSettings'
     untilConvergence depth microOptSettings = do
       -- Initial information.
       molT <- view moleculeL
+      mol' <- readTVarIO molT
       motionT <- view motionL
       motionHist <- readTVarIO motionT
       microSettingsAtDepth <-
         maybe2MThrow (IndexOutOfBoundsException (Sz $ Seq.length microOptSettings) depth) $
           microOptSettings Seq.!? depth
-      let atomDepthSelection = microSettingsAtDepth ^. #atomsAtDepth
+      let allReal = IntMap.keysSet $ mol' ^. #atoms
+          atomDepthSelection = microSettingsAtDepth ^. #atomsAtDepth
           geomConvCriteria = microSettingsAtDepth ^. #geomConv
           ipiDataIn = microSettingsAtDepth ^. #pysisIPI % #input
           ipiPosOut = microSettingsAtDepth ^. #pysisIPI % #output
@@ -522,15 +519,30 @@ optAtDepth depth' microOptSettings'
         Done -> return ()
         -- Provide new positions to the i-PI server.
         WantPos -> do
-          -- Obtain a step from the server, update the molecule in selected coordinates and send new
-          -- structure with all atoms in correct positions back.
+          -- Consume and discard the invalid step from the server.
+          --void . atomically . takeTMVar $ ipiPosOut
+
+          -- DEBUG
+          molPreStep <- readTVarIO molT
+          invalidPosVec <- do
+            d <- atomically . takeTMVar $ ipiPosOut
+            let v = getNetVec $ d ^. #coords
+            Massiv.fromVectorM Par (Sz $ VectorS.length v) v
+          -- molInvalidStep <- updatePositionsPosVec invalidPosVec atomDepthSelection molPreStep
+          molInvalidStep <- updatePositionsPosVec invalidPosVec allReal molPreStep
+          invalidXYZ <- writeXYZ molInvalidStep
+          logDebugS "MEEEEP" $ "Last coordinates server knew about (" <> display depth <> ")\n" <> display invalidXYZ
+          -- END DEBUG
+
+          -- Get the current state of the molecule and send it to the Pysisyphus instance, to update
+          -- those coordinates before doing a step.
           molCurrent <- readTVarIO molT
           molCoords <- getCoordsNetVec molCurrent
           atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
 
           -- DEBUG
           updateXYZ <- writeXYZ molCurrent
-          traceM $ "Coords spicy -> pysis update (" <> tshow depth <> ")\n" <> updateXYZ
+          logDebugS "MEEEEP" $ "Coords spicy -> pysis update (" <> display depth <> ")\n" <> display updateXYZ
           -- END DEBUG
 
           -- Reiterate on this layer.
@@ -552,7 +564,7 @@ optAtDepth depth' microOptSettings'
 
           -- DEBUG
           preStepXYZ <- writeXYZ molPreStep
-          traceM $ "Coords pre displacement(" <> tshow depth <> ")\n" <> preStepXYZ
+          logDebugS "MEEEEP" $ "Coords pre displacement(" <> display depth <> ")\n" <> display preStepXYZ
           -- END DEBUG
 
           -- Do the position update.
@@ -560,18 +572,20 @@ optAtDepth depth' microOptSettings'
             d <- atomically . takeTMVar $ ipiPosOut
             let v = getNetVec $ d ^. #coords
             Massiv.fromVectorM Par (Sz $ VectorS.length v) v
-          molNewCoords <- updatePositionsPosVec posVec atomDepthSelection molPreStep
+          molNewCoords <- updatePositionsPosVec posVec allReal molPreStep
           atomically . writeTVar molT $ molNewCoords
 
           -- DEBUG
           postStepCoords <- writeXYZ molNewCoords
-          traceM $ "Coords post displacement(" <> tshow depth <> ")\n" <> postStepCoords
+          logDebugS "MEEEEP" $ "Coords post displacement(" <> display depth <> ")\n" <> display postStepCoords
           -- END DEBUG
 
           -- Recalculate the gradients above. The position update invalidates the old ones.
+          logDebugS "MEEEEP" $ "Recalculating gradients above current layer " <> display depth <> "."
           forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
           molInvalidG <- readTVarIO molT
           unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
+          logDebugS "MEEEEP" $ "Finished with gradients for layers above " <> display depth <> "."
 
           {-
           -- DEBUG
@@ -582,18 +596,22 @@ optAtDepth depth' microOptSettings'
           -}
 
           -- Optimise the layers above.
+          logDebugS "MEEEEP" $ "Recursive call to optimise above current layer " <> display depth <> "."
           optAtDepth (depth - 1) microOptSettings
+          logDebugS "MEEEEP" $ "Finished with optimising layers above " <> display depth
 
           -- DEBUG
           molPostAboveOpt <- readTVarIO molT
           coordsPostAboveOpt <- writeXYZ molPostAboveOpt
-          traceM $ "Coords post above geometry update(" <> tshow depth <> ")\n" <> coordsPostAboveOpt
+          logDebugS "MEEEEP" $ "Coords post above geometry update(" <> display depth <> ")\n" <> display coordsPostAboveOpt
           -- END DEBUG
 
           -- Calculate forces in the new geometry for the current layer only.
+          logDebugS "MEEEEP" $ "Recalculating gradients in current layer " <> display depth
           calcAtDepth depth WTGradient
           molPostStep <- readTVarIO molT >>= collectorDepth depth
           atomically . writeTVar molT $ molPostStep
+          logDebugS "MEEEEP" $ "Finished with current layer gradients" <> display depth
 
           {-
           -- DEBUG
@@ -622,6 +640,7 @@ optAtDepth depth' microOptSettings'
                     virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
                     optionalData = mempty
                   }
+          logDebugS "MEEEP" $ "Providing forces at current depth " <> display depth <> " to i-PI client"
           atomically . putTMVar ipiDataIn $ forceData
 
           -- Calculate geometry convergence and update the motion environment.
@@ -647,8 +666,8 @@ optAtDepth depth' microOptSettings'
               nextMotion = motionHist |> newMotion
           atomically . writeTVar motionT $ nextMotion
 
-          traceM $ "Cycles: " <> tShow (newMotion ^. #microCycle)
-          traceM $
+          logDebugS "MEEEEP" $ "Cycles: " <> displayShow (newMotion ^. #microCycle)
+          logDebugS "MEEEEP" $ display $
             "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
               <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #eDiff)
               <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsForce)
@@ -752,10 +771,11 @@ setupPsysisServers mol = do
                     & #pysisyphus % #socketAddr .~ SockAddrUnix (mkScktPath scratchDirAbs i)
                     & #pysisyphus % #workDir .~ Path.toAbsRel (mkPysisWorkDir scratchDirAbs i)
                     & #pysisyphus % #initCoords .~ (mkPysisWorkDir scratchDirAbs i </> Path.relFile "InitCoords.xyz")
+                    & #pysisyphus % #oniomDepth ?~ i
                     & #freezes %~ (<> frozenAtomsAtThisDepth)
           )
           optSettingsAtDepthRaw
-  threadsAtDepth <- mapM (providePysisAbstract allRealAtoms) optSettingsAtDepth
+  threadsAtDepth <- mapM (providePysisAbstract True allRealAtoms) optSettingsAtDepth
 
   return $
     Seq.zipWith3

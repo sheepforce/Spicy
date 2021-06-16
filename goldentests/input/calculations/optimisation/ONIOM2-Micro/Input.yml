@@ -28,6 +28,7 @@ model:
       -  7
     optimisation:
       coords: dlc
+      microStep: sd
     deeperLayer:
     - templateFile: goldentests/input/calculations/optimisation/ONIOM2-Micro/hf.psi
       program:
@@ -48,6 +49,7 @@ model:
         - 7
       optimisation:
         coords: dlc
+        microStep: sd
       deeperLayer: []
 task:
 - optimise_micro

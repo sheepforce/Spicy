@@ -55,7 +55,10 @@ data IPI = IPI
     -- | The path to a coordinate file, used to initialise the i-PI server with coordinates.
     initCoords :: Path.AbsFile,
     -- | The status of the i-PI server.
-    status :: TMVar DataRequest
+    status :: TMVar DataRequest,
+    -- | For logging purposes only: potentially a depth of the ONIOM tree, in which this i-PI is
+    -- being used.
+    oniomDepth :: Maybe Int
   }
 
 instance DefaultIO IPI where
@@ -72,7 +75,8 @@ instance DefaultIO IPI where
           output = ipiOut,
           workDir = Path.dirPath ".",
           initCoords = Path.dirPath "." </> Path.relFile "InitialCoords.xyz",
-          status = status
+          status = status,
+          oniomDepth = Nothing
         }
 
 -- Lenses
@@ -96,6 +100,9 @@ instance (k ~ A_Lens, a ~ Path.AbsFile, b ~ a) => LabelOptic "initCoords" k IPI 
 
 instance (k ~ A_Lens, a ~ TMVar DataRequest, b ~ a) => LabelOptic "status" k IPI IPI a b where
   labelOptic = lens status $ \s b -> s {status = b}
+
+instance (k ~ A_Lens, a ~ Maybe Int, b ~ a) => LabelOptic "oniomDepth" k IPI IPI a b where
+  labelOptic = lens oniomDepth $ \s b -> s {oniomDepth = b}
 
 ----------------------------------------------------------------------------------------------------
 

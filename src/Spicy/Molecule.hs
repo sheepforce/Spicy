@@ -46,6 +46,7 @@ module Spicy.Molecule
     Optimisation (..),
     CoordType (..),
     HessianUpdate (..),
+    MicroStep (..),
     OptType (..),
     _Minimum,
     _SaddlePoint,

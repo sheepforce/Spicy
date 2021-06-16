@@ -71,6 +71,7 @@ module Spicy.Molecule.Internal.Types
     Optimisation (..),
     CoordType (..),
     HessianUpdate (..),
+    MicroStep (..),
     OptType (..),
     _Minimum,
     _SaddlePoint,
@@ -947,7 +948,9 @@ data Optimisation = Optimisation
     -- | Atom indices to freeze.
     freezes :: IntSet,
     -- | Pysisyphus connection settings.
-    pysisyphus :: IPI
+    pysisyphus :: IPI,
+    -- | Settings in case micro-optimisers are used.
+    microStep :: MicroStep
   }
 
 instance DefaultIO Optimisation where
@@ -966,7 +969,8 @@ instance DefaultIO Optimisation where
           optType = Minimum RFO,
           pysisyphus = defPysis,
           convergence = def,
-          freezes = mempty
+          freezes = mempty,
+          microStep = LBFGS
         }
 
 instance ToJSON Optimisation where
@@ -982,7 +986,8 @@ instance ToJSON Optimisation where
         lineSearch,
         optType,
         convergence,
-        freezes
+        freezes,
+        microStep
       } =
       object
         [ "coordType" .= coordType,
@@ -995,7 +1000,8 @@ instance ToJSON Optimisation where
           "lineSearch" .= lineSearch,
           "optType" .= optType,
           "convergence" .= convergence,
-          "freezes" .= freezes
+          "freezes" .= freezes,
+          "microStep" .= microStep
         ]
 
 -- Lenses
@@ -1034,6 +1040,9 @@ instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "freezes" k Optimisation 
 
 instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisyphus" k Optimisation Optimisation a b where
   labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}
+
+instance (k ~ A_Lens, a ~ MicroStep, b ~ a) => LabelOptic "microStep" k Optimisation Optimisation a b where
+  labelOptic = lens microStep $ \s b -> s {microStep = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1081,6 +1090,28 @@ instance ToJSON HessianUpdate where
     FlowChart -> toJSON @Text "flowchart"
     DampedBFGS -> toJSON @Text "damped_bfgs"
     Bofill -> toJSON @Text "bofill"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Available step types for steps with the micro-cycles.
+data MicroStep
+  = LBFGS
+  | SD
+  | CG
+  deriving (Eq, Show, Generic)
+
+instance FromJSON MicroStep where
+  parseJSON v = case v of
+    String "lbfgs" -> pure LBFGS
+    String "sd" -> pure SD
+    String "cg" -> pure CG
+    _ -> fail "encountered unknown field for MicroStep"
+
+instance ToJSON MicroStep where
+  toJSON v = case v of
+    LBFGS -> toJSON @Text "lbfgs"
+    SD -> toJSON @Text "sd"
+    CG -> toJSON @Text "cg"
 
 ----------------------------------------------------------------------------------------------------
 

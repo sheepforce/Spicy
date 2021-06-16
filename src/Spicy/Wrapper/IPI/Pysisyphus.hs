@@ -24,7 +24,8 @@ import Optics hiding (view)
 import RIO hiding (lens, view, (^.), (^?))
 import RIO.Process
 import Spicy.Common
-import Spicy.Molecule
+import Spicy.Molecule hiding (Minimum, SaddlePoint)
+import qualified Spicy.Molecule as Mol
 import Spicy.RuntimeEnv
 import Spicy.Wrapper.IPI.Protocol
 import System.Path ((</>))
@@ -47,6 +48,7 @@ instance Exception PysisyphusExc
 -- Returns the 'Async' value of the background thread, that runs the Pysisyphus server. When this
 -- function returns the job on spicy side should be done but Pysis might continue to run. Give it a
 -- reasonable time to finish and then use the 'Async' value to shut this thread down.
+-- This function cannot be used for micro-cycle driven optimisations.
 providePysis ::
   ( HasWrapperConfigs env,
     HasLogFunc env,
@@ -62,7 +64,7 @@ providePysis = do
      in maybe2MThrow (molExc "Optimisation settings missing") maybeOpt
   let atoms = mol ^. #atoms
 
-  providePysisAbstract atoms optSettings
+  providePysisAbstract False atoms optSettings
   where
     molExc = MolLogicException "providePysis"
 
@@ -78,13 +80,15 @@ providePysisAbstract ::
     HasLogFunc env,
     HasProcessContext env
   ) =>
+  -- | Use micro-cycle driven optimisations.
+  Bool ->
   IntMap Atom ->
   Optimisation ->
   RIO env (Async (), Async ())
-providePysisAbstract atoms optSettings = do
+providePysisAbstract doMicro atoms optSettings = do
   logDebugS logSource "Starting pysisyphus companion threads ..."
 
-  serverThread <- async $ runPysisServerAbstract atoms optSettings
+  serverThread <- async $ runPysisServerAbstract doMicro atoms optSettings
   link serverThread
 
   clientThread <- async $ ipiClient (optSettings ^. #pysisyphus)
@@ -96,6 +100,7 @@ providePysisAbstract atoms optSettings = do
 -- | Launches a Pysishus i-PI server in the background with the required input and waits for it to
 -- finish. Pysisyphus will respect the optimisation settings, that are given on the top level of the
 -- visible molecule.
+-- This will always launch a pysisyphus instance with normal/no micro-cycle behaviour.
 runPysisServer ::
   ( HasWrapperConfigs env,
     HasProcessContext env,
@@ -109,7 +114,7 @@ runPysisServer = do
   optSettings <-
     maybe2MThrow (localExc "calculation context with settings for optimiser missing") $
       mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
-  runPysisServerAbstract atoms optSettings
+  runPysisServerAbstract False atoms optSettings
   where
     localExc = MolLogicException "runPysisServer"
 
@@ -123,10 +128,12 @@ runPysisServerAbstract ::
     HasProcessContext env,
     HasLogFunc env
   ) =>
+  -- | Use optimisers with behaviour appropriate for micro-cycles.
+  Bool ->
   IntMap Atom ->
   Optimisation ->
   RIO env ()
-runPysisServerAbstract atoms optSettings = do
+runPysisServerAbstract doMicro atoms optSettings = do
   -- Obtain initial information.
   socketPath <- unixSocket2Path $ optSettings ^. #pysisyphus % #socketAddr
   pysisWrapper <-
@@ -154,7 +161,7 @@ runPysisServerAbstract atoms optSettings = do
     "Wrote initial coordinates for Pysisyphus to " <> path2Utf8Builder initCoordFileAbs
 
   -- Construct the input file for pysisyphus.
-  pysisInput <- opt2Pysis atoms initCoordFileAbs optSettings
+  pysisInput <- opt2Pysis doMicro atoms initCoordFileAbs optSettings
   let pysisYamlPath = pysisWorkDir </> Path.relFile "pysis_servers_spicy.yml"
       pysisYaml = decodeUtf8Lenient . encodePretty defConfig $ pysisInput
   writeFileUTF8 pysisYamlPath pysisYaml
@@ -198,7 +205,7 @@ runPysisServerAbstract atoms optSettings = do
 -- | Pysisyphus input file data structure.
 data PysisInput = PysisInput
   { geom :: Geom,
-    optimiser :: Either MinOpt TSOpt,
+    optimiser :: Optimiser,
     calc :: Calc
   }
 
@@ -209,8 +216,21 @@ instance ToJSON PysisInput where
         "calc" .= calc
       ]
         <> case optimiser of
-          Left opt -> ["opt" .= opt]
-          Right tsopt -> ["tsopt" .= tsopt]
+          Minimum opt -> ["opt" .= opt]
+          SaddlePoint tsopt -> ["tsopt" .= tsopt]
+          Micro microOpt -> ["opt" .= microOpt]
+
+----------------------------------------------------------------------------------------------------
+
+-- | Types of optimisers.
+data Optimiser
+  = -- | Normal pysisyphus optimisers for minima.
+    Minimum MinOpt
+  | -- | Normal optimisers for transition state search (local optimisers, not COS).
+    SaddlePoint TSOpt
+  | -- | Special optimisers, that implement appropriate behaviour for micro-cycle driven
+    -- optimisation.
+    Micro MicroOpt
 
 ----------------------------------------------------------------------------------------------------
 
@@ -224,7 +244,8 @@ data MinOpt = MinOpt
     minTrust :: Double,
     maxTrust :: Double,
     trustRadius :: Double,
-    thresh :: ConvThresh
+    thresh :: ConvThresh,
+    reparamWhen :: Maybe ReparamEvent
   }
 
 instance ToJSON MinOpt where
@@ -238,7 +259,8 @@ instance ToJSON MinOpt where
         minTrust,
         maxTrust,
         trustRadius,
-        thresh
+        thresh,
+        reparamWhen
       } =
       object
         [ "type" .= optType,
@@ -249,7 +271,8 @@ instance ToJSON MinOpt where
           "trust_radius" .= trustRadius,
           "trust_min" .= minTrust,
           "trust_max" .= maxTrust,
-          "thresh" .= thresh
+          "thresh" .= thresh,
+          "reparam_when" .= reparamWhen
         ]
 
 ----------------------------------------------------------------------------------------------------
@@ -262,20 +285,58 @@ data TSOpt = TSOpt
     minTrust :: Double,
     maxTrust :: Double,
     trustRadius :: Double,
-    thresh :: ConvThresh
+    thresh :: ConvThresh,
+    reparamWhen :: Maybe ReparamEvent
   }
 
 instance ToJSON TSOpt where
-  toJSON TSOpt {optType, maxCycles, recalcHessian, minTrust, maxTrust, trustRadius, thresh} =
+  toJSON
+    TSOpt
+      { optType,
+        maxCycles,
+        recalcHessian,
+        minTrust,
+        maxTrust,
+        trustRadius,
+        thresh,
+        reparamWhen
+      } =
+      object
+        [ "type" .= optType,
+          "max_cycles" .= maxCycles,
+          "hessian_recalc" .= recalcHessian,
+          "trust_radius" .= trustRadius,
+          "trust_max" .= maxTrust,
+          "trust_min" .= minTrust,
+          "thresh" .= thresh,
+          "reparam_when" .= reparamWhen
+        ]
+
+----------------------------------------------------------------------------------------------------
+
+-- | Possible settings for micro optimisation.
+data MicroOpt = MicroOpt
+  { -- | Always must indicate micro-driven cycle optimisation.
+    optType :: MicroOptType,
+    -- | The geometry update type to use.
+    step :: MicroStep,
+    -- | Maximum number of geometry optimisation steps.
+    maxCycles :: Int
+  }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON MicroOpt where
+  toJSON MicroOpt {optType, step, maxCycles} =
     object
-      [ "type" .= optType,
-        "max_cycles" .= maxCycles,
-        "hessian_recalc" .= recalcHessian,
-        "trust_radius" .= trustRadius,
-        "trust_max" .= maxTrust,
-        "trust_min" .= minTrust,
-        "thresh" .= thresh
-      ]
+      ["type" .= optType, "step" .= step, "max_cycles" .= maxCycles]
+
+----------------------------------------------------------------------------------------------------
+
+-- | For micro optimisation the value of @type@ always needs to be @micro@.
+data MicroOptType = MicroOptType deriving (Eq, Show, Generic)
+
+instance ToJSON MicroOptType where
+  toJSON MicroOptType = toJSON @Text "micro"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -330,9 +391,22 @@ instance ToJSON CalcType where
 
 ----------------------------------------------------------------------------------------------------
 
+-- | When client coordinate update shall occur. Only one of the cases is coded for Spicy, as the
+-- other makes no sense here.
+data ReparamEvent
+  = Before
+  | After
+
+instance ToJSON ReparamEvent where
+  toJSON Before = toJSON @Text "before"
+  toJSON After = toJSON @Text "after"
+
+----------------------------------------------------------------------------------------------------
+
 -- | Conversion of Optimisation settings to a Pysisyphus input.
-opt2Pysis :: MonadThrow m => IntMap Atom -> Path.AbsFile -> Optimisation -> m PysisInput
+opt2Pysis :: MonadThrow m => Bool -> IntMap Atom -> Path.AbsFile -> Optimisation -> m PysisInput
 opt2Pysis
+  doMicro
   atoms
   initCoordFile
   Optimisation
@@ -346,7 +420,8 @@ opt2Pysis
       lineSearch,
       optType,
       pysisyphus,
-      freezes
+      freezes,
+      microStep
     } = do
     scktAddr <- unixSocket2Path $ pysisyphus ^. #socketAddr
     return
@@ -357,21 +432,25 @@ opt2Pysis
         }
     where
       geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType, freeze_atoms = denseFreeze}
-      optimiser = case optType of
-        SaddlePoint alg -> Right (tsOpt {optType = alg} :: TSOpt)
-        Minimum alg ->
-          Left $
-            MinOpt
-              { optType = alg,
-                maxCycles = maxCycles,
-                recalcHessian = hessianRecalc,
-                updateHessian = hessianUpdate,
-                lineSearch = lineSearch,
-                minTrust = minTrust,
-                maxTrust = maxTrust,
-                trustRadius = trustRadius,
-                thresh = Never
-              }
+      optimiser =
+        if doMicro
+          then Micro $ MicroOpt {optType = MicroOptType, step = microStep, maxCycles = 1000000000}
+          else case optType of
+            Mol.SaddlePoint alg -> SaddlePoint (tsOpt {optType = alg} :: TSOpt)
+            Mol.Minimum alg ->
+              Minimum $
+                MinOpt
+                  { optType = alg,
+                    maxCycles = maxCycles,
+                    recalcHessian = hessianRecalc,
+                    updateHessian = hessianUpdate,
+                    lineSearch = lineSearch,
+                    minTrust = minTrust,
+                    maxTrust = maxTrust,
+                    trustRadius = trustRadius,
+                    thresh = Never,
+                    reparamWhen = Nothing
+                  }
       tsOpt =
         TSOpt
           { optType = RS_I_RFO,
@@ -380,13 +459,14 @@ opt2Pysis
             minTrust = minTrust,
             maxTrust = maxTrust,
             trustRadius = trustRadius,
-            thresh = Never
+            thresh = Never,
+            reparamWhen = Nothing
           }
       calc addr =
         Calc
           { calcType = IPIServer,
             address = Just addr,
-            verbose = False
+            verbose = True
           }
 
       denseFreeze =
