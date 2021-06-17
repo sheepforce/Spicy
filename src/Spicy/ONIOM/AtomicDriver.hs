@@ -26,9 +26,6 @@ import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
 import Data.Massiv.Array.Manifest.Vector as Massiv
-import Data.Text.IO (appendFile)
-import Formatting hiding ((%))
-import qualified Formatting as F
 import Network.Socket
 import Optics hiding (Empty, view)
 import RIO hiding
@@ -125,6 +122,12 @@ multicentreOniomNDriver ::
   WrapperTask ->
   RIO env ()
 multicentreOniomNDriver atomicTask = do
+  logInfoS logSource $
+    "Full ONIOM traversal for " <> case atomicTask of
+      WTEnergy -> "energy."
+      WTGradient -> "gradient."
+      WTHessian -> "hessian."
+
   -- Obtain environment information
   molT <- view moleculeL
   mol <- readTVarIO molT
@@ -174,12 +177,13 @@ multicentreOniomNDriver atomicTask = do
   multicentreOniomNCollector
   where
     localExc = MolLogicException "multicentreOniomNDriver"
+    logSource = "multi-centre ONIOM driver"
 
 ----------------------------------------------------------------------------------------------------
 
 -- | A driver for geometry optimisations without microiteration. Does one full traversal of the
 -- ONIOM molecule before a geometry displacement step. Updates can happen by an arbitrary i-PI
--- server
+-- server.
 geomMacroDriver ::
   ( HasMolecule env,
     HasLogFunc env,
@@ -192,6 +196,7 @@ geomMacroDriver ::
   RIO env ()
 geomMacroDriver = do
   -- Logging.
+  logInfoS logSource "Starting a direct geometry optimisation on the full ONIOM tree."
   optStartPrintEvn <- getCurrPrintEvn
   printSpicy txtDirectOpt
   printSpicy . renderBuilder . spicyLog optStartPrintEvn $
@@ -206,20 +211,24 @@ geomMacroDriver = do
       convThresh = optSettings ^. #convergence
 
   -- Launch a Pysisyphus server and an i-PI client for the optimisation.
+  logDebugS logSource "Launching i-PI server for optimisations."
   (pysisServer, pysisClient) <- providePysis
   link pysisServer
   link pysisClient
 
   -- Start the loop that provides the i-PI client thread with data for the optimisation.
   let allTopAtoms = IntMap.keysSet $ mol ^. #atoms
+  logDebugS logSource "Entering the optimisation recursion."
   loop pysisIPI convThresh allTopAtoms
 
   -- Final logging
+  logInfoS logSource "Finished geometry optimisation."
   optEndPrintEvn <- getCurrPrintEvn
   printSpicy . renderBuilder . spicyLog optEndPrintEvn $
     spicyLogMol (HashSet.fromList [Always, Task End]) All
   where
     localExc = MolLogicException "geomMacroDriver"
+    logSource = "MacroGeometryDriver"
 
     -- The optimisation loop.
     loop ::
@@ -245,9 +254,13 @@ geomMacroDriver = do
       ipiServerWants <- atomically . takeTMVar $ pysisIPI ^. #status
       case ipiServerWants of
         -- Terminate the loop in case the i-PI server signals convergence
-        Done -> return ()
+        Done -> logInfoS logSource "i-PI server signaled convergence. Exiting."
         -- Pysisyphus extensions. Performs a client -> server position update and then loops back.
         WantPos -> do
+          logWarnS
+            logSource
+            "i-PI server uncommonly asked for a spicy -> i-PI position update. Providing current atomic positions ..."
+
           -- Consume an old geometry from the server and discard.
           void . atomically . takeTMVar $ ipiPosOut
 
@@ -261,6 +274,8 @@ geomMacroDriver = do
         -- Standard i-PI behaviour with server -> client position updates and client -> sever force/
         -- hessian updates.
         _ -> do
+          logInfoS logSource "New geometry from i-PI server. Preparing to calculate new energy derivatives."
+
           -- Obtain the molecule before i-PI modifications.
           molOld <- readTVarIO molT
           posData <- atomically . takeTMVar $ ipiPosOut
@@ -272,25 +287,27 @@ geomMacroDriver = do
           -- Do a full traversal of the ONIOM tree and obtain the full ONIOM gradient.
           ipiData <- case ipiServerWants of
             WantForces -> do
+              logInfoS logSource "Calculating new gradient."
               multicentreOniomNDriver WTGradient
               multicentreOniomNCollector
               molWithForces <- readTVarIO molT
               molToForceData molWithForces
             WantHessian -> do
+              logInfoS logSource "Calculating new hessian."
               multicentreOniomNDriver WTHessian
               multicentreOniomNCollector
               molWithHessian <- readTVarIO molT
               molToHessianData molWithHessian
             Done -> do
               logErrorS
-                "geomMacroDriver"
+                logSource
                 "The macro geometry driver should be done but has entered an other\
                 \ calculation loop."
               throwM $
                 SpicyIndirectionException "geomMacroDriver" "Data expected but not calculated?"
             WantPos -> do
               logErrorS
-                "geomMacroDriver"
+                logSource
                 "The i-PI server wants a position update, but position updates must not occur here."
               throwM $
                 SpicyIndirectionException
@@ -312,7 +329,9 @@ geomMacroDriver = do
           molNewWithEDerivs <- readTVarIO molT
           geomChange <- calcGeomConv (IntMap.keysSet $ molOld ^. #atoms) molOld molNewWithEDerivs
           let isConverged = geomChange < convThresh
-          when isConverged $ writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
+          when isConverged $ do
+            logInfoS logSource "Optimisation has converged. Telling i-PI server to EXIT in the next loop."
+            writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
 
           -- Reiterating
           loop pysisIPI convThresh selAtoms
@@ -345,19 +364,29 @@ geomMicroDriver ::
   ) =>
   RIO env ()
 geomMicroDriver = do
+  -- Logging.
+  logInfoS logSource "Starting a geometry optimisation with micro cycles."
+
   -- Get intial information.
   molT <- view moleculeL
   mol <- readTVarIO molT
 
   -- Setup the pysisyphus optimisation servers per horizontal slice.
+  logDebugS logSource "Launching client and server i-PI companion threads per horizontal slice ..."
   microOptHierarchy <- setupPsysisServers mol
 
   -- Perform the optimisations steps in a mindblowing recursion ...
   -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
   -- up. When converged, the function will terminate.
+  logInfoS logSource $
+    "Starting the micro-cycle recursion at the most model slice of the ONIOM tree ("
+      <> display (Seq.length microOptHierarchy - 1)
+      <> ")."
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
+  logInfoS logSource "Optimisation has converged!"
 
   -- Terminate all the companion threads.
+  logDebugS logSource "Terminating i-PI companion threads."
   forM_ microOptHierarchy $ \MicroOptSetup {ipiClientThread, pysisIPI} -> do
     -- Stop the pysisyphus server by gracefully by writing a magic file. Send once more gradients
     -- (dummy values more or less ...) to finish nicely and then reset all connections.
@@ -371,6 +400,7 @@ geomMicroDriver = do
     void . atomically . tryTakeTMVar $ pysisIPI ^. #output
     void . atomically . tryTakeTMVar $ pysisIPI ^. #status
   where
+    logSource = "geomMicroDriver"
     dummyForces sel =
       ForceData
         { potentialEnergy = 0,
@@ -481,10 +511,11 @@ optAtDepth depth' microOptSettings'
   | depth' > Seq.length microOptSettings' = throwM $ MolLogicException "optStepAtDepth" "Requesting optimisation of a layer that has no microoptimisation settings"
   | depth' < 0 = return ()
   | otherwise = do
-    logInfo $ "Starting optimisation on layer " <> display depth'
+    logInfoS logSource $ "Starting micro-cyle optimisation on layer " <> display depth'
     untilConvergence depth' microOptSettings'
-    logInfo $ "Finished optimisation of layer " <> display depth'
+    logInfoS logSource $ "Finished micro-cycles of layer " <> display depth'
   where
+    logSource = "geomMicroDriver"
     -- Do a single geometry optimisation step at a given depth.
     untilConvergence ::
       ( HasMolecule env,
@@ -516,34 +547,22 @@ optAtDepth depth' microOptSettings'
       ipiServerWants <- atomically . takeTMVar $ ipiStatusVar
       case ipiServerWants of
         -- Terminate the optimisation loop in case the i-PI server signals convergence.
-        Done -> return ()
+        Done ->
+          logWarnS logSource $
+            "(slice " <> display depth <> ") i-PI server signaled an exit. It should never terminate by itself ..."
         -- Provide new positions to the i-PI server.
         WantPos -> do
-          -- Consume and discard the invalid step from the server.
-          --void . atomically . takeTMVar $ ipiPosOut
+          logDebugS logSource $
+            "(slice " <> display depth <> ") synchronising coordinates with i-PI server (spicy -> i-PI)"
 
-          -- DEBUG
-          molPreStep <- readTVarIO molT
-          invalidPosVec <- do
-            d <- atomically . takeTMVar $ ipiPosOut
-            let v = getNetVec $ d ^. #coords
-            Massiv.fromVectorM Par (Sz $ VectorS.length v) v
-          -- molInvalidStep <- updatePositionsPosVec invalidPosVec atomDepthSelection molPreStep
-          molInvalidStep <- updatePositionsPosVec invalidPosVec allReal molPreStep
-          invalidXYZ <- writeXYZ molInvalidStep
-          logDebugS "MEEEEP" $ "Last coordinates server knew about (" <> display depth <> ")\n" <> display invalidXYZ
-          -- END DEBUG
+          -- Consume and discard the invalid step from the server.
+          void . atomically . takeTMVar $ ipiPosOut
 
           -- Get the current state of the molecule and send it to the Pysisyphus instance, to update
           -- those coordinates before doing a step.
           molCurrent <- readTVarIO molT
           molCoords <- getCoordsNetVec molCurrent
           atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
-
-          -- DEBUG
-          updateXYZ <- writeXYZ molCurrent
-          logDebugS "MEEEEP" $ "Coords spicy -> pysis update (" <> display depth <> ")\n" <> display updateXYZ
-          -- END DEBUG
 
           -- Reiterate on this layer.
           untilConvergence depth microOptSettings
@@ -552,12 +571,14 @@ optAtDepth depth' microOptSettings'
         -- thought about sub-tree hessian updates, yet.
         WantHessian -> do
           logErrorS
-            "geomMicroDriver"
+            logSource
             "The i-PI server wants a hessian update, but hessian updates subtrees are not implemented yet."
           throwM $ SpicyIndirectionException "geomMicroDriver" "Hessian updates not implemented yet."
 
         -- Normal i-PI update, where the client communicates current forces to the the server.
         WantForces -> do
+          logDebugS logSource $ "(slice " <> display depth <> ") new geometry for slice from i-PI."
+
           -- Obtain the molecule before the step.
           molPreStep <- readTVarIO molT
 
@@ -570,32 +591,33 @@ optAtDepth depth' microOptSettings'
           atomically . writeTVar molT $ molNewCoords
 
           -- Recalculate the gradients above. The position update invalidates the old ones.
-          logDebugS "MEEEEP" $ "Recalculating gradients above current layer " <> display depth <> "."
+          logDebugS logSource $ "(slice " <> display depth <> ") Step invalidated gradients. Recalculating gradients above current slice."
           forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
           molInvalidG <- readTVarIO molT
           unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
-          logDebugS "MEEEEP" $ "Finished with gradients for layers above " <> display depth <> "."
+          logDebugS logSource $ "(slice " <> display depth <> ") Finished with gradient above."
 
           -- Optimise the layers above.
-          logDebugS "MEEEEP" $ "Recursive call to optimise above current layer " <> display depth <> "."
+          logDebugS logSource $ "(slice " <> display depth <> ") Recursively entering micro-cycles in slice above."
           optAtDepth (depth - 1) microOptSettings
-          logDebugS "MEEEEP" $ "Finished with optimising layers above " <> display depth
+          logDebugS logSource $ "(slice " <> display depth <> ") Finished with micro-cycles in slices above."
 
           -- Calculate forces in the new geometry for the current layer only.
-          logDebugS "MEEEEP" $ "Recalculating gradients in current layer " <> display depth
+          logDebugS logSource $ "(slice " <> display depth <> ") Recalculating gradients in current slice."
           calcAtDepth depth WTGradient
           molPostStep <- readTVarIO molT >>= collectorDepth depth
           atomically . writeTVar molT $ molPostStep
-          logDebugS "MEEEEP" $ "Finished with current layer gradients" <> display depth
+          logDebugS logSource $ "(slice " <> display depth <> ") Finished with current slice's gradients."
 
           -- Construct force data, that we send to i-PI for this slice and send it.
           -- A collector up to the current depth will collect all force data and transform the
           -- gradients of all layers up to current depth into the real system gradient, which is
           -- then completely sent to Pysisyphus.
           molWithGradientsAtDepth <- collectorDepth depth molPostStep
-          gradReal <- maybe2MThrow (SpicyIndirectionException "untilConvergence" "Gradients missing") $
-            molWithGradientsAtDepth ^? #energyDerivatives % #gradient % _Just
-          let forcesBohrReal = compute @S . Massiv.map (convertA2B .  (* (-1))) . getVectorS $ gradReal
+          gradReal <-
+            maybe2MThrow (SpicyIndirectionException "untilConvergence" "Gradients missing") $
+              molWithGradientsAtDepth ^? #energyDerivatives % #gradient % _Just
+          let forcesBohrReal = compute @S . Massiv.map (convertA2B . (* (-1))) . getVectorS $ gradReal
               forceData =
                 ForceData
                   { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
@@ -628,7 +650,7 @@ optAtDepth depth' microOptSettings'
                     optionalData = mempty
                   }
           -}
-          logDebugS "MEEEP" $ "Providing forces at current depth " <> display depth <> " to i-PI client"
+          logDebugS logSource $ "(slice " <> display depth <> ") Providing forces to i-PI."
           atomically . putTMVar ipiDataIn $ forceData
 
           -- Calculate geometry convergence and update the motion environment.
@@ -654,18 +676,7 @@ optAtDepth depth' microOptSettings'
               nextMotion = motionHist |> newMotion
           atomically . writeTVar motionT $ nextMotion
 
-          logDebugS "MEEEEP" $ "Cycles: " <> displayShow (newMotion ^. #microCycle)
-          logDebugS "MEEEEP" $ display $
-            "Delta E | RMS Force | RMS Disp | Max Force | Max Disp\n"
-              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #eDiff)
-              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsForce)
-              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #rmsDisp)
-              <> (sformat (fixed 6 F.% " | ") . fromMaybe 0 $ geomChange ^. #maxForce)
-              <> (sformat (fixed 6) . fromMaybe 0 $ geomChange ^. #maxDisp)
-
-          -- Write history file
-          xyzHist <- writeXYZ molPostStep
-          liftIO . appendFile "OptHist.xyz" $ xyzHist
+          logInfoS logSource $ "(slice " <> display depth <> ") Finished micro-cycle " <> displayShow (newMotion ^. #microCycle)
 
           -- Decide if to do more iterations.
           if geomChange < geomConvCriteria
@@ -675,19 +686,20 @@ optAtDepth depth' microOptSettings'
     -- Conversion of gradients from Angstrom to Bohr.
     allAbove d = if d >= 0 then [0 .. d - 1] else []
     convertA2B v = v / (angstrom2Bohr 1)
-    {-
-    combineSparseGradients :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
-    combineSparseGradients mols =
-      let sparseGrads = fmap gradDense2Sparse mols
-       in foldl'
-            ( \acc' g' -> do
-                acc <- acc'
-                g <- g'
-                pure $ acc <> g
-            )
-            (pure mempty)
-            sparseGrads
-    -}
+
+{-
+combineSparseGradients :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
+combineSparseGradients mols =
+  let sparseGrads = fmap gradDense2Sparse mols
+   in foldl'
+        ( \acc' g' -> do
+            acc <- acc'
+            g <- g'
+            pure $ acc <> g
+        )
+        (pure mempty)
+        sparseGrads
+-}
 
 ----------------------------------------------------------------------------------------------------
 
