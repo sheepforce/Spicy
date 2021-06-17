@@ -17,10 +17,10 @@
         "homepage": "https://input-output-hk.github.io/haskell.nix",
         "owner": "input-output-hk",
         "repo": "haskell.nix",
-        "rev": "f899936d1fd0a094d0a65aa81f6addc98fb5ba39",
-        "sha256": "1268hma3ailnq2wcqqzra4md474jkl48i33x7bl7qqahz99fs6ys",
+        "rev": "c3841b4208f4529827316e3c81af6142b9094a1f",
+        "sha256": "0iv5149hsr8i64p69nbfn44g6269nl1z98mx4hdxmj8g8ym40a4a",
         "type": "tarball",
-        "url": "https://github.com/input-output-hk/haskell.nix/archive/f899936d1fd0a094d0a65aa81f6addc98fb5ba39.tar.gz",
+        "url": "https://github.com/input-output-hk/haskell.nix/archive/c3841b4208f4529827316e3c81af6142b9094a1f.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "nixpkgs": {
@@ -29,10 +29,10 @@
         "homepage": "",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "51bb9f3e9ab6161a3bf7746e20b955712cef618b",
-        "sha256": "1bqla14c80ani27c7901rnl37kiiqrvyixs6ifvm48p5y6xbv1p7",
+        "rev": "4b7c8d538e1aed2bc30b6e7eb1cbd96063ad4132",
+        "sha256": "1bw0h6zwd60421lm7ld4b4jcf7q27i18ggqs3k063j5zhvqqrcz7",
         "type": "tarball",
-        "url": "https://github.com/NixOS/nixpkgs/archive/51bb9f3e9ab6161a3bf7746e20b955712cef618b.tar.gz",
+        "url": "https://github.com/NixOS/nixpkgs/archive/4b7c8d538e1aed2bc30b6e7eb1cbd96063ad4132.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "pysisyphus": {
@@ -41,10 +41,10 @@
         "homepage": "",
         "owner": "eljost",
         "repo": "pysisyphus",
-        "rev": "47ab5b0906db45d045d033c7361b79b3fa355710",
-        "sha256": "10akn3x3pw1l773n594v4f9xvf9flvdkvp1lycpwqb3s0gh8k4w8",
+        "rev": "b8b39cfff4282a5de7e91362653b8e3fafe9fd54",
+        "sha256": "118fqhzgcjvl0jw545xvc6k3jv3r57r51f7lwy31780d1f9bxli5",
         "type": "tarball",
-        "url": "https://github.com/eljost/pysisyphus/archive/47ab5b0906db45d045d033c7361b79b3fa355710.tar.gz",
+        "url": "https://github.com/eljost/pysisyphus/archive/b8b39cfff4282a5de7e91362653b8e3fafe9fd54.tar.gz",
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     }
 }

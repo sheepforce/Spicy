@@ -560,12 +560,6 @@ optAtDepth depth' microOptSettings'
         WantForces -> do
           -- Obtain the molecule before the step.
           molPreStep <- readTVarIO molT
-          let realAtoms = molPreStep ^. #atoms
-
-          -- DEBUG
-          preStepXYZ <- writeXYZ molPreStep
-          logDebugS "MEEEEP" $ "Coords pre displacement(" <> display depth <> ")\n" <> display preStepXYZ
-          -- END DEBUG
 
           -- Do the position update.
           posVec <- do
@@ -575,11 +569,6 @@ optAtDepth depth' microOptSettings'
           molNewCoords <- updatePositionsPosVec posVec allReal molPreStep
           atomically . writeTVar molT $ molNewCoords
 
-          -- DEBUG
-          postStepCoords <- writeXYZ molNewCoords
-          logDebugS "MEEEEP" $ "Coords post displacement(" <> display depth <> ")\n" <> display postStepCoords
-          -- END DEBUG
-
           -- Recalculate the gradients above. The position update invalidates the old ones.
           logDebugS "MEEEEP" $ "Recalculating gradients above current layer " <> display depth <> "."
           forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
@@ -587,24 +576,10 @@ optAtDepth depth' microOptSettings'
           unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
           logDebugS "MEEEEP" $ "Finished with gradients for layers above " <> display depth <> "."
 
-          {-
-          -- DEBUG
-          molPostAbove <- readTVarIO molT
-          coordsPostAbove <- writeXYZ molPostAbove
-          traceM $ "Coords post above gradient update(" <> tshow depth <> ")\n" <> coordsPostAbove
-          -- END DEBUG
-          -}
-
           -- Optimise the layers above.
           logDebugS "MEEEEP" $ "Recursive call to optimise above current layer " <> display depth <> "."
           optAtDepth (depth - 1) microOptSettings
           logDebugS "MEEEEP" $ "Finished with optimising layers above " <> display depth
-
-          -- DEBUG
-          molPostAboveOpt <- readTVarIO molT
-          coordsPostAboveOpt <- writeXYZ molPostAboveOpt
-          logDebugS "MEEEEP" $ "Coords post above geometry update(" <> display depth <> ")\n" <> display coordsPostAboveOpt
-          -- END DEBUG
 
           -- Calculate forces in the new geometry for the current layer only.
           logDebugS "MEEEEP" $ "Recalculating gradients in current layer " <> display depth
@@ -613,14 +588,26 @@ optAtDepth depth' microOptSettings'
           atomically . writeTVar molT $ molPostStep
           logDebugS "MEEEEP" $ "Finished with current layer gradients" <> display depth
 
-          {-
-          -- DEBUG
-          coordsPostStep <- writeXYZ molPostAboveOpt
-          traceM $ "Coords for new force calculation(" <> tshow depth <> ")\n" <> coordsPostStep
-          -- END DEBUG
-          -}
-
           -- Construct force data, that we send to i-PI for this slice and send it.
+          -- A collector up to the current depth will collect all force data and transform the
+          -- gradients of all layers up to current depth into the real system gradient, which is
+          -- then completely sent to Pysisyphus.
+          molWithGradientsAtDepth <- collectorDepth depth molPostStep
+          gradReal <- maybe2MThrow (SpicyIndirectionException "untilConvergence" "Gradients missing") $
+            molWithGradientsAtDepth ^? #energyDerivatives % #gradient % _Just
+          let forcesBohrReal = compute @S . Massiv.map (convertA2B .  (* (-1))) . getVectorS $ gradReal
+              forceData =
+                ForceData
+                  { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
+                    forces = NetVec . Massiv.toVector $ forcesBohrReal,
+                    virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+                    optionalData = mempty
+                  }
+          -- NOT WORKING ALTERNATIVE: optimising with non-transformed high-level gradients. The problem here is,
+          -- that the real system moves closer, the model system moves away to gain distance again,
+          -- the real system comes closer again and so on. Therefore this leads to a translation
+          -- during the optimisation without ever converging.
+          {-
           let molHSlices = horizontalSlices molPostStep
               molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
               molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
@@ -636,10 +623,11 @@ optAtDepth depth' microOptSettings'
               forceData =
                 ForceData
                   { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
-                    forces = NetVec . Massiv.toVector $ forcesBohr,
+                    forces = NetVec . Massiv.toVector $ forcesBohrReal, -- forcesBohr,
                     virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
                     optionalData = mempty
                   }
+          -}
           logDebugS "MEEEP" $ "Providing forces at current depth " <> display depth <> " to i-PI client"
           atomically . putTMVar ipiDataIn $ forceData
 
@@ -687,6 +675,7 @@ optAtDepth depth' microOptSettings'
     -- Conversion of gradients from Angstrom to Bohr.
     allAbove d = if d >= 0 then [0 .. d - 1] else []
     convertA2B v = v / (angstrom2Bohr 1)
+    {-
     combineSparseGradients :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
     combineSparseGradients mols =
       let sparseGrads = fmap gradDense2Sparse mols
@@ -698,6 +687,7 @@ optAtDepth depth' microOptSettings'
             )
             (pure mempty)
             sparseGrads
+    -}
 
 ----------------------------------------------------------------------------------------------------
 
