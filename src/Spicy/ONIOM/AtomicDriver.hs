@@ -201,6 +201,7 @@ geomMacroDriver = do
   printSpicy txtDirectOpt
   printSpicy . renderBuilder . spicyLog optStartPrintEvn $
     spicyLogMol (HashSet.fromList [Always, Task Start]) All
+  printSpicy $ "\n\n" <> optTableHeader True
 
   -- Obtain the Pysisyphus IPI settings and convergence treshold for communication.
   mol <- view moleculeL >>= readTVarIO
@@ -314,13 +315,6 @@ geomMacroDriver = do
                   "geomMacroDriver"
                   "Position update requested but must not happen here."
 
-          -- Opt loop logging.
-          optLoopPrintEnv <- getCurrPrintEvn
-          let molInfo =
-                renderBuilder . spicyLog optLoopPrintEnv $
-                  spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
-          printSpicy $ sep <> molInfo
-
           -- Get the molecule in the new structure with its forces or hessian.
           atomically . putTMVar ipiDataIn $ ipiData
 
@@ -332,6 +326,18 @@ geomMacroDriver = do
           when isConverged $ do
             logInfoS logSource "Optimisation has converged. Telling i-PI server to EXIT in the next loop."
             writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
+
+          -- Opt loop logging.
+          optLoopPrintEnv <- getCurrPrintEvn
+          let molInfo =
+                renderBuilder . spicyLog optLoopPrintEnv $
+                  spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
+          printSpicy $ sep <> molInfo <> "\n\n"
+          printSpicy $
+            "@ Geometry Convergence\n\
+            \----------------------\n"
+              <> optTableHeader False
+              <> optTableLine 0 Nothing geomChange -- FIXME - actually count cycles here
 
           -- Reiterating
           loop pysisIPI convThresh selAtoms

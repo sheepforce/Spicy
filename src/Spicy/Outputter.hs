@@ -53,6 +53,8 @@ module Spicy.Outputter
     printCoords,
     printTopology,
     printMultipoles,
+    optTableHeader,
+    optTableLine,
     spicyLogMol,
 
     -- * Utility
@@ -98,7 +100,7 @@ versionInfo = displayShow . showVersion $ version
 ----------------------------------------------------------------------------------------------------
 
 sep :: Utf8Builder
-sep = display $ Text.replicate 100 "-" <> "\n"
+sep = display $ Text.replicate 100 "=" <> "\n"
 
 txtInput :: Utf8Builder
 txtInput = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/input.txt")
@@ -830,6 +832,53 @@ printMultipoles pt = removeDummy $ do
             ("  Q" F.% (right 3 ' ' F.%. builder) F.% " = " F.% (left 10 ' ' F.%. fixed 6))
             sub
             num
+
+-- | Table header for optimisations.
+optTableHeader :: Bool -> Utf8Builder
+optTableHeader grepable =
+  let header =
+        bformat
+          (fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% lineEnd)
+          "Step (Layer)"
+          "ΔE"
+          "MAX Force"
+          "RMS Force"
+          "MAX Displacement"
+          "RMS Displacement"
+      line = vSep <> hSep <> vSep <> hSep <> vSep <> hSep <> vSep <> hSep <> vSep <> hSep <> vSep <> bformat lineEnd
+   in renderBuilder $ header <> line
+  where
+    fmt = center ew ' ' F.%. builder
+    vSep = TB.fromText . Text.replicate ew $ "-"
+    hSep = "-+-"
+    lineEnd = if grepable then " ~\n" else "\n"
+
+-- | Generate an entry for one optimisation step in the table.
+optTableLine :: Int -> Maybe Int -> GeomConv -> Utf8Builder
+optTableLine step layer GeomConv {eDiff, maxForce, rmsForce, maxDisp, rmsDisp} =
+  let col1StepLayer = case layer of
+        Nothing -> bformat (left ew ' ' F.%. int) step
+        Just l -> bformat slFmt step l
+      col2Ediff = fromMaybe none $ bformat nf <$> eDiff
+      col3MaxForce = fromMaybe none $ bformat nf <$> maxForce
+      col4RMSForce = fromMaybe none $ bformat nf <$> rmsForce
+      col5MaxDispl = fromMaybe none $ bformat nf <$> maxDisp
+      col6RMSDispl = fromMaybe none $ bformat nf <$> rmsDisp
+   in renderBuilder $
+        bformat
+          (builder F.% " | " F.% builder F.% " | " F.% builder F.% " | " F.% builder F.% " | " F.% builder F.% " | " F.% builder F.% " ~\n")
+          col1StepLayer
+          col2Ediff
+          col3MaxForce
+          col4RMSForce
+          col5MaxDispl
+          col6RMSDispl
+  where
+    stepFmt = left 10 ' ' F.%. int
+    layerFmt = "(" F.% (left 2 ' ' F.%. int) F.% ")"
+    stepLayerFmt = stepFmt F.% " " F.% layerFmt
+    slFmt = left ew ' ' F.%. stepLayerFmt
+    none = bformat (center ew ' ' F.%. builder) "-"
 
 -- | Log string constructor monad for molecular information on full ONIOM trees.
 spicyLogMol ::
