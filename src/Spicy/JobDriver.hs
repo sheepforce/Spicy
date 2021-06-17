@@ -54,7 +54,7 @@ spicyExecMain = do
   -- Starting the output log.
   hPutStr stderr spicyLogoColour
   inputFile <- view inputFileL
-  inputPrintEnv <- getCurrPrintEvn
+  inputPrintEnv <- getCurrPrintEnv
   printSpicy $
     spicyLogo
       <> ("Spicy Version " <> versionInfo <> "\n\n\n")
@@ -91,7 +91,7 @@ spicyExecMain = do
   layoutMoleculeForCalc
 
   -- setupPhase printing. Show the layouted molecules and topologies in hierarchical order.
-  setupPrintEnv <- getCurrPrintEvn
+  setupPrintEnv <- getCurrPrintEnv
   let molIDHierarchy = getAllMolIDsHierarchically $ setupPrintEnv ^. #mol
   printSpicy $
     txtSetup
@@ -109,7 +109,7 @@ spicyExecMain = do
     case t of
       Energy -> do
         -- Logging.
-        energyStartPrintEnv <- getCurrPrintEvn
+        energyStartPrintEnv <- getCurrPrintEnv
         printSpicy txtSinglePoint
         printSpicy . renderBuilder . spicyLog energyStartPrintEnv $
           spicyLogMol (HashSet.fromList [Always, Task Start]) All
@@ -118,14 +118,14 @@ spicyExecMain = do
         multicentreOniomNDriver WTEnergy *> multicentreOniomNCollector
 
         -- Final logging
-        energyEndPrintEnv <- getCurrPrintEvn
+        energyEndPrintEnv <- getCurrPrintEnv
         printSpicy . renderBuilder . spicyLog energyEndPrintEnv $
           spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
       Optimise Macro -> geomMacroDriver
       Optimise Micro -> geomMicroDriver
       Frequency -> do
         -- Logging.
-        hessStartPrintEnv <- getCurrPrintEvn
+        hessStartPrintEnv <- getCurrPrintEnv
         printSpicy txtSinglePoint
         printSpicy . renderBuilder . spicyLog hessStartPrintEnv $
           spicyLogMol (HashSet.fromList [Always, Task Start]) All
@@ -134,7 +134,7 @@ spicyExecMain = do
         multicentreOniomNDriver WTHessian *> multicentreOniomNCollector
 
         -- Final logging.
-        hessEndPrintEnv <- getCurrPrintEvn
+        hessEndPrintEnv <- getCurrPrintEnv
         printSpicy txtSinglePoint
         printSpicy . renderBuilder . spicyLog hessEndPrintEnv $
           spicyLogMol (HashSet.fromList [Always, Task End, FullTraversal]) All
@@ -143,9 +143,9 @@ spicyExecMain = do
         throwM $ SpicyIndirectionException "spicyExecMain" "MD is not implemented yet."
 
   -- Final logging.
-  finalPrintEnv <- getCurrPrintEvn
+  finalPrintEnv <- getCurrPrintEnv
   printSpicy . renderBuilder . spicyLog finalPrintEnv $
-    spicyLogMol (HashSet.fromList [Spicy End]) All
+    spicyLogMol (HashSet.fromList [Spicy End, Always]) All
   writeFileUTF8
     (getDirPath (inputFile ^. #permanent) </> Path.relFile "Final.mol2")
     =<< writeONIOM (finalPrintEnv ^. #mol)

@@ -1,5 +1,6 @@
 permanent: Tests/permanent
 scratch: Tests/scratch
+printLevel: High
 molecule:
   path: goldentests/input/molecules/Ethanal.mol2
   fileType: mol2

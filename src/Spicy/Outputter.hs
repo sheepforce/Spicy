@@ -36,7 +36,7 @@ module Spicy.Outputter
     MotionEvent (..),
     StartEnd (..),
     PrintEnv (..),
-    getCurrPrintEvn,
+    getCurrPrintEnv,
 
     -- * Logging Facilities
     loggingThread,
@@ -364,8 +364,8 @@ instance (k ~ A_Lens, a ~ PrintVerbosity, b ~ a) => LabelOptic "printV" k PrintE
   labelOptic = lens printV $ \s b -> s {printV = b}
 
 -- | From the current runtime environment make a logging environment.
-getCurrPrintEvn :: (HasMolecule env, HasOutputter env) => RIO env PrintEnv
-getCurrPrintEvn = do
+getCurrPrintEnv :: (HasMolecule env, HasOutputter env) => RIO env PrintEnv
+getCurrPrintEnv = do
   mol <- view moleculeL >>= readTVarIO
   printV <- view $ outputterL % #printVerbosity
   return PrintEnv {mol = mol, printV = printV}
@@ -499,8 +499,8 @@ printGradient pt = removeDummy $ do
           aGH = join $ atomGradAssoc <$> atoms <*> (getVectorS <$> gh)
       tell $ lHeader i
       tell $ "  ONIOM SubTree ->\n" <> fromMaybe nAv (tableContent <$> aG)
-      tell $ "  High Level    ->\n" <> fromMaybe nAv (tableContent <$> aGL)
-      tell $ "  Low Level     ->\n" <> fromMaybe nAv (tableContent <$> aGH)
+      tell $ "  High Level    ->\n" <> fromMaybe nAv (tableContent <$> aGH)
+      tell $ "  Low Level     ->\n" <> fromMaybe nAv (tableContent <$> aGL)
     All -> do
       mol <- view moleculeDirectL
       printGradient ONIOM

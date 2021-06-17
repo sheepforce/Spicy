@@ -22,6 +22,7 @@ module Spicy.ONIOM.AtomicDriver
 where
 
 import Data.Default
+import Data.Foldable
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 import Data.Massiv.Array as Massiv hiding (forM, forM_, loop, mapM)
@@ -197,9 +198,9 @@ geomMacroDriver ::
 geomMacroDriver = do
   -- Logging.
   logInfoS logSource "Starting a direct geometry optimisation on the full ONIOM tree."
-  optStartPrintEvn <- getCurrPrintEvn
+  optStartPrintEnv <- getCurrPrintEnv
   printSpicy txtDirectOpt
-  printSpicy . renderBuilder . spicyLog optStartPrintEvn $
+  printSpicy . renderBuilder . spicyLog optStartPrintEnv $
     spicyLogMol (HashSet.fromList [Always, Task Start]) All
   printSpicy $ "\n\n" <> optTableHeader True
 
@@ -224,8 +225,8 @@ geomMacroDriver = do
 
   -- Final logging
   logInfoS logSource "Finished geometry optimisation."
-  optEndPrintEvn <- getCurrPrintEvn
-  printSpicy . renderBuilder . spicyLog optEndPrintEvn $
+  optEndPrintEnv <- getCurrPrintEnv
+  printSpicy . renderBuilder . spicyLog optEndPrintEnv $
     spicyLogMol (HashSet.fromList [Always, Task End]) All
   where
     localExc = MolLogicException "geomMacroDriver"
@@ -328,16 +329,18 @@ geomMacroDriver = do
             writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
 
           -- Opt loop logging.
-          optLoopPrintEnv <- getCurrPrintEvn
+          optLoopPrintEnv <- getCurrPrintEnv
           let molInfo =
                 renderBuilder . spicyLog optLoopPrintEnv $
                   spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Macro, FullTraversal]) All
-          printSpicy $ sep <> molInfo <> "\n\n"
           printSpicy $
-            "@ Geometry Convergence\n\
-            \----------------------\n"
+            sep <> "\n\n"
+              <> "@ Geometry Convergence\n\
+                 \----------------------\n"
               <> optTableHeader False
               <> optTableLine 0 Nothing geomChange -- FIXME - actually count cycles here
+              <> "\n\n"
+              <> molInfo
 
           -- Reiterating
           loop pysisIPI convThresh selAtoms
@@ -366,12 +369,17 @@ geomMicroDriver ::
     HasProcessContext env,
     HasWrapperConfigs env,
     HasCalcSlot env,
-    HasMotion env
+    HasMotion env,
+    HasOutputter env
   ) =>
   RIO env ()
 geomMicroDriver = do
   -- Logging.
   logInfoS logSource "Starting a geometry optimisation with micro cycles."
+  optStartPrintEnv <- getCurrPrintEnv
+  printSpicy txtMicroOpt
+  printSpicy . renderBuilder . spicyLog optStartPrintEnv $
+    spicyLogMol (HashSet.fromList [Always, Task Start]) All
 
   -- Get intial information.
   molT <- view moleculeL
@@ -390,6 +398,11 @@ geomMicroDriver = do
       <> ")."
   optAtDepth (Seq.length microOptHierarchy - 1) microOptHierarchy
   logInfoS logSource "Optimisation has converged!"
+
+  -- Final optimisation logging
+  optEndPrintEnv <- getCurrPrintEnv
+  printSpicy . renderBuilder . spicyLog optEndPrintEnv $
+    spicyLogMol (HashSet.fromList [Always, Task End]) All
 
   -- Terminate all the companion threads.
   logDebugS logSource "Terminating i-PI companion threads."
@@ -508,7 +521,8 @@ optAtDepth ::
     HasLogFunc env,
     HasCalcSlot env,
     HasProcessContext env,
-    HasMotion env
+    HasMotion env,
+    HasOutputter env
   ) =>
   Int ->
   Seq MicroOptSetup ->
@@ -522,13 +536,15 @@ optAtDepth depth' microOptSettings'
     logInfoS logSource $ "Finished micro-cycles of layer " <> display depth'
   where
     logSource = "geomMicroDriver"
+
     -- Do a single geometry optimisation step at a given depth.
     untilConvergence ::
       ( HasMolecule env,
         HasLogFunc env,
         HasCalcSlot env,
         HasProcessContext env,
-        HasMotion env
+        HasMotion env,
+        HasOutputter env
       ) =>
       Int ->
       Seq MicroOptSetup ->
@@ -549,7 +565,7 @@ optAtDepth depth' microOptSettings'
           ipiPosOut = microSettingsAtDepth ^. #pysisIPI % #output
           ipiStatusVar = microSettingsAtDepth ^. #pysisIPI % #status
 
-      -- Obtain a new geometry from Pysisyphus (ignores the status for now).
+      -- Follow the requests of the i-PI server.
       ipiServerWants <- atomically . takeTMVar $ ipiStatusVar
       case ipiServerWants of
         -- Terminate the optimisation loop in case the i-PI server signals convergence.
@@ -682,7 +698,44 @@ optAtDepth depth' microOptSettings'
               nextMotion = motionHist |> newMotion
           atomically . writeTVar motionT $ nextMotion
 
+          -- Logging post step.
           logInfoS logSource $ "(slice " <> display depth <> ") Finished micro-cycle " <> displayShow (newMotion ^. #microCycle)
+          microStepPrintEnv <- getCurrPrintEnv
+          let maxDepth = (+ (- 1)) . Seq.length . horizontalSlices $ molWithGradientsAtDepth
+              molIDsAtSlice =
+                fmap Layer
+                  . Seq.filter (\mid -> Seq.length mid == depth)
+                  . getAllMolIDsHierarchically
+                  $ molWithGradientsAtDepth
+              layerInfos =
+                renderBuilder
+                  . foldl (<>) mempty
+                  . fmap
+                    ( spicyLog microStepPrintEnv
+                        . spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Micro])
+                    )
+                  $ molIDsAtSlice
+              molInfo =
+                renderBuilder . spicyLog microStepPrintEnv $
+                  spicyLogMol
+                    ( HashSet.fromList
+                        [ Always,
+                          Out.Motion Out.Micro,
+                          Out.Motion Out.Macro,
+                          FullTraversal
+                        ]
+                    )
+                    All
+          printSpicy $
+            "\n\n"
+              <> "@ Geometry Convergence\n\
+                 \----------------------\n"
+              <> optTableHeader ((snd . microCycle $ newMotion) == 0 && depth == 0)
+              <> optTableLine (snd . microCycle $ newMotion) (Just depth) geomChange
+              <> "\n\n"
+              <> if depth == maxDepth
+                then molInfo
+                else layerInfos
 
           -- Decide if to do more iterations.
           if geomChange < geomConvCriteria
