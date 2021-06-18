@@ -36,7 +36,7 @@
         "url_template": "https://github.com/<owner>/<repo>/archive/<rev>.tar.gz"
     },
     "pysisyphus": {
-        "branch": "dev",
+        "branch": "master",
         "description": "Python suite for optimization of stationary points on ground- and excited states PES and determination of reaction paths.",
         "homepage": "",
         "owner": "eljost",
