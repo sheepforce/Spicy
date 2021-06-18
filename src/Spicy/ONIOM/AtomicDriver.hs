@@ -411,7 +411,7 @@ geomMicroDriver = do
 
   -- Setup the pysisyphus optimisation servers per horizontal slice.
   logDebugS logSource "Launching client and server i-PI companion threads per horizontal slice ..."
-  microOptHierarchy <- setupPsysisServers mol
+  microOptHierarchy <- setupPysisServers mol
 
   -- Perform the optimisations steps in a mindblowing recursion ...
   -- Spawn an optimiser function at the lowest depth and this will spawn the other optimisers bottom
@@ -818,7 +818,7 @@ instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "geomConv" k MicroOptSe
 -- | Create one Pysisyphus i-PI instance per layer that takes care of the optimisations steps at a
 -- given horizontal slice. It returns relevant optimisation settings for each layer to be used by
 -- other functions, that actually do the optimisation.
-setupPsysisServers ::
+setupPysisServers ::
   ( HasInputFile env,
     HasLogFunc env,
     HasProcessContext env,
@@ -826,7 +826,7 @@ setupPsysisServers ::
   ) =>
   Molecule ->
   RIO env (Seq MicroOptSetup)
-setupPsysisServers mol = do
+setupPysisServers mol = do
   -- Get directories to work in from the input file.
   inputFile <- view inputFileL
   scratchDirAbs <- liftIO . Path.dynamicMakeAbsoluteFromCwd . getDirPath $ inputFile ^. #scratch
