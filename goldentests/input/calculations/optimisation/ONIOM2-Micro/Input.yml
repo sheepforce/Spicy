@@ -50,7 +50,7 @@ model:
         - 7
       optimisation:
         coords: dlc
-        microStep: sd
+        microStep: lbfgs
       deeperLayer: []
 task:
 - optimise_micro

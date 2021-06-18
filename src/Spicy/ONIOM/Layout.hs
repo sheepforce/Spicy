@@ -191,6 +191,7 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
         `defUp` (#minTrust, #trustMin)
         `defUp` (#minTrust, #trustMin)
         `defUp` (#convergence, #conv)
+        `defUp` (#microStep, #microStep)
         -- Other updates without direct match.
         & #optType
           .~ ( case tl ^? #optimisation % _Just % #target % _Just of
