@@ -192,7 +192,8 @@ geomMacroDriver ::
     HasCalcSlot env,
     HasProcessContext env,
     HasWrapperConfigs env,
-    HasOutputter env
+    HasOutputter env,
+    HasMotion env
   ) =>
   RIO env ()
 geomMacroDriver = do
@@ -240,7 +241,8 @@ geomMacroDriver = do
         HasCalcSlot env,
         HasProcessContext env,
         HasWrapperConfigs env,
-        HasOutputter env
+        HasOutputter env,
+        HasMotion env
       ) =>
       IPI ->
       GeomConv ->
@@ -328,6 +330,28 @@ geomMacroDriver = do
             logInfoS logSource "Optimisation has converged. Telling i-PI server to EXIT in the next loop."
             writeFileUTF8 (pysisIPI ^. #workDir </> Path.relFile "converged") mempty
 
+          -- Update the Motion history types.
+          motionT <- view motionL
+          motionHist <- readTVarIO motionT
+          let newMotion = case motionHist of
+                Empty ->
+                  Spicy.RuntimeEnv.Motion
+                    { geomChange,
+                      molecule = Nothing,
+                      outerCycle = 0,
+                      microCycle = (0, 0)
+                    }
+                _ :|> Spicy.RuntimeEnv.Motion {outerCycle} ->
+                  Spicy.RuntimeEnv.Motion
+                    { geomChange,
+                      molecule = Nothing,
+                      outerCycle = outerCycle + 1,
+                      microCycle = (0, outerCycle + 1)
+                    }
+              nextMotion = motionHist |> newMotion
+              step = outerCycle newMotion
+          atomically . writeTVar motionT $ nextMotion
+
           -- Opt loop logging.
           optLoopPrintEnv <- getCurrPrintEnv
           let molInfo =
@@ -338,7 +362,7 @@ geomMacroDriver = do
               <> "@ Geometry Convergence\n\
                  \----------------------\n"
               <> optTableHeader False
-              <> optTableLine 0 Nothing geomChange -- FIXME - actually count cycles here
+              <> optTableLine step Nothing geomChange
               <> "\n\n"
               <> molInfo
 
@@ -680,7 +704,7 @@ optAtDepth depth' microOptSettings'
           let newMotion = case motionHist of
                 Empty ->
                   Spicy.RuntimeEnv.Motion
-                    { geomChange = geomChange,
+                    { geomChange,
                       molecule = Nothing,
                       outerCycle = 0,
                       microCycle = (depth, 0)
