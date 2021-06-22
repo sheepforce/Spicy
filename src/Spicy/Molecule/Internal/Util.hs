@@ -2499,7 +2499,7 @@ updatePositionsPosVec pos sel mol = do
     associate :: (Source r Ix1 e, MonadThrow m) => Vector r e -> IntSet -> IntMap e -> m (IntMap e)
     associate vec selSet acc
       | sizeV /= sizeS = throwM $ MolLogicException "updatePositionsGeneric" "mismatch between number of atoms and coordinates"
-      | sizeV == 0 && sizeS == 0 = pure mempty
+      | sizeV == 0 && sizeS == 0 = pure acc
       | sizeV == 1 && sizeS == 1 = IntMap.insert <$> headSet <*> headVec <*> pure acc
       | otherwise =
         let newAcc = IntMap.insert <$> headSet <*> headVec <*> pure acc
