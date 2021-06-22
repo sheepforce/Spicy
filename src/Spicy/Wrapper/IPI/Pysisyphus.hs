@@ -11,7 +11,6 @@
 module Spicy.Wrapper.IPI.Pysisyphus
   ( providePysis,
     providePysisAbstract,
-    runPysisServer,
     runPysisServerAbstract,
   )
 where
@@ -94,29 +93,6 @@ providePysisAbstract doMicro atoms optSettings = do
   clientThread <- async $ ipiClient (optSettings ^. #pysisyphus)
 
   return (serverThread, clientThread)
-
-----------------------------------------------------------------------------------------------------
-
--- | Launches a Pysishus i-PI server in the background with the required input and waits for it to
--- finish. Pysisyphus will respect the optimisation settings, that are given on the top level of the
--- visible molecule.
--- This will always launch a pysisyphus instance with normal/no micro-cycle behaviour.
-runPysisServer ::
-  ( HasWrapperConfigs env,
-    HasProcessContext env,
-    HasLogFunc env,
-    HasMolecule env
-  ) =>
-  RIO env ()
-runPysisServer = do
-  mol <- view moleculeL >>= readTVarIO
-  let atoms = mol ^. #atoms
-  optSettings <-
-    maybe2MThrow (localExc "calculation context with settings for optimiser missing") $
-      mol ^? #calcContext % ix (ONIOMKey Original) % #input % #optimisation
-  runPysisServerAbstract False atoms optSettings
-  where
-    localExc = MolLogicException "runPysisServer"
 
 ----------------------------------------------------------------------------------------------------
 
