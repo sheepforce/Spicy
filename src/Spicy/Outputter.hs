@@ -859,7 +859,7 @@ optTableHeader grepable =
 
 -- | Generate an entry for one optimisation step in the table.
 optTableLine :: Int -> Maybe Int -> GeomConv -> Utf8Builder
-optTableLine step layer GeomConv {eDiff, maxForce, rmsForce, maxDisp, rmsDisp} =
+optTableLine step layer GeomConv {..} =
   let col1StepLayer = case layer of
         Nothing -> bformat (left ew ' ' F.%. int) step
         Just l -> bformat slFmt step l

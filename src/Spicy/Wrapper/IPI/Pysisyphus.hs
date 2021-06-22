@@ -210,7 +210,7 @@ data PysisInput = PysisInput
   }
 
 instance ToJSON PysisInput where
-  toJSON PysisInput {geom, optimiser, calc} =
+  toJSON PysisInput {..} =
     object $
       [ "geom" .= geom,
         "calc" .= calc
@@ -249,31 +249,19 @@ data MinOpt = MinOpt
   }
 
 instance ToJSON MinOpt where
-  toJSON
-    MinOpt
-      { optType,
-        maxCycles,
-        recalcHessian,
-        updateHessian,
-        lineSearch,
-        minTrust,
-        maxTrust,
-        trustRadius,
-        thresh,
-        reparamWhen
-      } =
-      object
-        [ "type" .= optType,
-          "max_cycles" .= maxCycles,
-          "hessian_recalc" .= recalcHessian,
-          "hessian_update" .= updateHessian,
-          "line_search" .= lineSearch,
-          "trust_radius" .= trustRadius,
-          "trust_min" .= minTrust,
-          "trust_max" .= maxTrust,
-          "thresh" .= thresh,
-          "reparam_when" .= reparamWhen
-        ]
+  toJSON MinOpt {..} =
+    object
+      [ "type" .= optType,
+        "max_cycles" .= maxCycles,
+        "hessian_recalc" .= recalcHessian,
+        "hessian_update" .= updateHessian,
+        "line_search" .= lineSearch,
+        "trust_radius" .= trustRadius,
+        "trust_min" .= minTrust,
+        "trust_max" .= maxTrust,
+        "thresh" .= thresh,
+        "reparam_when" .= reparamWhen
+      ]
 
 ----------------------------------------------------------------------------------------------------
 
@@ -290,27 +278,17 @@ data TSOpt = TSOpt
   }
 
 instance ToJSON TSOpt where
-  toJSON
-    TSOpt
-      { optType,
-        maxCycles,
-        recalcHessian,
-        minTrust,
-        maxTrust,
-        trustRadius,
-        thresh,
-        reparamWhen
-      } =
-      object
-        [ "type" .= optType,
-          "max_cycles" .= maxCycles,
-          "hessian_recalc" .= recalcHessian,
-          "trust_radius" .= trustRadius,
-          "trust_max" .= maxTrust,
-          "trust_min" .= minTrust,
-          "thresh" .= thresh,
-          "reparam_when" .= reparamWhen
-        ]
+  toJSON TSOpt {..} =
+    object
+      [ "type" .= optType,
+        "max_cycles" .= maxCycles,
+        "hessian_recalc" .= recalcHessian,
+        "trust_radius" .= trustRadius,
+        "trust_max" .= maxTrust,
+        "trust_min" .= minTrust,
+        "thresh" .= thresh,
+        "reparam_when" .= reparamWhen
+      ]
 
 ----------------------------------------------------------------------------------------------------
 
@@ -326,7 +304,7 @@ data MicroOpt = MicroOpt
   deriving (Eq, Show, Generic)
 
 instance ToJSON MicroOpt where
-  toJSON MicroOpt {optType, step, maxCycles} =
+  toJSON MicroOpt {..} =
     object
       ["type" .= optType, "step" .= step, "max_cycles" .= maxCycles]
 
@@ -357,7 +335,7 @@ data Geom = Geom
   }
 
 instance ToJSON Geom where
-  toJSON Geom {fn, coordType, freeze_atoms} =
+  toJSON Geom {..} =
     object
       [ "fn" .= fn,
         "type" .= coordType,
@@ -374,7 +352,7 @@ data Calc = Calc
   }
 
 instance ToJSON Calc where
-  toJSON Calc {calcType, address, verbose} =
+  toJSON Calc {..} =
     object
       [ "type" .= calcType,
         "address" .= address,
@@ -410,18 +388,7 @@ opt2Pysis
   atoms
   initCoordFile
   Optimisation
-    { coordType,
-      maxCycles,
-      hessianRecalc,
-      hessianUpdate,
-      trustRadius,
-      maxTrust,
-      minTrust,
-      lineSearch,
-      optType,
-      pysisyphus,
-      freezes,
-      microStep
+    { ..
     } = do
     scktAddr <- unixSocket2Path $ pysisyphus ^. #socketAddr
     return
@@ -431,7 +398,7 @@ opt2Pysis
           calc = calc . Path.toString $ scktAddr
         }
     where
-      geom = Geom {fn = JFilePathAbs initCoordFile, coordType = coordType, freeze_atoms = denseFreeze}
+      geom = Geom {fn = JFilePathAbs initCoordFile, coordType, freeze_atoms = denseFreeze}
       optimiser =
         if doMicro
           then Micro $ MicroOpt {optType = MicroOptType, step = microStep, maxCycles = 1000000000}
@@ -441,24 +408,24 @@ opt2Pysis
               Minimum $
                 MinOpt
                   { optType = alg,
-                    maxCycles = maxCycles,
+                    maxCycles,
                     recalcHessian = hessianRecalc,
                     updateHessian = hessianUpdate,
-                    lineSearch = lineSearch,
-                    minTrust = minTrust,
-                    maxTrust = maxTrust,
-                    trustRadius = trustRadius,
+                    lineSearch,
+                    minTrust,
+                    maxTrust,
+                    trustRadius,
                     thresh = Never,
                     reparamWhen = Nothing
                   }
       tsOpt =
         TSOpt
           { optType = RS_I_RFO,
-            maxCycles = maxCycles,
+            maxCycles,
             recalcHessian = hessianRecalc,
-            minTrust = minTrust,
-            maxTrust = maxTrust,
-            trustRadius = trustRadius,
+            minTrust,
+            maxTrust,
+            trustRadius,
             thresh = Never,
             reparamWhen = Nothing
           }
