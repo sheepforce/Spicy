@@ -538,6 +538,8 @@ calcAtDepth depth task = do
 
 ----------------------------------------------------------------------------------------------------
 
+
+
 -- | Do a single geometry optimisation step with a *running* pysisyphus instance at a given depth.
 -- Takes care that the gradients are all calculated and that the microcycles above have converged.
 optAtDepth ::
@@ -555,13 +557,249 @@ optAtDepth depth' microOptSettings'
   | depth' > Seq.length microOptSettings' = throwM $ MolLogicException "optStepAtDepth" "Requesting optimisation of a layer that has no microoptimisation settings"
   | depth' < 0 = return ()
   | otherwise = do
-    logInfoS logSource $ "Starting micro-cyle optimisation on layer " <> display depth'
+    logInfoS logSMicroD $ "Starting micro-cyle optimisation on layer " <> display depth'
     untilConvergence depth' microOptSettings'
-    logInfoS logSource $ "Finished micro-cycles of layer " <> display depth'
+    logInfoS logSMicroD $ "Finished micro-cycles of layer " <> display depth'
   where
-    logSource = "geomMicroDriver"
+    logSMicroD :: LogSource
+    logSMicroD = "geomMicroDriver"
 
-    -- Do a single geometry optimisation step at a given depth.
+    ------------------------------------------------------------------------------------------------
+    (!??) :: MonadThrow m => Seq a -> Int -> m a
+    sa !?? i = case sa Seq.!? i of
+      Nothing -> throwM $ IndexOutOfBoundsException (Sz $ Seq.length sa) i
+      Just v -> return v
+
+    ------------------------------------------------------------------------------------------------
+    coordinateSync ::
+      (HasMolecule env, HasLogFunc env) =>
+      -- | Current optimisation depth
+      Int ->
+      -- | The optimisation settings of this layer used to optimised this layer
+      Seq MicroOptSetup ->
+      RIO env ()
+    coordinateSync depth mos = do
+      logDebugS logSMicroD $
+        "(slice " <> display depth <> ") synchronising coordinates with i-PI server (spicy -> i-PI)"
+
+      -- Settings of this layer
+      optSettings <- mos !?? depth
+      let posOut = optSettings ^. #pysisIPI % #output
+          dataIn = optSettings ^. #pysisIPI % #input
+
+      -- Consume and discard the invalid step from the server.
+      void . atomically . takeTMVar $ posOut
+
+      -- Get the current state of the molecule and send it to the Pysisyphus instance, to update
+      -- those coordinates before doing a step.
+      molCurrCoords <- view moleculeL >>= readTVarIO >>= getCoordsNetVec
+      atomically . putTMVar dataIn . PosUpdateData $ molCurrCoords
+
+    ------------------------------------------------------------------------------------------------
+    updateGeomFromPysis ::
+      (HasMolecule env, HasLogFunc env) =>
+      -- | Current optimisation depth
+      Int ->
+      Seq MicroOptSetup ->
+      RIO env ()
+    updateGeomFromPysis depth mos = do
+      logDebugS logSMicroD $ "(slice " <> display depth <> ") new geometry for slice from i-PI."
+
+      -- Initial information
+      molT <- view moleculeL
+      molPreStep <- readTVarIO molT
+      optSettings <- mos !?? depth
+      let posOut = optSettings ^. #pysisIPI % #output
+          allRealAtoms = IntMap.keysSet $ molPreStep ^. #atoms
+
+      -- Do the position update.
+      posVec <- do
+        d <- atomically . takeTMVar $ posOut
+        let v = getNetVec $ d ^. #coords
+        Massiv.fromVectorM Par (Sz $ VectorS.length v) v
+      molNewCoords <- updatePositionsPosVec posVec allRealAtoms molPreStep
+      atomically . writeTVar molT $ molNewCoords
+
+    ------------------------------------------------------------------------------------------------
+    recalcGradsAbove ::
+      (HasMolecule env, HasLogFunc env, HasCalcSlot env) =>
+      -- | Current optimisation depth
+      Int ->
+      RIO env ()
+    recalcGradsAbove depth = do
+      logDebugS logSMicroD $ "(slice " <> display depth <> ") Step invalidated gradients. Recalculating gradients above current slice."
+
+      -- Initial information.
+      molT <- view moleculeL
+
+      -- For all layers above recalculate the gradients. Then collect everything possible again and
+      -- transform into a valid ONIOM representation.
+      forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
+      molInvalidG <- readTVarIO molT
+      unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
+
+      logDebugS logSMicroD $ "(slice " <> display depth <> ") Finished with gradient above."
+      where
+        allAbove d = if d >= 0 then [0 .. d - 1] else []
+
+    ------------------------------------------------------------------------------------------------
+    recalcGradsAtDepth ::
+      (HasMolecule env, HasLogFunc env, HasCalcSlot env) =>
+      -- | Current optimisation depth
+      Int ->
+      RIO env ()
+    recalcGradsAtDepth depth = do
+      logDebugS logSMicroD $ "(slice " <> display depth <> ") Recalculating gradients in current slice."
+
+      -- Initial information.
+      molT <- view moleculeL
+
+      -- Recalculate all layers at this depth slice and update the molecule state with this information.
+      calcAtDepth depth WTGradient
+      molPostStep <- readTVarIO molT >>= collectorDepth depth
+      atomically . writeTVar molT $ molPostStep
+
+      logDebugS logSMicroD $ "(slice " <> display depth <> ") Finished with current slice's gradients."
+
+    ------------------------------------------------------------------------------------------------
+    provideForces ::
+      (HasMolecule env, HasLogFunc env) =>
+      -- | Current optimisation depth
+      Int ->
+      Seq MicroOptSetup ->
+      RIO env ()
+    provideForces depth mos = do
+      -- Initial information.
+      optSettings <- mos !?? depth
+      let dataIn = optSettings ^. #pysisIPI % #input
+
+      -- Obtain (already transformed!) ONIOM gradients.
+      molWithGrads <- view moleculeL >>= readTVarIO
+      transGradReal <-
+        maybe2MThrow (SpicyIndirectionException "untilConvergence" "Gradients missing") $
+          molWithGrads ^? #energyDerivatives % #gradient % _Just
+
+      -- Construct the data for i-PI
+      let forcesBohrReal = compute @S . Massiv.map (convertA2B . (* (-1))) . getVectorS $ transGradReal
+          forceData =
+            ForceData
+              { potentialEnergy = fromMaybe 0 $ molWithGrads ^. #energyDerivatives % #energy,
+                forces = NetVec . Massiv.toVector $ forcesBohrReal,
+                virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+                optionalData = mempty
+              }
+
+      -- Send forces to i-PI
+      logDebugS logSMicroD $ "(slice " <> display depth <> ") Providing forces to i-PI."
+      atomically . putTMVar dataIn $ forceData
+      where
+        convertA2B v = v / (angstrom2Bohr 1)
+
+    ------------------------------------------------------------------------------------------------
+    calcConvergence ::
+      (HasMotion env) =>
+      -- | Current optimisation depth
+      Int ->
+      Seq MicroOptSetup ->
+      -- | Molecule before the step
+      Molecule ->
+      -- | Molecule after the step.
+      Molecule ->
+      -- | The geometry change between steps and the new 'Motion' information constructed from it.
+      RIO env (GeomConv, Motion)
+    calcConvergence depth mos molPre molPost = do
+      -- Initial information
+      optSettings <- mos !?? depth
+      let atomDepthSelection = optSettings ^. #atomsAtDepth
+      motionT <- view motionL
+
+      -- Calculate the values characterising the geometry changes.
+      geomChange <- calcGeomConv atomDepthSelection molPre molPost
+
+      -- Build the next value of the motion history and add it to the history.
+      motionHist <- readTVarIO motionT
+      let newMotion = case motionHist of
+            Empty ->
+              Spicy.RuntimeEnv.Motion
+                { geomChange,
+                  molecule = Nothing,
+                  outerCycle = 0,
+                  microCycle = (depth, 0)
+                }
+            _ :|> Spicy.RuntimeEnv.Motion {outerCycle, microCycle} ->
+              Spicy.RuntimeEnv.Motion
+                { geomChange = geomChange,
+                  molecule = Nothing,
+                  outerCycle = outerCycle,
+                  microCycle =
+                    if fst microCycle == depth
+                      then (depth, snd microCycle + 1)
+                      else (depth, 1)
+                }
+          nextMotion = motionHist |> newMotion
+      atomically . writeTVar motionT $ nextMotion
+
+      -- Return the calculated geometry change.
+      return (geomChange, newMotion)
+
+    ------------------------------------------------------------------------------------------------
+    logOptStep ::
+      (HasMolecule env, HasOutputter env, HasLogFunc env) =>
+      -- | Current optimisation depth
+      Int ->
+      -- | Geometry change between steps.
+      GeomConv ->
+      -- | 'Motion' information for this geometry optimisation step.
+      Motion ->
+      RIO env ()
+    logOptStep depth geomChange motion = do
+      logInfoS logSMicroD $ "(slice " <> display depth <> ") Finished micro-cycle " <> displayShow (motion ^. #microCycle)
+
+      -- Initial information
+      mol <- view moleculeL >>= readTVarIO
+
+      microStepPrintEnv <- getCurrPrintEnv
+      let -- Maximum depth of the ONIOM tree.
+          maxDepth = (+ (- 1)) . Seq.length . horizontalSlices $ mol
+
+          -- 'MolID's at the current given depth.
+          molIDsAtSlice =
+            fmap Layer
+              . Seq.filter (\mid -> Seq.length mid == depth)
+              . getAllMolIDsHierarchically
+              $ mol
+
+          -- Auto-generated output for each layer involved in this step.
+          layerInfos =
+            renderBuilder
+              . foldl (<>) mempty
+              . fmap
+                ( spicyLog microStepPrintEnv
+                    . spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Micro])
+                )
+              $ molIDsAtSlice
+
+          -- Auto-generated output for the full ONIOM tree.
+          molInfo =
+            renderBuilder . spicyLog microStepPrintEnv $
+              spicyLogMol
+                (HashSet.fromList [Always, Out.Motion Out.Micro, Out.Motion Out.Macro, FullTraversal])
+                All
+
+      -- Write information about the molecule to the output file.
+      printSpicy $
+        "\n\n"
+          <> "@ Geometry Convergence\n\
+             \----------------------\n"
+          <> optTableHeader ((snd . microCycle $ motion) == 0 && depth == 0)
+          <> optTableLine (snd . microCycle $ motion) (Just depth) geomChange
+          <> "\n\n"
+          <> if depth == maxDepth
+            then molInfo
+            else layerInfos
+
+    ------------------------------------------------------------------------------------------------
+    -- | Main recursive optimisation call.
     untilConvergence ::
       ( HasMolecule env,
         HasLogFunc env,
@@ -575,18 +813,8 @@ optAtDepth depth' microOptSettings'
       RIO env ()
     untilConvergence depth microOptSettings = do
       -- Initial information.
-      molT <- view moleculeL
-      mol' <- readTVarIO molT
-      motionT <- view motionL
-      motionHist <- readTVarIO motionT
-      microSettingsAtDepth <-
-        maybe2MThrow (IndexOutOfBoundsException (Sz $ Seq.length microOptSettings) depth) $
-          microOptSettings Seq.!? depth
-      let allReal = IntMap.keysSet $ mol' ^. #atoms
-          atomDepthSelection = microSettingsAtDepth ^. #atomsAtDepth
-          geomConvCriteria = microSettingsAtDepth ^. #geomConv
-          ipiDataIn = microSettingsAtDepth ^. #pysisIPI % #input
-          ipiPosOut = microSettingsAtDepth ^. #pysisIPI % #output
+      microSettingsAtDepth <- microOptSettings !?? depth
+      let geomConvCriteria = microSettingsAtDepth ^. #geomConv
           ipiStatusVar = microSettingsAtDepth ^. #pysisIPI % #status
 
       -- Follow the requests of the i-PI server.
@@ -594,169 +822,294 @@ optAtDepth depth' microOptSettings'
       case ipiServerWants of
         -- Terminate the optimisation loop in case the i-PI server signals convergence.
         Done ->
-          logWarnS logSource $
+          logWarnS logSMicroD $
             "(slice " <> display depth <> ") i-PI server signaled an exit. It should never terminate by itself ..."
         -- Provide new positions to the i-PI server.
-        WantPos -> do
-          logDebugS logSource $
-            "(slice " <> display depth <> ") synchronising coordinates with i-PI server (spicy -> i-PI)"
-
-          -- Consume and discard the invalid step from the server.
-          void . atomically . takeTMVar $ ipiPosOut
-
-          -- Get the current state of the molecule and send it to the Pysisyphus instance, to update
-          -- those coordinates before doing a step.
-          molCurrent <- readTVarIO molT
-          molCoords <- getCoordsNetVec molCurrent
-          atomically . putTMVar ipiDataIn . PosUpdateData $ molCoords
-
-          -- Reiterate on this layer.
-          untilConvergence depth microOptSettings
-
+        WantPos -> coordinateSync depth microOptSettings >> untilConvergence depth microOptSettings
         -- Micro-cycle optimisation cannot use Hessian information at the moment, as I haven't
         -- thought about sub-tree hessian updates, yet.
         WantHessian -> do
           logErrorS
-            logSource
+            logSMicroD
             "The i-PI server wants a hessian update, but hessian updates subtrees are not implemented yet."
           throwM $ SpicyIndirectionException "geomMicroDriver" "Hessian updates not implemented yet."
 
         -- Normal i-PI update, where the client communicates current forces to the the server.
         WantForces -> do
-          logDebugS logSource $ "(slice " <> display depth <> ") new geometry for slice from i-PI."
+          molPreStep <- view moleculeL >>= readTVarIO
 
-          -- Obtain the molecule before the step.
-          molPreStep <- readTVarIO molT
-
-          -- Do the position update.
-          posVec <- do
-            d <- atomically . takeTMVar $ ipiPosOut
-            let v = getNetVec $ d ^. #coords
-            Massiv.fromVectorM Par (Sz $ VectorS.length v) v
-          molNewCoords <- updatePositionsPosVec posVec allReal molPreStep
-          atomically . writeTVar molT $ molNewCoords
+          -- Apply the step as obtained from Pysisyphus.
+          updateGeomFromPysis depth microOptSettings
 
           -- Recalculate the gradients above. The position update invalidates the old ones.
-          logDebugS logSource $ "(slice " <> display depth <> ") Step invalidated gradients. Recalculating gradients above current slice."
-          forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
-          molInvalidG <- readTVarIO molT
-          unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
-          logDebugS logSource $ "(slice " <> display depth <> ") Finished with gradient above."
+          recalcGradsAbove depth
 
           -- Optimise the layers above.
-          logDebugS logSource $ "(slice " <> display depth <> ") Recursively entering micro-cycles in slice above."
+          logDebugS logSMicroD $ "(slice " <> display depth <> ") Recursively entering micro-cycles in slice above."
           optAtDepth (depth - 1) microOptSettings
-          logDebugS logSource $ "(slice " <> display depth <> ") Finished with micro-cycles in slices above."
+          logDebugS logSMicroD $ "(slice " <> display depth <> ") Finished with micro-cycles in slices above."
 
           -- Calculate forces in the new geometry for the current layer only.
-          logDebugS logSource $ "(slice " <> display depth <> ") Recalculating gradients in current slice."
-          calcAtDepth depth WTGradient
-          molPostStep <- readTVarIO molT >>= collectorDepth depth
-          atomically . writeTVar molT $ molPostStep
-          logDebugS logSource $ "(slice " <> display depth <> ") Finished with current slice's gradients."
+          recalcGradsAtDepth depth
+
+          -- Molecule with valid gradients up to this depth after the step.
+          molPostStep <- view moleculeL >>= readTVarIO
 
           -- Construct force data, that we send to i-PI for this slice and send it.
           -- A collector up to the current depth will collect all force data and transform the
           -- gradients of all layers up to current depth into the real system gradient, which is
           -- then completely sent to Pysisyphus.
-          molWithGradientsAtDepth <- collectorDepth depth molPostStep
-          gradReal <-
-            maybe2MThrow (SpicyIndirectionException "untilConvergence" "Gradients missing") $
-              molWithGradientsAtDepth ^? #energyDerivatives % #gradient % _Just
-          let forcesBohrReal = compute @S . Massiv.map (convertA2B . (* (-1))) . getVectorS $ gradReal
-              forceData =
-                ForceData
-                  { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
-                    forces = NetVec . Massiv.toVector $ forcesBohrReal,
-                    virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
-                    optionalData = mempty
-                  }
-          logDebugS logSource $ "(slice " <> display depth <> ") Providing forces to i-PI."
-          atomically . putTMVar ipiDataIn $ forceData
+          provideForces depth microOptSettings
 
           -- Calculate geometry convergence and update the motion environment.
-          geomChange <- calcGeomConv atomDepthSelection molPreStep molPostStep
-          let newMotion = case motionHist of
-                Empty ->
-                  Spicy.RuntimeEnv.Motion
-                    { geomChange,
-                      molecule = Nothing,
-                      outerCycle = 0,
-                      microCycle = (depth, 0)
-                    }
-                _ :|> Spicy.RuntimeEnv.Motion {outerCycle, microCycle} ->
-                  Spicy.RuntimeEnv.Motion
-                    { geomChange = geomChange,
-                      molecule = Nothing,
-                      outerCycle = outerCycle,
-                      microCycle =
-                        if fst microCycle == depth
-                          then (depth, snd microCycle + 1)
-                          else (depth, 1)
-                    }
-              nextMotion = motionHist |> newMotion
-          atomically . writeTVar motionT $ nextMotion
+          (geomChange, newMotion) <- calcConvergence depth microOptSettings molPreStep molPostStep
 
           -- Logging post step.
-          logInfoS logSource $ "(slice " <> display depth <> ") Finished micro-cycle " <> displayShow (newMotion ^. #microCycle)
-          microStepPrintEnv <- getCurrPrintEnv
-          let maxDepth = (+ (- 1)) . Seq.length . horizontalSlices $ molWithGradientsAtDepth
-              molIDsAtSlice =
-                fmap Layer
-                  . Seq.filter (\mid -> Seq.length mid == depth)
-                  . getAllMolIDsHierarchically
-                  $ molWithGradientsAtDepth
-              layerInfos =
-                renderBuilder
-                  . foldl (<>) mempty
-                  . fmap
-                    ( spicyLog microStepPrintEnv
-                        . spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Micro])
-                    )
-                  $ molIDsAtSlice
-              molInfo =
-                renderBuilder . spicyLog microStepPrintEnv $
-                  spicyLogMol
-                    ( HashSet.fromList
-                        [ Always,
-                          Out.Motion Out.Micro,
-                          Out.Motion Out.Macro,
-                          FullTraversal
-                        ]
-                    )
-                    All
-          printSpicy $
-            "\n\n"
-              <> "@ Geometry Convergence\n\
-                 \----------------------\n"
-              <> optTableHeader ((snd . microCycle $ newMotion) == 0 && depth == 0)
-              <> optTableLine (snd . microCycle $ newMotion) (Just depth) geomChange
-              <> "\n\n"
-              <> if depth == maxDepth
-                then molInfo
-                else layerInfos
+          logOptStep depth geomChange newMotion
 
           -- Decide if to do more iterations.
           if geomChange < geomConvCriteria
             then return ()
             else untilConvergence depth microOptSettings
 
-    -- Conversion of gradients from Angstrom to Bohr.
+{-
+
+-- | Lifted version of sequence indexing to 'MonadThrow'.
+(!??) :: MonadThrow m => Seq a -> Int -> m a
+sa !?? i = case sa Seq.!? i of
+  Nothing -> throwM $ IndexOutOfBoundsException (Sz $ Seq.length sa) i
+  Just v -> return v
+
+-- | Handles position update requests from i-PI. Synchronises coordinates spicy -> client -> server.
+coordinateSync ::
+  (HasMolecule env, HasLogFunc env) =>
+  -- | Current optimisation depth
+  Int ->
+  -- | The optimisation settings of this layer used to optimised this layer
+  Seq MicroOptSetup ->
+  RIO env ()
+coordinateSync depth mos = do
+  logDebugS logSMicroD $
+    "(slice " <> display depth <> ") synchronising coordinates with i-PI server (spicy -> i-PI)"
+
+  -- Settings of this layer
+  optSettings <- mos !?? depth
+  let posOut = optSettings ^. #pysisIPI % #output
+      dataIn = optSettings ^. #pysisIPI % #input
+
+  -- Consume and discard the invalid step from the server.
+  void . atomically . takeTMVar $ posOut
+
+  -- Get the current state of the molecule and send it to the Pysisyphus instance, to update
+  -- those coordinates before doing a step.
+  molCurrCoords <- view moleculeL >>= readTVarIO >>= getCoordsNetVec
+  atomically . putTMVar dataIn . PosUpdateData $ molCurrCoords
+
+-- | Client -> Spicy coordinate update.
+updateGeomFromPysis ::
+  (HasMolecule env, HasLogFunc env) =>
+  -- | Current optimisation depth
+  Int ->
+  Seq MicroOptSetup ->
+  RIO env ()
+updateGeomFromPysis depth mos = do
+  logDebugS logSMicroD $ "(slice " <> display depth <> ") new geometry for slice from i-PI."
+
+  -- Initial information
+  molT <- view moleculeL
+  molPreStep <- readTVarIO molT
+  optSettings <- mos !?? depth
+  let posOut = optSettings ^. #pysisIPI % #output
+      allRealAtoms = IntMap.keysSet $ molPreStep ^. #atoms
+
+  -- Do the position update.
+  posVec <- do
+    d <- atomically . takeTMVar $ posOut
+    let v = getNetVec $ d ^. #coords
+    Massiv.fromVectorM Par (Sz $ VectorS.length v) v
+  molNewCoords <- updatePositionsPosVec posVec allRealAtoms molPreStep
+  atomically . writeTVar molT $ molNewCoords
+
+-- | Recalculate all gradients above the specified depth.
+recalcGradsAbove ::
+  (HasMolecule env, HasLogFunc env, HasCalcSlot env) =>
+  -- | Current optimisation depth
+  Int ->
+  RIO env ()
+recalcGradsAbove depth = do
+  logDebugS logSMicroD $ "(slice " <> display depth <> ") Step invalidated gradients. Recalculating gradients above current slice."
+
+  -- Initial information.
+  molT <- view moleculeL
+
+  -- For all layers above recalculate the gradients. Then collect everything possible again and
+  -- transform into a valid ONIOM representation.
+  forM_ (allAbove depth) $ \d -> calcAtDepth d WTGradient
+  molInvalidG <- readTVarIO molT
+  unless (depth == 0) $ collectorDepth (max 0 $ depth - 1) molInvalidG >>= atomically . writeTVar molT
+
+  logDebugS logSMicroD $ "(slice " <> display depth <> ") Finished with gradient above."
+  where
     allAbove d = if d >= 0 then [0 .. d - 1] else []
+
+-- | Recalculation of gradient on current slice's layers.
+recalcGradsAtDepth ::
+  (HasMolecule env, HasLogFunc env, HasCalcSlot env) =>
+  -- | Current optimisation depth
+  Int ->
+  RIO env ()
+recalcGradsAtDepth depth = do
+  logDebugS logSMicroD $ "(slice " <> display depth <> ") Recalculating gradients in current slice."
+
+  -- Initial information.
+  molT <- view moleculeL
+
+  -- Recalculate all layers at this depth slice and update the molecule state with this information.
+  calcAtDepth depth WTGradient
+  molPostStep <- readTVarIO molT >>= collectorDepth depth
+  atomically . writeTVar molT $ molPostStep
+
+  logDebugS logSMicroD $ "(slice " <> display depth <> ") Finished with current slice's gradients."
+
+-- | Provides new forces in the new geometry to Pysisyphus. This corresponds to taking transformed
+-- ONIOM gradients from the real system.
+provideForces ::
+  (HasMolecule env, HasLogFunc env) =>
+  -- | Current optimisation depth
+  Int ->
+  Seq MicroOptSetup ->
+  RIO env ()
+provideForces depth mos = do
+  -- Initial information.
+  optSettings <- mos !?? depth
+  let dataIn = optSettings ^. #pysisIPI % #input
+
+  -- Obtain (already transformed!) ONIOM gradients.
+  molWithGrads <- view moleculeL >>= readTVarIO
+  transGradReal <-
+    maybe2MThrow (SpicyIndirectionException "untilConvergence" "Gradients missing") $
+      molWithGrads ^? #energyDerivatives % #gradient % _Just
+
+  -- Construct the data for i-PI
+  let forcesBohrReal = compute @S . Massiv.map (convertA2B . (* (-1))) . getVectorS $ transGradReal
+      forceData =
+        ForceData
+          { potentialEnergy = fromMaybe 0 $ molWithGrads ^. #energyDerivatives % #energy,
+            forces = NetVec . Massiv.toVector $ forcesBohrReal,
+            virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
+            optionalData = mempty
+          }
+
+  -- Send forces to i-PI
+  logDebugS logSMicroD $ "(slice " <> display depth <> ") Providing forces to i-PI."
+  atomically . putTMVar dataIn $ forceData
+  where
+    -- Conversion of gradients from Angstrom to Bohr.
     convertA2B v = v / (angstrom2Bohr 1)
 
-{-
-combineSparseGradients :: MonadThrow m => Seq Molecule -> m (IntMap (Vector M Double))
-combineSparseGradients mols =
-  let sparseGrads = fmap gradDense2Sparse mols
-   in foldl'
-        ( \acc' g' -> do
-            acc <- acc'
-            g <- g'
-            pure $ acc <> g
-        )
-        (pure mempty)
-        sparseGrads
+-- | Check convergence by comparing molecule pre and post step and also fill the next motion value.
+calcConvergence ::
+  (HasMotion env) =>
+  -- | Current optimisation depth
+  Int ->
+  Seq MicroOptSetup ->
+  -- | Molecule before the step
+  Molecule ->
+  -- | Molecule after the step.
+  Molecule ->
+  -- | The geometry change between steps and the new 'Motion' information constructed from it.
+  RIO env (GeomConv, Motion)
+calcConvergence depth mos molPre molPost = do
+  -- Initial information
+  optSettings <- mos !?? depth
+  let atomDepthSelection = optSettings ^. #atomsAtDepth
+  motionT <- view motionL
+
+  -- Calculate the values characterising the geometry changes.
+  geomChange <- calcGeomConv atomDepthSelection molPre molPost
+
+  -- Build the next value of the motion history and add it to the history.
+  motionHist <- readTVarIO motionT
+  let newMotion = case motionHist of
+        Empty ->
+          Spicy.RuntimeEnv.Motion
+            { geomChange,
+              molecule = Nothing,
+              outerCycle = 0,
+              microCycle = (depth, 0)
+            }
+        _ :|> Spicy.RuntimeEnv.Motion {outerCycle, microCycle} ->
+          Spicy.RuntimeEnv.Motion
+            { geomChange = geomChange,
+              molecule = Nothing,
+              outerCycle = outerCycle,
+              microCycle =
+                if fst microCycle == depth
+                  then (depth, snd microCycle + 1)
+                  else (depth, 1)
+            }
+      nextMotion = motionHist |> newMotion
+  atomically . writeTVar motionT $ nextMotion
+
+  -- Return the calculated geometry change.
+  return (geomChange, newMotion)
+
+-- | Logging for the geometry optimisation step, that was just done.
+logOptStep ::
+  (HasMolecule env, HasOutputter env, HasLogFunc env) =>
+  -- | Current optimisation depth
+  Int ->
+  -- | Geometry change between steps.
+  GeomConv ->
+  -- | 'Motion' information for this geometry optimisation step.
+  Motion ->
+  RIO env ()
+logOptStep depth geomChange motion = do
+  logInfoS logSMicroD $ "(slice " <> display depth <> ") Finished micro-cycle " <> displayShow (motion ^. #microCycle)
+
+  -- Initial information
+  mol <- view moleculeL >>= readTVarIO
+
+  microStepPrintEnv <- getCurrPrintEnv
+  let -- Maximum depth of the ONIOM tree.
+      maxDepth = (+ (- 1)) . Seq.length . horizontalSlices $ mol
+
+      -- 'MolID's at the current given depth.
+      molIDsAtSlice =
+        fmap Layer
+          . Seq.filter (\mid -> Seq.length mid == depth)
+          . getAllMolIDsHierarchically
+          $ mol
+
+      -- Auto-generated output for each layer involved in this step.
+      layerInfos =
+        renderBuilder
+          . foldl (<>) mempty
+          . fmap
+            ( spicyLog microStepPrintEnv
+                . spicyLogMol (HashSet.fromList [Always, Out.Motion Out.Micro])
+            )
+          $ molIDsAtSlice
+
+      -- Auto-generated output for the full ONIOM tree.
+      molInfo =
+        renderBuilder . spicyLog microStepPrintEnv $
+          spicyLogMol
+            (HashSet.fromList [Always, Out.Motion Out.Micro, Out.Motion Out.Macro, FullTraversal])
+            All
+
+  -- Write information about the molecule to the output file.
+  printSpicy $
+    "\n\n"
+      <> "@ Geometry Convergence\n\
+         \----------------------\n"
+      <> optTableHeader ((snd . microCycle $ motion) == 0 && depth == 0)
+      <> optTableLine (snd . microCycle $ motion) (Just depth) geomChange
+      <> "\n\n"
+      <> if depth == maxDepth
+        then molInfo
+        else layerInfos
+
 -}
 
 ----------------------------------------------------------------------------------------------------
