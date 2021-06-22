@@ -834,7 +834,11 @@ printMultipoles pt = removeDummy $ do
             num
 
 -- | Table header for optimisations.
-optTableHeader :: Bool -> Utf8Builder
+optTableHeader ::
+  -- | Makes the table header grepable, by adding @~@ to the end of the lines. Shoould be enabled
+  -- for the first occurence of the table header in an optimisation, only. Afterwards set to false.
+  Bool ->
+  Utf8Builder
 optTableHeader grepable =
   let header =
         bformat
