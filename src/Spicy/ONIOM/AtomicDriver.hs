@@ -671,31 +671,6 @@ optAtDepth depth' microOptSettings'
                     virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
                     optionalData = mempty
                   }
-          -- NOT WORKING ALTERNATIVE: optimising with non-transformed high-level gradients. The problem here is,
-          -- that the real system moves closer, the model system moves away to gain distance again,
-          -- the real system comes closer again and so on. Therefore this leads to a translation
-          -- during the optimisation without ever converging.
-          {-
-          let molHSlices = horizontalSlices molPostStep
-              molsAtDepth = fromMaybe mempty $ molHSlices Seq.!? depth
-              molsAbove = fromMaybe mempty $ molHSlices Seq.!? (depth - 1)
-              zeroAtomGrad = toManifest $ Massiv.replicate @U @Ix1 @Double Seq (Sz 3) 0
-          gradsAtDepth <- combineSparseGradients molsAtDepth
-          gradsAbove <- combineSparseGradients molsAbove
-          let gradientsSparse = gradsAtDepth <> gradsAbove
-              gradientsOfInterestSparse = IntMap.restrictKeys gradientsSparse atomDepthSelection
-              realZeroGrad = IntMap.map (const zeroAtomGrad) realAtoms
-              realGrads = gradientsOfInterestSparse `IntMap.union` realZeroGrad
-              gradientsOfInterestDense = compute @U . concat' 1 $ realGrads
-              forcesBohr = compute @S . Massiv.map (convertA2B . (* (-1))) $ gradientsOfInterestDense
-              forceData =
-                ForceData
-                  { potentialEnergy = fromMaybe 0 $ molPostStep ^. #energyDerivatives % #energy,
-                    forces = NetVec . Massiv.toVector $ forcesBohrReal, -- forcesBohr,
-                    virial = CellVecs (T 1 0 0) (T 0 1 0) (T 0 0 1),
-                    optionalData = mempty
-                  }
-          -}
           logDebugS logSource $ "(slice " <> display depth <> ") Providing forces to i-PI."
           atomically . putTMVar ipiDataIn $ forceData
 
