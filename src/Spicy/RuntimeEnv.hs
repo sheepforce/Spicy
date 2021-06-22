@@ -168,8 +168,8 @@ data Motion = Motion
     outerCycle :: Int,
     -- | Geometry changes from the previous step.
     geomChange :: GeomConv,
-    -- | Counter for microiterations. If they are not used, this must be 'Nothing'. Contains the
-    -- depth of the current cycle and the cycle counter at that depth.
+    -- | Counter for microiterations. Only incremented on micro-cycle driven updates, (0,0)
+    -- otherwise. Contains the depth of the current cycle and the cycle counter at that depth.
     microCycle :: (Int, Int),
     -- | The current 'Molecule' might be saved at this step. Be aware that this potentially becomes
     -- very very memory demanding.

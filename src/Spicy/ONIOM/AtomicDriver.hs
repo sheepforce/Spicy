@@ -346,7 +346,7 @@ geomMacroDriver = do
                     { geomChange,
                       molecule = Nothing,
                       outerCycle = outerCycle + 1,
-                      microCycle = (0, outerCycle + 1)
+                      microCycle = (0, 0)
                     }
               nextMotion = motionHist |> newMotion
               step = outerCycle newMotion
