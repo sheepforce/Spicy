@@ -263,7 +263,7 @@ geomMacroDriver = do
         WantPos -> do
           logWarnS
             logSource
-            "i-PI server uncommonly asked for a spicy -> i-PI position update. Providing current atomic positions ..."
+            "Unusual i-PI server request for a spicy -> i-PI position update. Providing current atomic positions ..."
 
           -- Consume an old geometry from the server and discard.
           void . atomically . takeTMVar $ ipiPosOut
