@@ -538,8 +538,6 @@ calcAtDepth depth task = do
 
 ----------------------------------------------------------------------------------------------------
 
-
-
 -- | Do a single geometry optimisation step with a *running* pysisyphus instance at a given depth.
 -- Takes care that the gradients are all calculated and that the microcycles above have converged.
 optAtDepth ::
@@ -718,7 +716,9 @@ optAtDepth depth' microOptSettings'
 
       -- Build the next value of the motion history and add it to the history.
       motionHist <- readTVarIO motionT
-      let newMotion = case motionHist of
+      let lastMotionAtDepth = getLastMotionOnLayer motionHist
+          lastCounterAtDepth = fromMaybe 0 $ snd . microCycle <$> lastMotionAtDepth
+          newMotion = case motionHist of
             Empty ->
               Spicy.RuntimeEnv.Motion
                 { geomChange,
@@ -726,21 +726,26 @@ optAtDepth depth' microOptSettings'
                   outerCycle = 0,
                   microCycle = (depth, 0)
                 }
-            _ :|> Spicy.RuntimeEnv.Motion {outerCycle, microCycle} ->
+            _ :|> Spicy.RuntimeEnv.Motion {outerCycle} ->
               Spicy.RuntimeEnv.Motion
-                { geomChange = geomChange,
+                { geomChange,
                   molecule = Nothing,
-                  outerCycle = outerCycle,
-                  microCycle =
-                    if fst microCycle == depth
-                      then (depth, snd microCycle + 1)
-                      else (depth, 1)
+                  outerCycle,
+                  microCycle = (depth, lastCounterAtDepth + 1)
                 }
           nextMotion = motionHist |> newMotion
       atomically . writeTVar motionT $ nextMotion
 
       -- Return the calculated geometry change.
       return (geomChange, newMotion)
+      where
+        getLastMotionOnLayer :: Seq Motion -> Maybe Motion
+        getLastMotionOnLayer Empty = Nothing
+        getLastMotionOnLayer (ini :|> l) =
+          let lastDepth = l ^. #microCycle % _1
+           in if lastDepth == depth
+                then Just l
+                else getLastMotionOnLayer ini
 
     ------------------------------------------------------------------------------------------------
     logOptStep ::
@@ -798,8 +803,7 @@ optAtDepth depth' microOptSettings'
             then molInfo
             else layerInfos
 
-    ------------------------------------------------------------------------------------------------
-    -- | Main recursive optimisation call.
+            ------------------------------------------------------------------------------------------------
     untilConvergence ::
       ( HasMolecule env,
         HasLogFunc env,
