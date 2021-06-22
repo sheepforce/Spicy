@@ -119,6 +119,7 @@ module Spicy.Molecule
     calcGeomConv,
     multipoleTransfer,
     getCoordsNetVec,
+    reshapeCoords3M,
 
     -- * Writer
     writeXYZ,

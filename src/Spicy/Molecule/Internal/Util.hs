@@ -67,6 +67,7 @@ module Spicy.Molecule.Internal.Util
     calcGeomConv,
     multipoleTransfer,
     getCoordsNetVec,
+    reshapeCoords3M
   )
 where
 
@@ -2754,3 +2755,12 @@ getCoordsNetVec mol = do
       <$> getCoordinatesAs3NMatrix mol
 
   return . NetVec . Massiv.toVector $ coordVecMassiv
+
+----------------------------------------------------------------------------------------------------
+
+-- | Reshapes an arbitrary array into a matrix-like representation of the coordinates, one atom/3
+-- coordinates per row.
+reshapeCoords3M :: (MonadThrow m, Load r ix e, Resize r ix) => Int -> Array r ix e -> m (Matrix r e)
+reshapeCoords3M n arr
+  | n < 0 = throwM $ MolLogicException "reshapeCoords3M" "Cannot have less than 0 atoms."
+  | otherwise = Massiv.resizeM (Sz $ n :. 3) arr

@@ -117,7 +117,7 @@ ipiClient ipi = do
           atomwiseCoords <- do
             let sVec = getNetVec $ posDataAngstrom ^. #coords
             mVec :: Massiv.Vector S Double <- Massiv.fromVectorM Par (Sz $ VectorS.length sVec) sVec
-            Massiv.resizeM (Sz $ (fromIntegral nAtoms) :. 3) mVec
+            reshapeCoords3M (fromIntegral nAtoms) mVec
           logDebugS logSourceC $ "Got last coordinates server knew about: " <> displayShow atomwiseCoords
           atomically . putTMVar out $ posDataAngstrom
 
@@ -156,7 +156,7 @@ ipiClient ipi = do
           atomwiseCoords <- do
             let sVec = getNetVec $ posDataAngstrom ^. #coords
             mVec :: Massiv.Vector S Double <- Massiv.fromVectorM Par (Sz $ VectorS.length sVec) sVec
-            Massiv.resizeM (Sz $ (fromIntegral nAtoms) :. 3) mVec
+            reshapeCoords3M (fromIntegral nAtoms) mVec
           logDebugS logSourceC $ "Cell:\n" <> displayShow cell
           logDebugS logSourceC $ "Inverse Cell:\n" <> displayShow inverseCell
           logDebugS logSourceC $ "Coordinate vector:\n" <> displayShow coords
