@@ -7,12 +7,14 @@ let
   # Spicy runtime configuration setup.
   spicyrc = with nixpkgs;writeTextFile {
     name = "spicyrc";
-    text = lib.generators.toYAML {} {
+    text = lib.generators.toYAML {} ({
       "psi4" = "${qchem.psi4Unstable}/bin/psi4";
       "gdma" = "${qchem.gdma}/bin/gdma";
       "pysisyphus" = "${qchem.pysisyphus}/bin/pysis";
       "xtb" = "${qchem.xtb}/bin/xtb";
-    };
+      "ipi" = "${qchem.i-pi}/bin/i-pi";
+    } // lib.attrsets.optionalAttrs (qchem.turbomole != null) {"turbomole" = "${qchem.turbomole}/bin/turbomole";}
+    );
   };
 in
   spicyPkgs.shellFor {
