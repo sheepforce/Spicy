@@ -1,7 +1,7 @@
 let
   sources = import ./sources.nix;
   haskellNix = import sources."haskell.nix" { };
-  qchem = import sources.NixOS-QChem;
+  qchemOvl = import sources.NixOS-QChem;
   postOverlay = self: super:
     { qchem = super.qchem // {
         qdng = null;
@@ -17,7 +17,7 @@ let
     };
 
   haskellPkgs = import haskellNix.sources.nixpkgs-unstable (haskellNix.nixpkgsArgs // {
-    overlays = haskellNix.nixpkgsArgs.overlays ++ [ qchem postOverlay ];
+    overlays = haskellNix.nixpkgsArgs.overlays;
     config = haskellNix.nixpkgsArgs.config // {
       allowUnfree = true;
       qchem-config = {
@@ -28,7 +28,7 @@ let
   });
 
   nixpkgs = import sources.nixpkgs {
-    overlays = [ qchem postOverlay ];
+    overlays = [ qchemOvl postOverlay ];
     config = haskellNix.nixpkgsArgs.config // {
       allowUnfree = true;
       qchem-config = {
@@ -40,4 +40,10 @@ let
 
   # Pysisyphus development version
   pysisyphus = nixpkgs.python3.pkgs.callPackage "${sources.pysisyphus}/nix" { };
-in { inherit haskellPkgs nixpkgs pysisyphus; }
+
+  # Development version of define, which generates simple input files.
+  tmDefine = with nixpkgs; if (qchem.turbomole != null)
+    then callPackage ./turbomole/define.nix { turbomole = qchem.turbomole; }
+    else null
+  ;
+in { inherit haskellPkgs nixpkgs pysisyphus tmDefine; }
