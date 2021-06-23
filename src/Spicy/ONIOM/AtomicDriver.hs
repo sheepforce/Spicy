@@ -803,7 +803,7 @@ optAtDepth depth' microOptSettings'
             then molInfo
             else layerInfos
 
-            ------------------------------------------------------------------------------------------------
+    ------------------------------------------------------------------------------------------------
     untilConvergence ::
       ( HasMolecule env,
         HasLogFunc env,
