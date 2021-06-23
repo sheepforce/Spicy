@@ -30,7 +30,7 @@ in
     tools = {
       cabal = "3.4.0.0";
       hlint = "3.3";
-      haskell-language-server = "1.0.0.0"; # Hackage versions should be available
+      haskell-language-server = "1.2.0.0"; # Hackage versions should be available
       hpack = "0.34.4";
       ormolu = "0.1.4.1";
     };

@@ -25,7 +25,7 @@ in with buildPkgs; haskell-nix.project {
     src = ./..;
   };
 
-  compiler-nix-name = "ghc8104";
+  compiler-nix-name = "ghc8105";
 
   configureArgs = if static
     then builtins.toString [
