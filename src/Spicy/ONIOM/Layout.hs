@@ -57,9 +57,13 @@ mcOniomNLayout = do
       originalMolecule
       (Seq.singleton $ inputFile ^. #model % #theoryLayer)
 
-  realMol <- case IntMap.minView (topMolWithRealChild ^. #subMol) of
+  realMolWithLinks <- case IntMap.minView (topMolWithRealChild ^. #subMol) of
     Nothing -> throwM . localExc $ "A real layer should have been constructed but could not be found"
     Just (mol, _) -> return mol
+
+  -- The real system must not have "link" atoms. They link to nowhere now. Remove the link tag from
+  -- the top layer.
+  let realMol = realMolWithLinks & #atoms % each % #isLink .~ NotLink
 
   atomically . writeTVar molT $ realMol
   where
@@ -100,13 +104,14 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
       childComment = "Layer" <> molID2OniomHumanID (parentID |> childKey)
       childID = parentID |> childKey
       pysisSocket = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relFile "pysis.socket"
-      pysisDir = dirByIDAndCalc workDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"
+      pysisDir = dirByIDAndCalc scratchDirAbs childID (ONIOMKey Original) </> Path.relDir "pysis"
   pysis <-
     defIO >>= \p ->
       return $
         p
           & #socketAddr .~ (Net.SockAddrUnix . Path.toString $ pysisSocket)
           & #workDir .~ Path.toAbsRel pysisDir
+          & #initCoords .~ (pysisDir </> Path.relFile "InitCoords.xyz")
   let calcOriginal =
         CalcInput
           { task = WTEnergy,
@@ -185,6 +190,8 @@ go workDir scratchDir maxKey parentID parentMol (tl :<| rest) = do
         `defUp` (#maxTrust, #trustMax)
         `defUp` (#minTrust, #trustMin)
         `defUp` (#minTrust, #trustMin)
+        `defUp` (#convergence, #conv)
+        `defUp` (#microStep, #microStep)
         -- Other updates without direct match.
         & #optType
           .~ ( case tl ^? #optimisation % _Just % #target % _Just of

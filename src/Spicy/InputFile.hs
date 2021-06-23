@@ -30,7 +30,7 @@ import Optics
 import RIO hiding (Lens', lens)
 import Spicy.Aeson
 import Spicy.Common
-import Spicy.Molecule (CoordType, Embedding, HessianUpdate, Program)
+import Spicy.Molecule (CoordType, Embedding, GeomConv, HessianUpdate, MicroStep, Program)
 import Spicy.Outputter (Verbosity)
 
 -- | Definition of a complete calculation of arbitrary type.
@@ -374,7 +374,11 @@ data Opt = Opt
     -- | Maximum the trust radius can reach.
     trustMax :: Maybe Double,
     -- | Minimum the trust radius can reach.
-    trustMin :: Maybe Double
+    trustMin :: Maybe Double,
+    -- | Convergence criteria.
+    conv :: Maybe GeomConv,
+    -- | Step type in micro-cycles
+    microStep :: Maybe MicroStep
   }
   deriving (Eq, Show, Generic)
 
@@ -408,6 +412,12 @@ instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "trustMax" k Opt Op
 
 instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "trustMin" k Opt Opt a b where
   labelOptic = lens trustMin $ \s b -> s {trustMin = b}
+
+instance (k ~ A_Lens, a ~ Maybe GeomConv, b ~ a) => LabelOptic "conv" k Opt Opt a b where
+  labelOptic = lens conv $ \s b -> s {conv = b}
+
+instance (k ~ A_Lens, a ~ Maybe MicroStep, b ~ a) => LabelOptic "MicroStep" k Opt Opt a b where
+  labelOptic = lens microStep $ \s b -> s {microStep = b}
 
 ----------------------------------------------------------------------------------------------------
 data OptTarget

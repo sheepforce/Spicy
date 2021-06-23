@@ -1,19 +1,21 @@
 let
   pkgs = import ./pkgs.nix;
-  hsPkgs = import ./default.nix { wrap = false; };
+  haskellPkgs = pkgs.haskellPkgs;
+  nixpkgs = pkgs.nixpkgs;
+  spicyPkgs = import ./default.nix { wrap = false; };
 
   # Spicy runtime configuration setup.
-  spicyrc = pkgs.writeTextFile {
+  spicyrc = with nixpkgs;writeTextFile {
     name = "spicyrc";
-    text = pkgs.lib.generators.toYAML {} {
-      "psi4" = "${pkgs.qchem.psi4Unstable}/bin/psi4";
-      "gdma" = "${pkgs.qchem.gdma}/bin/gdma";
-      "pysisyphus" = "${pkgs.qchem.pysisyphus}/bin/pysis";
-      "xtb" = "${pkgs.qchem.xtb}/bin/xtb";
+    text = lib.generators.toYAML {} {
+      "psi4" = "${qchem.psi4Unstable}/bin/psi4";
+      "gdma" = "${qchem.gdma}/bin/gdma";
+      "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
+      "xtb" = "${qchem.xtb}/bin/xtb";
     };
   };
 in
-  hsPkgs.shellFor {
+  spicyPkgs.shellFor {
     # Include only the *local* packages of your project.
     packages = ps: with ps; [
       spicy
@@ -28,22 +30,22 @@ in
     tools = {
       cabal = "3.4.0.0";
       hlint = "3.3";
-      haskell-language-server = "1.0.0.0"; # Hackage versions should be available
+      haskell-language-server = "1.2.0.0"; # Hackage versions should be available
       hpack = "0.34.4";
       ormolu = "0.1.4.1";
     };
 
     # Some you may need to get some other way.
-    buildInputs = [
-      pkgs.niv
-      pkgs.qchem.pysisyphus
-      pkgs.qchem.psi4Unstable
-      pkgs.qchem.gdma
-      pkgs.qchem.xtb
+    buildInputs = with nixpkgs; [
+      niv
+      pkgs.pysisyphus
+      qchem.psi4Unstable
+      qchem.gdma
+      qchem.xtb
     ];
 
     # Setup a runtime with QC wrappers available.
-    shellHook = with hsPkgs; ''
+    shellHook = ''
       export SPICYRC=${spicyrc}
     '';
 

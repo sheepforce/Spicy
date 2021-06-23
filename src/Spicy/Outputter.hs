@@ -36,7 +36,7 @@ module Spicy.Outputter
     MotionEvent (..),
     StartEnd (..),
     PrintEnv (..),
-    getCurrPrintEvn,
+    getCurrPrintEnv,
 
     -- * Logging Facilities
     loggingThread,
@@ -53,6 +53,8 @@ module Spicy.Outputter
     printCoords,
     printTopology,
     printMultipoles,
+    optTableHeader,
+    optTableLine,
     spicyLogMol,
 
     -- * Utility
@@ -98,7 +100,7 @@ versionInfo = displayShow . showVersion $ version
 ----------------------------------------------------------------------------------------------------
 
 sep :: Utf8Builder
-sep = display $ Text.replicate 100 "-" <> "\n"
+sep = display $ Text.replicate 100 "=" <> "\n"
 
 txtInput :: Utf8Builder
 txtInput = displayBytesUtf8 $(embedFile . Path.toString . Path.relFile $ "data/text/input.txt")
@@ -362,8 +364,8 @@ instance (k ~ A_Lens, a ~ PrintVerbosity, b ~ a) => LabelOptic "printV" k PrintE
   labelOptic = lens printV $ \s b -> s {printV = b}
 
 -- | From the current runtime environment make a logging environment.
-getCurrPrintEvn :: (HasMolecule env, HasOutputter env) => RIO env PrintEnv
-getCurrPrintEvn = do
+getCurrPrintEnv :: (HasMolecule env, HasOutputter env) => RIO env PrintEnv
+getCurrPrintEnv = do
   mol <- view moleculeL >>= readTVarIO
   printV <- view $ outputterL % #printVerbosity
   return PrintEnv {mol = mol, printV = printV}
@@ -497,8 +499,8 @@ printGradient pt = removeDummy $ do
           aGH = join $ atomGradAssoc <$> atoms <*> (getVectorS <$> gh)
       tell $ lHeader i
       tell $ "  ONIOM SubTree ->\n" <> fromMaybe nAv (tableContent <$> aG)
-      tell $ "  High Level    ->\n" <> fromMaybe nAv (tableContent <$> aGL)
-      tell $ "  Low Level     ->\n" <> fromMaybe nAv (tableContent <$> aGH)
+      tell $ "  High Level    ->\n" <> fromMaybe nAv (tableContent <$> aGH)
+      tell $ "  Low Level     ->\n" <> fromMaybe nAv (tableContent <$> aGL)
     All -> do
       mol <- view moleculeDirectL
       printGradient ONIOM
@@ -830,6 +832,57 @@ printMultipoles pt = removeDummy $ do
             ("  Q" F.% (right 3 ' ' F.%. builder) F.% " = " F.% (left 10 ' ' F.%. fixed 6))
             sub
             num
+
+-- | Table header for optimisations.
+optTableHeader ::
+  -- | Makes the table header grepable, by adding @~@ to the end of the lines. Shoould be enabled
+  -- for the first occurence of the table header in an optimisation, only. Afterwards set to false.
+  Bool ->
+  Utf8Builder
+optTableHeader grepable =
+  let header =
+        bformat
+          (fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% " | " F.% fmt F.% lineEnd)
+          "Step (Layer)"
+          "ΔE"
+          "MAX Force"
+          "RMS Force"
+          "MAX Displacement"
+          "RMS Displacement"
+      line = vSep <> hSep <> vSep <> hSep <> vSep <> hSep <> vSep <> hSep <> vSep <> hSep <> vSep <> bformat lineEnd
+   in renderBuilder $ header <> line
+  where
+    fmt = center ew ' ' F.%. builder
+    vSep = TB.fromText . Text.replicate ew $ "-"
+    hSep = "-+-"
+    lineEnd = if grepable then " ~\n" else "\n"
+
+-- | Generate an entry for one optimisation step in the table.
+optTableLine :: Int -> Maybe Int -> GeomConv -> Utf8Builder
+optTableLine step layer GeomConv {..} =
+  let col1StepLayer = case layer of
+        Nothing -> bformat (left ew ' ' F.%. int) step
+        Just l -> bformat slFmt step l
+      col2Ediff = fromMaybe none $ bformat nf <$> eDiff
+      col3MaxForce = fromMaybe none $ bformat nf <$> maxForce
+      col4RMSForce = fromMaybe none $ bformat nf <$> rmsForce
+      col5MaxDispl = fromMaybe none $ bformat nf <$> maxDisp
+      col6RMSDispl = fromMaybe none $ bformat nf <$> rmsDisp
+   in renderBuilder $
+        bformat
+          (builder F.% " | " F.% builder F.% " | " F.% builder F.% " | " F.% builder F.% " | " F.% builder F.% " | " F.% builder F.% " ~\n")
+          col1StepLayer
+          col2Ediff
+          col3MaxForce
+          col4RMSForce
+          col5MaxDispl
+          col6RMSDispl
+  where
+    stepFmt = left 10 ' ' F.%. int
+    layerFmt = "(" F.% (left 2 ' ' F.%. int) F.% ")"
+    stepLayerFmt = stepFmt F.% " " F.% layerFmt
+    slFmt = left ew ' ' F.%. stepLayerFmt
+    none = bformat (center ew ' ' F.%. builder) "-"
 
 -- | Log string constructor monad for molecular information on full ONIOM trees.
 spicyLogMol ::

@@ -71,11 +71,13 @@ module Spicy.Molecule.Internal.Types
     Optimisation (..),
     CoordType (..),
     HessianUpdate (..),
+    MicroStep (..),
     OptType (..),
     _Minimum,
     _SaddlePoint,
     TSOptAlg (..),
     MinOptAlg (..),
+    GeomConv (..),
 
     -- ** Energy Derivatives
     EnergyDerivatives (..),
@@ -941,12 +943,19 @@ data Optimisation = Optimisation
     lineSearch :: Bool,
     -- | Optimisation to either minima or saddle points.
     optType :: OptType,
+    -- | Convergence criteria.
+    convergence :: GeomConv,
+    -- | Atom indices to freeze.
+    freezes :: IntSet,
     -- | Pysisyphus connection settings.
-    pysisyphus :: IPI
+    pysisyphus :: IPI,
+    -- | Settings in case micro-optimisers are used.
+    microStep :: MicroStep
   }
 
 instance DefaultIO Optimisation where
-  defIO =
+  defIO = do
+    defPysis <- defIO
     return
       Optimisation
         { coordType = DLC,
@@ -958,7 +967,10 @@ instance DefaultIO Optimisation where
           maxTrust = 1.0,
           lineSearch = True,
           optType = Minimum RFO,
-          pysisyphus = undefined
+          pysisyphus = defPysis,
+          convergence = def,
+          freezes = mempty,
+          microStep = LBFGS
         }
 
 instance ToJSON Optimisation where
@@ -972,7 +984,10 @@ instance ToJSON Optimisation where
         maxTrust,
         minTrust,
         lineSearch,
-        optType
+        optType,
+        convergence,
+        freezes,
+        microStep
       } =
       object
         [ "coordType" .= coordType,
@@ -983,7 +998,10 @@ instance ToJSON Optimisation where
           "maxTrust" .= maxTrust,
           "minTrust" .= minTrust,
           "lineSearch" .= lineSearch,
-          "optType" .= optType
+          "optType" .= optType,
+          "convergence" .= convergence,
+          "freezes" .= freezes,
+          "microStep" .= microStep
         ]
 
 -- Lenses
@@ -1014,8 +1032,17 @@ instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "lineSearch" k Optimisation
 instance (k ~ A_Lens, a ~ OptType, b ~ a) => LabelOptic "optType" k Optimisation Optimisation a b where
   labelOptic = lens optType $ \s b -> s {optType = b}
 
+instance (k ~ A_Lens, a ~ GeomConv, b ~ a) => LabelOptic "convergence" k Optimisation Optimisation a b where
+  labelOptic = lens convergence $ \s b -> s {convergence = b}
+
+instance (k ~ A_Lens, a ~ IntSet, b ~ a) => LabelOptic "freezes" k Optimisation Optimisation a b where
+  labelOptic = lens freezes $ \s b -> s {freezes = b}
+
 instance (k ~ A_Lens, a ~ IPI, b ~ a) => LabelOptic "pysisyphus" k Optimisation Optimisation a b where
   labelOptic = lens pysisyphus $ \s b -> s {pysisyphus = b}
+
+instance (k ~ A_Lens, a ~ MicroStep, b ~ a) => LabelOptic "microStep" k Optimisation Optimisation a b where
+  labelOptic = lens microStep $ \s b -> s {microStep = b}
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1063,6 +1090,28 @@ instance ToJSON HessianUpdate where
     FlowChart -> toJSON @Text "flowchart"
     DampedBFGS -> toJSON @Text "damped_bfgs"
     Bofill -> toJSON @Text "bofill"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Available step types for steps with the micro-cycles.
+data MicroStep
+  = LBFGS
+  | SD
+  | CG
+  deriving (Eq, Show, Generic)
+
+instance FromJSON MicroStep where
+  parseJSON v = case v of
+    String "lbfgs" -> pure LBFGS
+    String "sd" -> pure SD
+    String "cg" -> pure CG
+    _ -> fail "encountered unknown field for MicroStep"
+
+instance ToJSON MicroStep where
+  toJSON v = case v of
+    LBFGS -> toJSON @Text "lbfgs"
+    SD -> toJSON @Text "sd"
+    CG -> toJSON @Text "cg"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1123,6 +1172,70 @@ instance FromJSON MinOptAlg where
 
 instance ToJSON MinOptAlg where
   toJSON RFO = toJSON @Text "rfo"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Convergence criteria of a geometry optimisation. 'Nothing' values are not checked for
+-- convergce.
+data GeomConv = GeomConv
+  { rmsForce :: Maybe Double,
+    maxForce :: Maybe Double,
+    rmsDisp :: Maybe Double,
+    maxDisp :: Maybe Double,
+    eDiff :: Maybe Double
+  }
+  deriving (Eq, Show, Generic)
+
+-- | 'Ord' instance, that can be used to check convergence. The left side is the value and the right
+-- side the criterion.
+instance Ord GeomConv where
+  a `compare` b
+    | a == b = EQ
+    | all (== LT) allChecks = LT
+    | otherwise = GT
+    where
+      allChecks =
+        [ rmsForce a `compareMaybe` rmsForce b,
+          maxForce a `compareMaybe` maxForce b,
+          rmsDisp a `compareMaybe` rmsDisp b,
+          maxDisp a `compareMaybe` maxDisp b,
+          eDiff a `compareMaybe` eDiff b
+        ]
+      compareMaybe x y = case y of
+        Nothing -> LT
+        _ -> x `compare` y
+
+instance ToJSON GeomConv where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON GeomConv where
+  parseJSON = genericParseJSON spicyJOption
+
+instance Default GeomConv where
+  def =
+    GeomConv
+      { maxForce = Just $ 0.00045 * 1.88973,
+        rmsForce = Just $ 0.00030 * 1.88973,
+        maxDisp = Just $ 0.00180 * 1.88973,
+        rmsDisp = Just $ 0.00120 * 1.88973,
+        eDiff = Just 0.00001
+      }
+
+-- Labels
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "rmsForce" k GeomConv GeomConv a b where
+  labelOptic = lens rmsForce $ \s b -> s {rmsForce = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "maxForce" k GeomConv GeomConv a b where
+  labelOptic = lens maxForce $ \s b -> s {maxForce = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "rmsDisp" k GeomConv GeomConv a b where
+  labelOptic = lens rmsDisp $ \s b -> s {rmsDisp = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "maxDisp" k GeomConv GeomConv a b where
+  labelOptic = lens maxDisp $ \s b -> s {maxDisp = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "eDiff" k GeomConv GeomConv a b where
+  labelOptic = lens eDiff $ \s b -> s {eDiff = b}
 
 {-
 ====================================================================================================

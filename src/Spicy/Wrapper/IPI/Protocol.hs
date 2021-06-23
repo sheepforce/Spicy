@@ -47,61 +47,61 @@ ipiClient ::
   RIO env ()
 ipiClient ipi = do
   -- Get the socket address and wait for it to become available.
-  logDebugS logSource "Waiting for the i-PI server socket to become ready ..."
+  logDebugS logSourceC "Waiting for the i-PI server socket to become ready ..."
   scktAbsPath <- case ipi ^. #socketAddr of
     SockAddrUnix path -> return . Path.absFile $ path
     _ -> do
-      logErrorS logSource "i-PI client expected a UNIX socket for communication with the server."
+      logErrorS logSourceC "i-PI client expected a UNIX socket for communication with the server."
       throwM . localExc $ "Got wrong socket type for server communication."
   waitForSocket scktAbsPath
   threadDelay 200000
-  logDebugS logSource "i-PI socket became ready."
+  logDebugS logSourceC "i-PI socket became ready."
 
   -- Connect to the server socket.
-  logDebugS logSource $ "Connecting the socket at " <> displayShow (ipi ^. #socketAddr) <> " ..."
+  logDebugS logSourceC $ "Connecting the socket at " <> displayShow (ipi ^. #socketAddr) <> " ..."
   let connectToSocket = connect (ipi ^. #socket) (ipi ^. #socketAddr)
   catchIO (liftIO connectToSocket) $ \e -> do
-    logWarnS logSource $ "Could not connect to the socket. Got exception: " <> displayShow e
+    logWarnS logSourceC $ "Could not connect to the socket. Got exception: " <> displayShow e
     threadDelay 2000000
     ipiClient ipi
-  logInfoS logSource $ "Succesfully connected to an i-PI socket at: " <> displayShow (ipi ^. #socketAddr)
+  logInfoS logSourceC $ "Succesfully connected to an i-PI socket at: " <> displayShow (ipi ^. #socketAddr)
 
   -- Start the loops.
-  logInfoS logSource "Starting the communication loop ..."
+  logInfoS logSourceC "Starting the communication loop ..."
   loop
-  logInfoS logSource "Finished communication loop."
+  logInfoS logSourceC "Finished communication loop."
 
   -- Disconnect the socket.
-  logInfoS logSource $ "Closing the socket connection at " <> displayShow (ipi ^. #socketAddr)
+  logInfoS logSourceC $ "Closing the socket connection at " <> displayShow (ipi ^. #socketAddr)
   liftIO $ gracefulClose (ipi ^. #socket) 2000
   where
     -- The i-PI communication loop.
     loop = do
-      logDebugS logSource "Starting a new communication loop."
+      logDebugS logSourceC "Starting a new communication loop."
       -- Start the communication with the server. The server initiates with a string "STATUS".
       fstStatus <- getMsg
-      logDebugS logSource $ "Response from sever: " <> showMsg fstStatus
+      logDebugS logSourceC $ "Response from sever: " <> showMsg fstStatus
       unless (fstStatus == "STATUS") . statusExc $ fstStatus
-      logDebugS logSource "Server status OK."
+      logDebugS logSourceC "Server status OK."
 
-      logDebugS logSource "Sending READY to server."
+      logDebugS logSourceC "Sending READY to server."
       -- Tell the server we are ready to get nuclear coordinates.
       liftIO . sendAll sckt . encode $ Ready
 
       -- The server sends again a status. If the server is Pysisyphus and the status is "EXIT", the
       -- optimisation has converged and we are done.
-      logDebugS logSource "Waiting for server status response."
+      logDebugS logSourceC "Waiting for server status response."
       sndStatus <- getMsg
-      logDebugS logSource $ "Response from server: " <> showMsg sndStatus
+      logDebugS logSourceC $ "Response from server: " <> showMsg sndStatus
       case sndStatus of
         -- Done with motion of atoms.
         "EXIT" -> do
-          logInfoS logSource "Got EXIT from the server. Stopping i-PI client."
+          logInfoS logSourceC "Got EXIT from the server. Stopping i-PI client."
           atomically . putTMVar (ipi ^. #status) $ Done
 
         -- Pysisyphus extension to allow for client -> server position updates.
         "NEEDPOS" -> do
-          logInfoS logSource "Server wants position update."
+          logInfoS logSourceC "Server wants position update."
           atomically . putTMVar (ipi ^. #status) $ WantPos
 
           -- Get current positions from the server.
@@ -109,83 +109,94 @@ ipiClient ipi = do
           nAtoms' <- liftIO $ recv sckt intBytes
           let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
           serverCoords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
-          let _serverCoords = decode @NetVec $ nAtoms' <> serverCoords'
-          logDebugS logSource "Received current (old) positions from server."
+          let serverCoords = decode @NetVec $ nAtoms' <> serverCoords'
+              cell = CellVecs {a = T 1 0 0, b = T 0 1 0, c = T 0 0 1}
+              inverseCell = cell
+              posDataBohr = PosData {cell, inverseCell, coords = serverCoords}
+              posDataAngstrom = posDataToAngstrom posDataBohr
+          atomwiseCoords <- do
+            let sVec = getNetVec $ posDataAngstrom ^. #coords
+            mVec :: Massiv.Vector S Double <- Massiv.fromVectorM Par (Sz $ VectorS.length sVec) sVec
+            reshapeCoords3M (fromIntegral nAtoms) mVec
+          logDebugS logSourceC $ "Got last coordinates server knew about: " <> displayShow atomwiseCoords
+          atomically . putTMVar out $ posDataAngstrom
 
           -- Get new positions from Spicy main thread and send them to the i-PI server.
           newPos <- atomically . takeTMVar $ inp
+          logDebugS logSourceC $ "Coordinates to send to Pysisyphus:\n" <> displayShow newPos
           liftIO . sendAll sckt . encode $ newPos
-          logInfoS logSource "Sent new positions to i-PI server."
+          logInfoS logSourceC "Sent new positions to i-PI server."
 
           -- Next communication loop begins.
-          logInfoS logSource "Finished i-PI client loop. Reiterating ..."
+          logInfoS logSourceC "Finished i-PI client loop. Reiterating ..."
           loop
 
         -- Continue to process data.
         "STATUS" -> do
-          logInfoS logSource "Server status OK."
+          logInfoS logSourceC "Server status OK."
 
           -- We send "READY" again and expect another status message. Not documented.
-          logDebugS logSource "Sending READY to server."
+          logDebugS logSourceC "Sending READY to server."
           liftIO . sendAll sckt . encode $ Ready
 
           -- The server now responds with "POSDATA" and then PosData type.
           posDataMsg <- getMsg
-          logDebugS logSource $ "Got POSDATA message from sever: " <> showMsg posDataMsg
+          logDebugS logSourceC $ "Got POSDATA message from sever: " <> showMsg posDataMsg
           cell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
           iCell' <- liftIO $ recv sckt (3 * 3 * floatBytes)
           nAtoms' <- liftIO $ recv sckt intBytes
           let nAtoms = fromIntegral . runGet getInt32host $ nAtoms'
-          logDebugS logSource $ "Server about to send position data for " <> display nAtoms <> " atoms."
+          logDebugS logSourceC $ "Server about to send position data for " <> display nAtoms <> " atoms."
           coords' <- liftIO $ recv sckt (3 * nAtoms * floatBytes)
           let cell = decode cell'
-              iCell = decode iCell'
-              posDataBohr =
-                PosData
-                  { cell = cell,
-                    inverseCell = iCell,
-                    coords = decode $ nAtoms' <> coords'
-                  }
+              inverseCell = decode iCell'
+              coords = decode $ nAtoms' <> coords'
+              posDataBohr = PosData {cell, inverseCell, coords}
               posDataAngstrom = posDataToAngstrom posDataBohr
-          logDebugS logSource $ "Cell:\n" <> displayShow cell
-          logDebugS logSource $ "Inverse Cell:\n" <> displayShow iCell
-          logDebugS logSource $ "Coordinate vector:\n" <> displayShow (coords posDataAngstrom)
+          atomwiseCoords <- do
+            let sVec = getNetVec $ posDataAngstrom ^. #coords
+            mVec :: Massiv.Vector S Double <- Massiv.fromVectorM Par (Sz $ VectorS.length sVec) sVec
+            reshapeCoords3M (fromIntegral nAtoms) mVec
+          logDebugS logSourceC $ "Cell:\n" <> displayShow cell
+          logDebugS logSourceC $ "Inverse Cell:\n" <> displayShow inverseCell
+          logDebugS logSourceC $ "Coordinate vector:\n" <> displayShow coords
+          logDebugS logSourceC $ "Atomwise coordinates (Angstrom): " <> displayShow atomwiseCoords
 
           -- The posdata are given back to the ONIOM main loop in the shared variable.
-          logDebugS logSource "Providing Spicy with Position data from server."
+          logDebugS logSourceC "Providing Spicy with position data from server."
           atomically . putTMVar out $ posDataAngstrom
-          logDebugS logSource "Waiting for energies and forces from Spicy."
+          logDebugS logSourceC "Waiting for energies and forces from Spicy."
 
           -- Wait for Oniom driver to provide force or hessian data. Also Clears the client status.
           thrdStatus <- getMsg
-          logDebugS logSource $ "Response from server: " <> showMsg thrdStatus
+          logDebugS logSourceC $ "Response from server: " <> showMsg thrdStatus
           unless (thrdStatus == "STATUS") . statusExc $ thrdStatus
-          logDebugS logSource "Telling server that we have new data."
+          logDebugS logSourceC "Telling server that we have new data."
           liftIO . sendAll sckt . encode $ HaveData
           getRequest <- getMsg
-          logDebugS logSource $ "Got response from server: " <> showMsg getRequest
+          logDebugS logSourceC $ "Got response from server: " <> showMsg getRequest
           case getRequest of
             "GETFORCE" -> do
-              logInfoS logSource "Server wants force data. Requesting calculation."
+              logInfoS logSourceC "Server wants force data. Requesting calculation."
               atomically . putTMVar (ipi ^. #status) $ WantForces
               forceData <- atomically . takeTMVar $ inp
-              logDebugS logSource "Got ForceData from Spicy. Waiting for server status."
+              logDebugS logSourceC "Got ForceData from Spicy. Waiting for server status."
               liftIO . sendAll sckt . encode $ ForceReady
               liftIO . sendAll sckt . encode $ forceData
-              logInfoS logSource "Sent energies and forces to server."
+              logInfoS logSourceC "Sent energies and forces to server."
             "GETHESSIAN" -> do
-              logInfoS logSource "Server wants hessian data. Requesting calculation."
+              logInfoS logSourceC "Server wants hessian data. Requesting calculation."
               atomically . putTMVar (ipi ^. #status) $ WantHessian
               hessianData <- atomically . takeTMVar $ inp
               liftIO . sendAll sckt . encode $ HessianReady
               liftIO . sendAll sckt . encode $ hessianData
-              logInfoS logSource "Sent energies and hessian to server."
+              logInfoS logSourceC "Sent energies and hessian to server."
             string -> statusExc string
 
-          logDebugS logSource "Sent data to server."
+          logDebugS logSourceC "Sent data to server."
 
           -- Next communication loop begins.
-          logInfoS logSource "Finished i-PI client loop. Reiterating ..."
+          logInfoS logSourceC "Finished i-PI client loop. Reiterating ..."
           loop
         -- Invalid messages
         msg -> statusExc msg
@@ -207,6 +218,7 @@ ipiClient ipi = do
     inp = ipi ^. #input
     out = ipi ^. #output
     showMsg = displayBytesUtf8 . toStrictBytes
+    logSourceC = logSource <> " " <> (fromMaybe mempty . fmap tshow $ ipi ^. #oniomDepth)
 
     statusExc m = do
       logErrorS logSource $ "Unexpected message from i-PI server: " <> displayShow m

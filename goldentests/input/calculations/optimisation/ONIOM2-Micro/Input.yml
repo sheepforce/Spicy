@@ -1,0 +1,56 @@
+permanent: Tests/permanent
+scratch: Tests/scratch
+printLevel: High
+molecule:
+  path: goldentests/input/molecules/Ethanal.mol2
+  fileType: mol2
+model:
+  theoryLayer:
+    templateFile: goldentests/input/calculations/optimisation/ONIOM2-Micro/hf.psi
+    program:
+      tag: xtb
+      contents: gfntwo
+    name: HF/STO-3G
+    embedding:
+      tag: mechanical
+    execution:
+      nProcesses: 1
+      nThreads: 8
+      memory: 5000
+    charge: 0
+    mult: 1
+    selection:
+      -  1
+      -  2
+      -  3
+      -  4
+      -  5
+      -  6
+      -  7
+    optimisation:
+      coords: dlc
+      microStep: sd
+    deeperLayer:
+    - templateFile: goldentests/input/calculations/optimisation/ONIOM2-Micro/hf.psi
+      program:
+        tag: xtb
+        contents: gfntwo
+      name: XTB
+      embedding:
+        tag: mechanical
+      execution:
+        nProcesses: 1
+        nThreads: 8
+        memory: 5000
+      charge: 0
+      mult: 1
+      selection:
+        - 2
+        - 6
+        - 7
+      optimisation:
+        coords: dlc
+        microStep: lbfgs
+      deeperLayer: []
+task:
+- optimise_micro
