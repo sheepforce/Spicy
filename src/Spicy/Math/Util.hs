@@ -49,7 +49,6 @@ import Data.Massiv.Array as Massiv
 import Data.Massiv.Core.Operations ()
 import Math.NumberTheory.Roots
 import RIO hiding (Vector, (%~))
-import RIO.List.Partial
 import Spicy.Common
 
 newtype MathException = MathException String deriving (Show)
