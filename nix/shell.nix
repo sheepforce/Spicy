@@ -10,7 +10,7 @@ let
     text = lib.generators.toYAML {} {
       "psi4" = "${qchem.psi4Unstable}/bin/psi4";
       "gdma" = "${qchem.gdma}/bin/gdma";
-      "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
+      "pysisyphus" = "${qchem.pysisyphus}/bin/pysis";
       "xtb" = "${qchem.xtb}/bin/xtb";
     };
   };
@@ -38,7 +38,7 @@ in
     # Some you may need to get some other way.
     buildInputs = with nixpkgs; [
       niv
-      pkgs.pysisyphus
+      qchem.pysisyphus
       qchem.psi4Unstable
       qchem.gdma
       qchem.xtb
