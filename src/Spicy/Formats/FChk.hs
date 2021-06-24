@@ -58,7 +58,7 @@ import qualified RIO.Text as Text
 import qualified RIO.Text.Lazy as TL
 import Spicy.Common
 import Spicy.Data
-import Spicy.Math
+import Spicy.Math.Util
 import Spicy.Molecule
 
 -- $types
@@ -241,7 +241,7 @@ getResultsFromFChk content = do
 
   let hessianLTVec = hessianContent ^? _Just % _Array % _ArrayDouble
   hessianBohr <- case hessianLTVec of
-    Just vec -> Just . MatrixS <$> ltMat2Square vec
+    Just vec -> Just . MatrixS . compute <$> fromLT vec
     Nothing -> return Nothing
 
   -- Convert gradient from Hartree/Bohr to Hartree/Angstrom and hessian from hartree/Bohr^2 to

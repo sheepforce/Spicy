@@ -16,7 +16,7 @@
 --
 -- The operations here accept some insecurities (like not checking if both vectors of a dot product
 -- have equal lenght) and trust the caller.
-module Spicy.Math
+module Spicy.Math.Util
   ( -- * Linear Algebra
     -- $linear
     -- $linearVector
@@ -37,7 +37,8 @@ module Spicy.Math
     -}
 
     -- ** Matrix-Vector
-    ltMat2Square,
+    fromLT,
+    toLT
   )
 where
 
@@ -48,9 +49,10 @@ import Data.Massiv.Array as Massiv
 import Data.Massiv.Core.Operations ()
 import Math.NumberTheory.Roots
 import RIO hiding (Vector, (%~))
+import RIO.List.Partial
 import Spicy.Common
 
-data MathException = MathException String deriving (Show)
+newtype MathException = MathException String deriving (Show)
 
 instance Exception MathException
 
@@ -208,45 +210,40 @@ matH2M mat =
 --
 -- This index transformation can be used to reexpand the lower triangular matrix in vector form in row
 -- major order back to the full symmetric square matrix.
-ltMat2Square ::
-  (MonadThrow m, Manifest r Ix1 a, Mutable r Ix1 a) => Vector r a -> m (Matrix r a)
-ltMat2Square ltVec = do
-  let -- Elements in the lower triangular part of the matrix (including main diagonal).
-      nElemLT = Massiv.elemsCount ltVec
-
-  -- sqrt(8 * n_t + 1)
-  rootExpr <- case exactSquareRoot (8 * nElemLT + 1) of
-    Just x -> return x
-    Nothing -> throwM . localExc $ ("Cannot take the square root of " <> show (8 * nElemLT + 1))
-
-  -- (sqrt(8 * n_t + 1) + 1) / 2
-  let nElemSquare = (rootExpr - 1) `div` 2
-
-  -- Expanded lower triangular square matrix with all elements annotated with their future index
-  -- in the matrix.
-  annoLT <-
-    fmap snd
-      <$> traverse
-        ( \((r, c), v) -> case v of
-            Just val -> return ((r, c), val)
-            Nothing -> throwM . localExc $ ""
-        )
-        [ ((r, c), ltVec Massiv.!? lineariseIndex (r, c))
-          | r <- [0 .. nElemSquare - 1],
-            c <- [0 .. nElemSquare - 1]
-        ]
-
-  -- Square matrix in Massiv's representation.
-  Massiv.resizeM (Sz (nElemSquare :. nElemSquare)) . Massiv.fromList Par $ annoLT
+-- //TODO: Prove that the use of backpermute' is safe.
+fromLT :: (MonadThrow m, Source r Int e) => Vector r e -> m (Matrix D e)
+fromLT lt = do
+  sz <- maybe2MThrow (localExc "lower triangular matrix has invalid number of elements!") $ do
+    root <- exactSquareRoot (8 * elemsCount lt + 1)
+    return $ (root - 1) `div` 2
+  return $ backpermute' (Sz $ sz :. sz) lT2LinearIndex lt
   where
-    localExc = DataStructureException "ltMat2Square"
+    localExc = DataStructureException "fromLT"
 
-    -- Given the indices of the square matrix (0 based), convert to index position in the linearised
-    -- lower triangular matrix.
-    lineariseIndex :: (Int, Int) -> Int
-    lineariseIndex (ixR, ixC) =
-      if ixR >= ixC
-        then -- We are in the lower triangular matrix part (including the main diagonal).
-          RIO.sum [0 .. ixR] + ixC
-        else -- We are in the upper triangular part (excluding the main diagonal) of the square matrix.
-          RIO.sum [0 .. ixC] + ixR
+lT2LinearIndex :: Ix2 -> Ix1
+lT2LinearIndex (ixR :. ixC) = case ixR `compare` ixC of
+  LT -> RIO.sum [0 .. ixC] + ixR
+  _ -> RIO.sum [0 .. ixR] + ixC
+
+-- | Transform a symmetric matrix into a lower diagonal matrix, represented as a linear
+-- vector in row major order. The precondition (symmetry) is not checked!
+toLT :: (MonadThrow m, Source r Ix2 e) => Matrix r e -> m (Vector D e)
+toLT mat = do
+  let Sz (n :. m) = size mat
+  sz <- maybe2MThrow (localExc "matrix is not square!") $ do
+    guard (n == m)
+    return . Sz $ (n^(2::Int) + n) `div` 2
+  let indices = indexVec @B $ unSz sz
+  return $ backpermute' sz (indices !) mat
+  where
+    localExc = DataStructureException "toLT"
+
+-- | From a one dimensional index, map to the corresponding two-
+-- dimensional index in a lower triangular matrix
+linear2LTIndex :: Ix1 -> Ix2
+linear2LTIndex ix = [i :. j | i <- [0::Int ..], j <- [0..i]] !! ix
+
+-- | Vector mapping the first l one-dimensional indices to two-dimensional
+-- lower triangular indices.
+indexVec :: Mutable r Ix1 Ix2 => Int -> Vector r Ix2
+indexVec l = fromList Par $ RIO.take l [i :. j | i <- [0::Int ..], j <- [0..i]]

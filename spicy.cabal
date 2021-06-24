@@ -33,9 +33,9 @@ library
       Spicy.Initiator
       Spicy.InputFile
       Spicy.JobDriver
-      Spicy.Math
       Spicy.Math.SparseArray
       Spicy.Math.Spherical
+      Spicy.Math.Util
       Spicy.Molecule
       Spicy.Molecule.Internal.Multipoles
       Spicy.Molecule.Internal.Parser
