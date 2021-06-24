@@ -210,7 +210,7 @@ matH2M mat =
 --
 -- This index transformation can be used to reexpand the lower triangular matrix in vector form in row
 -- major order back to the full symmetric square matrix.
--- //TODO: Prove that the use of backpermute' is safe.
+-- TODO: Prove that the use of backpermute' is safe.
 fromLT :: (MonadThrow m, Source r Int e) => Vector r e -> m (Matrix D e)
 fromLT lt = do
   sz <- maybe2MThrow (localExc "lower triangular matrix has invalid number of elements!") $ do
@@ -237,11 +237,6 @@ toLT mat = do
   return $ backpermute' sz (indices !) mat
   where
     localExc = DataStructureException "toLT"
-
--- | From a one dimensional index, map to the corresponding two-
--- dimensional index in a lower triangular matrix
-linear2LTIndex :: Ix1 -> Ix2
-linear2LTIndex ix = [i :. j | i <- [0::Int ..], j <- [0..i]] !! ix
 
 -- | Vector mapping the first l one-dimensional indices to two-dimensional
 -- lower triangular indices.
