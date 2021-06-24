@@ -125,7 +125,9 @@ data WrapperConfigs = WrapperConfigs
     gdma :: Maybe JFilePath,
     ipi :: Maybe JFilePath,
     pysisyphus :: Maybe JFilePath,
-    xtb :: Maybe JFilePath
+    xtb :: Maybe JFilePath,
+    -- | Point to the directory, where the executables of the correct architecture reside.
+    turbomole :: Maybe JDirPath
   }
   deriving (Show, Generic)
 
@@ -152,6 +154,9 @@ instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "pysisyphus" k W
 
 instance (k ~ A_Lens, a ~ Maybe JFilePath, b ~ a) => LabelOptic "xtb" k WrapperConfigs WrapperConfigs a b where
   labelOptic = lens xtb $ \s b -> s {xtb = b}
+
+instance (k ~ A_Lens, a ~ Maybe JDirPath, b ~ a) => LabelOptic "turbomole" k WrapperConfigs WrapperConfigs a b where
+  labelOptic = lens turbomole $ \s b -> s {turbomole = b}
 
 -- Reader Classes
 class HasWrapperConfigs env where

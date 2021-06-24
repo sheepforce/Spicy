@@ -82,7 +82,7 @@ class MonadThrow m => MonadInput m where
 
 -- This instance expects the /current/ molecule layer, that is,
 -- the one for which the input will be prepared.
-instance (MonadThrow m, MonadReader (Molecule,CalcInput) m) => MonadInput m where
+instance (MonadThrow m, MonadReader (Molecule, CalcInput) m) => MonadInput m where
   getSoftware = gget (_2 % #software) "Software"
   getCharge = gget (_2 % #qMMMSpec % _QM % #charge) "Charge"
   getMult = gget (_2 % #qMMMSpec % _QM % #mult) "Mult"
@@ -279,6 +279,7 @@ serialisePsi4 (Psi4Arbitrary t a) = do
   return a
 
 ----------------------------------------------------------------------------------------------------
+
 
 -- Input verification
 

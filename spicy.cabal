@@ -51,6 +51,7 @@ library
       Spicy.Wrapper.Internal.Executor
       Spicy.Wrapper.Internal.Input.IO
       Spicy.Wrapper.Internal.Input.Language
+      Spicy.Wrapper.Internal.Input.Language.Turbomole
       Spicy.Wrapper.Internal.Input.Representation
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
