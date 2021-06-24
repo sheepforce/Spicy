@@ -53,7 +53,7 @@ import RIO.Seq ((|>))
 import qualified RIO.Seq as Seq
 import Spicy.Common
 import Spicy.Data
-import Spicy.Math
+import Spicy.Math.Util
 import Spicy.Molecule.Internal.Types hiding (S, coordinates)
 import Spicy.Molecule.Internal.Util
 

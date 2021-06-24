@@ -110,7 +110,7 @@ import qualified RIO.Seq as Seq
 import qualified RIO.Text as Text
 import Spicy.Common
 import Spicy.Data
-import Spicy.Math
+import Spicy.Math.Util
 import Spicy.Molecule.Internal.Types
 import Spicy.Wrapper.IPI.Types
 import System.IO.Unsafe
