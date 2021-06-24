@@ -3,7 +3,6 @@ let
   pkgs = import ./pkgs.nix;
   nixpkgs = pkgs.nixpkgs;
   haskellPkgs = pkgs.haskellPkgs;
-  pysisyphus = pkgs.pysisyphus;
 
   # Configuration File.
   spicyrc = with nixpkgs; writeTextFile {
@@ -11,7 +10,7 @@ let
     text = lib.generators.toYAML {} ({
       "psi4" = "${qchem.psi4Unstable}/bin/psi4";
       "gdma" = "${qchem.gdma}/bin/gdma";
-      "pysisyphus" = "${pkgs.pysisyphus}/bin/pysis";
+      "pysisyphus" = "${qchem.pysisyphus}/bin/pysis";
       "xtb" = "${qchem.xtb}/bin/xtb";
     } // lib.attrsets.optionalAttrs (qchem.turbomole != null) {"turbomole" = "${qchem.turbomole}/bin/turbomole";}
     );
