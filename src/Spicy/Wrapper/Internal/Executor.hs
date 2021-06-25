@@ -78,13 +78,11 @@ runCalculation calcID = do
   -- Execute the wrapper on the input file.
   case software of
     Psi4 _ -> executePsi4 calcID
-    Nwchem -> undefined
     XTB _ -> executeXTB calcID
 
   -- Parse the output, that has been produced by the wrapper.
   calcOutput <- case software of
     Psi4 _ -> analysePsi4 calcID
-    Nwchem -> undefined
     XTB _ -> analyseXTB calcID
 
   -- Insert the output, that has been obtained for this calculation into the corresponding CalcID.

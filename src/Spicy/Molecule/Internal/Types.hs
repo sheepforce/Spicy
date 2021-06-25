@@ -98,10 +98,13 @@ module Spicy.Molecule.Internal.Types
     Program (..),
     _XTB,
     _Psi4,
+    _Turbomole,
     isPsi4,
     isXTB,
+    isTurbomole,
     Psi4Info (..),
     GFN (..),
+    TurbomoleInfo (..),
     renderGFN,
 
     -- * Local Helper Types
@@ -120,6 +123,7 @@ import qualified RIO.Text as Text
 import Spicy.Aeson
 import Spicy.Common
 import Spicy.Wrapper.IPI.Types hiding (hessian, input, output)
+import qualified Spicy.Wrapper.Internal.Input.Language.Turbomole as TM
 
 {-
 ####################################################################################################
@@ -296,25 +300,25 @@ instance FromJSON Atom where
 
 -- Lenses
 instance (k ~ A_Lens, a ~ Element, b ~ a) => LabelOptic "element" k Atom Atom a b where
-  labelOptic = lens (\s -> element s) $ \s b -> s {element = b}
+  labelOptic = lens element $ \s b -> s {element = b}
 
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "label" k Atom Atom a b where
-  labelOptic = lens (\s -> (label :: Atom -> Text) s) $ \s b -> (s {label = b} :: Atom)
+  labelOptic = lens (label :: Atom -> Text) $ \s b -> (s {label = b} :: Atom)
 
 instance (k ~ A_Lens, a ~ LinkInfo, b ~ a) => LabelOptic "isLink" k Atom Atom a b where
-  labelOptic = lens (\s -> isLink s) $ \s b -> s {isLink = b}
+  labelOptic = lens isLink $ \s b -> s {isLink = b}
 
 instance (k ~ A_Lens, a ~ Bool, b ~ a) => LabelOptic "isDummy" k Atom Atom a b where
-  labelOptic = lens (\s -> isDummy s) $ \s b -> s {isDummy = b}
+  labelOptic = lens isDummy $ \s b -> s {isDummy = b}
 
 instance (k ~ A_Lens, a ~ FFType, b ~ a) => LabelOptic "ffType" k Atom Atom a b where
-  labelOptic = lens (\s -> ffType s) $ \s b -> s {ffType = b}
+  labelOptic = lens ffType $ \s b -> s {ffType = b}
 
 instance (k ~ A_Lens, a ~ VectorS Double, b ~ a) => LabelOptic "coordinates" k Atom Atom a b where
-  labelOptic = lens (\s -> coordinates s) $ \s b -> s {coordinates = b}
+  labelOptic = lens coordinates $ \s b -> s {coordinates = b}
 
 instance (k ~ A_Lens, a ~ Multipoles, b ~ a) => LabelOptic "multipoles" k Atom Atom a b where
-  labelOptic = lens (\s -> (multipoles :: Atom -> Multipoles) s) $ \s b -> (s {multipoles = b} :: Atom)
+  labelOptic = lens (multipoles :: Atom -> Multipoles) $ \s b -> (s {multipoles = b} :: Atom)
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1521,8 +1525,8 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 -- | A known computational chemistry program to use, and some program-specific data.
 data Program
   = Psi4 Psi4Info
-  | Nwchem
   | XTB GFN
+  | Turbomole TurbomoleInfo
   deriving (Eq, Show, Generic)
 
 instance ToJSON Program where
@@ -1541,6 +1545,11 @@ _Psi4 = prism' Psi4 $ \s -> case s of
   Psi4 info -> Just info
   _ -> Nothing
 
+_Turbomole :: Prism' Program TurbomoleInfo
+_Turbomole = prism' Turbomole $ \s -> case s of
+  Turbomole info -> Just info
+  _ -> Nothing
+
 -- Auxilliary functions for working with Program data
 
 -- | Returns true if the program is Psi4, and false otherwise.
@@ -1552,6 +1561,11 @@ isPsi4 _ = False
 isXTB :: Program -> Bool
 isXTB (XTB _) = True
 isXTB _ = False
+
+-- | Returns true if the program is Turbomole, and false otherwise.
+isTurbomole :: Program -> Bool
+isTurbomole (Turbomole _) = True
+isTurbomole _ = False
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1571,6 +1585,14 @@ instance ToJSON Psi4Info where
 
 instance FromJSON Psi4Info where
   parseJSON = genericParseJSON spicyJOption
+
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "basisSet" k Psi4Info Psi4Info a b where
+  labelOptic = lens basisSet $ \s b -> s {basisSet = b}
+
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "calculationType" k Psi4Info Psi4Info a b where
+  labelOptic = lens calculationType $ \s b -> s {calculationType = b}
+
+
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1594,6 +1616,49 @@ renderGFN :: GFN -> Text
 renderGFN GFNZero = "0"
 renderGFN GFNOne = "1"
 renderGFN GFNTwo = "2"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Program specific information for Turbomole.
+data TurbomoleInfo = TurbomoleInfo
+  { -- | Basis set specifications
+    basis :: TM.Atoms,
+    -- | SCF settings
+    scf :: Maybe TM.SCF,
+    -- | Reference wavefunction settings
+    ref :: TM.RefWfn,
+    -- | Settings for resolution of identity
+    ri :: Maybe TM.RI,
+    -- | Correlation of the wavefunction and excited states
+    corr :: Maybe TM.CorrelationExc,
+    -- | Other keywords to use verbatim
+    other :: Maybe [Text]
+  }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON TurbomoleInfo where
+  toEncoding = genericToEncoding spicyJOption
+
+instance FromJSON TurbomoleInfo where
+  parseJSON = genericParseJSON spicyJOption
+
+instance (k ~ A_Lens, a ~ TM.Atoms, b ~ a) => LabelOptic "basis" k TurbomoleInfo TurbomoleInfo a b where
+  labelOptic = lens basis $ \s b -> s {basis = b}
+
+instance (k ~ A_Lens, a ~ Maybe TM.SCF, b ~ a) => LabelOptic "scf" k TurbomoleInfo TurbomoleInfo a b where
+  labelOptic = lens scf $ \s b -> s {scf = b}
+
+instance (k ~ A_Lens, a ~ TM.RefWfn, b ~ a) => LabelOptic "ref" k TurbomoleInfo TurbomoleInfo a b where
+  labelOptic = lens ref $ \s b -> s {ref = b}
+
+instance (k ~ A_Lens, a ~ Maybe TM.RI, b ~ a) => LabelOptic "ri" k TurbomoleInfo TurbomoleInfo a b where
+  labelOptic = lens ri $ \s b -> s {ri = b}
+
+instance (k ~ A_Lens, a ~ Maybe TM.CorrelationExc, b ~ a) => LabelOptic "corr" k TurbomoleInfo TurbomoleInfo a b where
+  labelOptic = lens corr $ \s b -> s {corr = b}
+
+instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k TurbomoleInfo TurbomoleInfo a b where
+  labelOptic = lens other $ \s b -> s {other = b}
 
 {-
 ====================================================================================================

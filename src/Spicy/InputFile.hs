@@ -257,7 +257,7 @@ data TheoryLayer = TheoryLayer
     -- | The program to use for the computation.
     program :: Program,
     -- | Indices of the atoms for this layer. Those are the ones
-    --   from the 'Map Int Atom' structure of a 'Molecule'. A check
+    --   from the 'IntMap Atom' structure of a 'Molecule'. A check
     --   of sanity of those indices will depend on the methodology
     --   used (ONIOM vs- QM/MM).
     selection :: IntSet,

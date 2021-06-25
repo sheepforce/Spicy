@@ -30,14 +30,23 @@ The approach in this file is intended to be modular and expandable. Some notes:
   the representation
 -}
 
-import Control.Monad.Free
-import Optics
-import RIO hiding (Lens', lens, view, (^.), (^?))
+import Control.Monad.Free hiding (iter)
+import Data.Aeson
+import Data.Aeson.Text
+import Data.Default
+import Data.Massiv.Array as Massiv hiding (forM_, iter, mapM_)
+import qualified Data.Massiv.Array as Massiv
+import Optics hiding (element)
+import RIO hiding (Lens', lens, min, view, (^.), (^?))
 import RIO.Text
+import qualified RIO.Text as Text
+import RIO.Text.Lazy (toStrict)
 import RIO.Writer
 import Spicy.Common
+import Spicy.Data
 import Spicy.Molecule
 import Spicy.Molecule.Internal.Types
+import qualified Spicy.Wrapper.Internal.Input.Language.Turbomole as TM
 import Spicy.Wrapper.Internal.Input.Representation
 import System.Path ((<.>), (</>))
 import qualified System.Path as Path
@@ -47,10 +56,12 @@ import qualified System.Path as Path
 makeInput :: (MonadInput m) => m Text
 makeInput = do
   thisSoftware <- getSoftware
+  task <- getTask
+  mol <- getMolecule
   case thisSoftware of
     Psi4 _ -> psi4Input <&> execWriter . foldFree serialisePsi4
-    Nwchem -> error "NWChem not implemented!"
     XTB _ -> xtbInput <&> execWriter . foldFree serialiseXTB
+    Turbomole _ -> turbomoleInput <&> execWriter . foldFree (serialiseTurbomole task (mol ^. #atoms))
 
 {-
 ====================================================================================================
@@ -72,7 +83,7 @@ class MonadThrow m => MonadInput m where
   getMult :: m Int
   getMethod :: m GFN
   getBasisSet :: m Text
-  getCalculationType :: m Text
+  getProgramInfo :: m Program
   getMemory :: m Int
   getMolecule :: m Molecule
   getPrefix :: m String
@@ -88,7 +99,7 @@ instance (MonadThrow m, MonadReader (Molecule, CalcInput) m) => MonadInput m whe
   getMult = gget (_2 % #qMMMSpec % _QM % #mult) "Mult"
   getMethod = gget (_2 % #software % _XTB) "Method"
   getBasisSet = gget (_2 % #software % _Psi4 % #basisSet) "BasisName"
-  getCalculationType = gget (_2 % #software % _Psi4 % #calculationType) "CalculationType"
+  getProgramInfo = gget (_2 % #software) "ProgramInfo"
   getMemory = gget (_2 % #memory) "Memory"
   getMolecule = gget _1 "Molecule"
   getPrefix = gget (_2 % #prefixName) "Prefix"
@@ -218,7 +229,10 @@ psi4Input = do
   mult <- getMult
   mol <- getMolecule
   molRepr <- simpleCartesianAngstrom mol
-  calcType <- getCalculationType
+  programInfo <- getProgramInfo
+  calcType <-
+    maybe2MThrow (WrapperGenericException "psi4Input" "Calculation type could not be found") $
+      programInfo ^? _Psi4 % #calculationType
   basis <- getBasisSet
   prefix <- getPrefix
   task <- getTask
@@ -280,6 +294,179 @@ serialisePsi4 (Psi4Arbitrary t a) = do
 
 ----------------------------------------------------------------------------------------------------
 
+turbomoleInput :: MonadInput m => m TM.TurbomoleInput
+turbomoleInput = do
+  -- Acquire information about turbomole run.
+  mem <- getMemory
+  charge <- getCharge
+  programInfo <- getProgramInfo
+  tmInput <-
+    maybe2MThrow (WrapperGenericException "turbomoleInput" "Turbomole settings could not be found!") $
+      programInfo ^? _Turbomole
+  other <- getAdditionalInput
+
+  -- Construct the 'TM.Control' structure.
+  let control =
+        TM.Control
+          { atoms = tmInput ^. #basis,
+            charge,
+            scf = fromMaybe def $ tmInput ^. #scf,
+            refWfn = tmInput ^. #ref,
+            ri = tmInput ^. #ri,
+            excorr = tmInput ^. #corr,
+            memory = fromIntegral mem,
+            other
+          }
+
+  return $ do
+    liftF $ TM.Input control ()
+
+-- | Key-Value type line, that is only printed, if a value is availabel for this key.
+optKW :: Show a => Text -> Maybe a -> Text
+optKW _ Nothing = mempty
+optKW k (Just v) = k <> tshow v
+
+-- | 'tell' with a appended line break.
+tellN :: (IsString w, MonadWriter w m) => w -> m ()
+tellN c = tell $ c <> "\n"
+
+-- | Use a JSON instance to serialise to a turbomole value
+json2TM :: ToJSON a => a -> Text
+json2TM a = Text.filter (/= '"') . toStrict . encodeToLazyText . toJSON $ a
+
+-- | Serialise the turbomole record to a control file.
+serialiseTurbomole :: (MonadWriter Text m, Traversable t) => WrapperTask -> t Atom -> TM.TurbomoleInputF a -> m a
+serialiseTurbomole task ats (TM.Input TM.Control {..} a) = do
+  -- Serialise always required fields, that are not part of the input.
+  tellN "$symmetry c1"
+
+  -- Serialise the record into a control file
+  serialiseTMAtoms atoms
+  serialiseTMCoord ats
+  serialiseTMSCF scf
+  serialiseTMRefWfn charge ats refWfn
+  serialiseRI ri
+  serialiseExCorr task refWfn excorr
+  tellN $ "$maxcor " <> tshow memory <> " MiB per_core"
+  forM_ other tellN
+
+  -- End the control file
+  tellN "$end"
+
+  return a
+
+-- | Serialise the @$atoms@ block of a turbomole input.
+serialiseTMAtoms :: MonadWriter Text m => TM.Atoms -> m ()
+serialiseTMAtoms TM.Atoms {..} = do
+  tellN "$atoms"
+  tellN $ "  basis = " <> basis
+  tellN . optKW "  jbas  = " $ jbas
+  tellN . optKW "  jkbas = " $ jkbas
+  tellN . optKW "  ecp   = " $ ecp
+  tellN . optKW "  cbas  = " $ cbas
+  tellN . optKW "  cabs  = " $ cabs
+  forM_ other (mapM_ tellN)
+
+-- | Serialise the various scf settings into various scf relatex blocks.
+serialiseTMSCF :: MonadWriter Text m => TM.SCF -> m ()
+serialiseTMSCF TM.SCF {..} = do
+  tellN $ "$scfiterlimit " <> tshow iter
+  tellN $ "$scfconv" <> tshow conv
+  case damp of
+    Nothing -> return ()
+    Just TM.Damp {..} -> tellN $ "$scfdamp start=" <> tshow start <> " step=" <> tshow step <> " min=" <> tshow min
+  tellN . optKW "$scforbitalshift automatic " $ shift
+
+-- | Serialise the @$coord@ block of a turbomole input.
+serialiseTMCoord :: (MonadWriter Text m, Traversable t) => t Atom -> m ()
+serialiseTMCoord atoms = do
+  tellN "$coord"
+  forM_ atoms $ \Atom {..} -> do
+    let coords = compute @U . Massiv.map angstrom2Bohr . getVectorS $ coordinates
+    tell "  "
+    Massiv.forM_ coords $ tell . tshow
+    tell "  "
+    tellN . Text.toLower . tshow $ element
+
+-- | Serialise the input for the reference wavefunction.
+serialiseTMRefWfn :: (MonadWriter Text m, Traversable t) => Int -> t Atom -> TM.RefWfn -> m ()
+serialiseTMRefWfn charge atoms ref = case ref of
+  TM.RHF -> commonClosed
+  TM.UHF m -> tellN "$uhf" >> commonOpen m
+  TM.RKS dft -> commonClosed >> commonDFT dft
+  TM.UKS m dft -> tellN "$uhf" >> commonOpen m >> commonDFT dft
+  where
+    nElectrons = RIO.foldl' (\acc a -> acc + fromEnum (a ^. #element)) (- charge) atoms
+    nExcEl m = fromIntegral $ m - 1
+    nClosed m = (nElectrons - nExcEl m) `div` 2
+    commonClosed = do
+      tellN "$closed shells"
+      tellN $ "  a  1-" <> tshow (nClosed 1) <> " ( 2 )"
+    commonOpen m = do
+      tellN "$alpha shells"
+      tellN $ "  a   1-" <> tshow (nClosed m + nExcEl m) <> " ( 1 )"
+      tellN "$beta shells"
+      tellN $ "  a   1-" <> tshow (nClosed m) <> " ( 1 )"
+    commonDFT TM.DFT {..} = do
+      tellN "$dft"
+      tellN $ "  functional" <> json2TM functional
+      tellN $ "  gridsize " <> json2TM functional
+      case disp of
+        Nothing -> return ()
+        Just TM.D3 -> tellN "$disp3"
+        Just TM.D3BJ -> tellN "$disp bj"
+        Just TM.D4 -> tellN "$disp4"
+
+-- | Serialise the optional RI settings
+serialiseRI :: MonadWriter Text m => Maybe TM.RI -> m ()
+serialiseRI ri = case ri of
+  Nothing -> return ()
+  Just TM.RIJ -> tellN "$rij"
+  Just TM.RIJK -> tellN "$rij" >> tellN "$rik"
+
+-- | Serialise the wavefunction correlation and excited state settings.
+serialiseExCorr :: MonadWriter Text m => WrapperTask -> TM.RefWfn -> Maybe TM.CorrelationExc -> m ()
+serialiseExCorr task refwfn excorr = case excorr of
+  Nothing -> return ()
+  Just TM.PNOCCSD {..} -> do
+    tellN "$denconv 1.0e-7"
+    tellN "$pnoccsd"
+    tellN $ "  " <> json2TM model
+    tellN . optKW "  maxiter=" $ iter
+    forM_ other (mapM_ tellN)
+    case exci of
+      Nothing -> return ()
+      Just nStates -> tellN "  prepno davidso" >> commonExcBlock nStates
+  Just TM.RICC {..} -> do
+    tellN "$denconv 1.0e-7"
+    tellN "$ricc2"
+    tellN $ "  " <> (if task == WTGradient then "geoopt model=" else mempty) <> json2TM model
+    tellN . optKW "  maxiter=" $ iter
+    forM_ other (mapM_ tellN)
+    forM_ exci commonExcBlock
+  Just TM.TDSCF {..} -> do
+    tellN $
+      "$scfinstab " <> case (approx, refwfn) of
+        (TM.TDA, TM.RHF) -> "rpas"
+        (TM.TDA, TM.RKS _) -> "rpas"
+        (TM.TDA, _) -> "urpa"
+        (TM.RPA, TM.RHF) -> "ciss"
+        (TM.RPA, TM.RKS _) -> "ciss"
+        (TM.RPA, _) -> "ucis"
+    tellN "$soes"
+    tellN $ "  a " <> tshow (fromMaybe 1 exci)
+  where
+    commonExcBlock ns = do
+      tellN "$excitations"
+      tell "  irrep=a "
+      case refwfn of
+        TM.RKS _ -> tell "multiplicity=1 "
+        TM.RHF -> tell "multiplicity=1 "
+        _ -> return ()
+      tellN $ "nexc=" <> tshow ns
+      tellN "  spectrum states=all operators=diplen"
+
+----------------------------------------------------------------------------------------------------
 
 -- Input verification
 
