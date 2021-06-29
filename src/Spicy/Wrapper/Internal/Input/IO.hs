@@ -37,6 +37,7 @@ writeInputs calcID = do
       programStr p
         | isPsi4 p = "Psi4"
         | isXTB p = "XTB"
+        | isTurbomole p = "Turbomole"
         | otherwise = "Unknown!"
       permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       prefix = relFile . replaceProblematicChars $ calcContext ^. #input % #prefixName

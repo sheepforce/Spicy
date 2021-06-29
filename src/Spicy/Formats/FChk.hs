@@ -86,10 +86,10 @@ instance (k ~ A_Lens, a ~ CalcType, b ~ a) => LabelOptic "calcType" k FChk FChk 
   labelOptic = lens calcType $ \s b -> s {calcType = b}
 
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "basis" k FChk FChk a b where
-  labelOptic = lens basis $ \s b -> s {basis = b}
+  labelOptic = lens (basis :: FChk -> Text) $ \s b -> (s {basis = b} :: FChk)
 
 instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "method" k FChk FChk a b where
-  labelOptic = lens method $ \s b -> s {method = b}
+  labelOptic = lens (method :: FChk -> Text) $ \s b -> (s {method = b} :: FChk)
 
 instance (k ~ A_Lens, a ~ Map Text Content, b ~ a) => LabelOptic "blocks" k FChk FChk a b where
   labelOptic = lens blocks $ \s b -> s {blocks = b}

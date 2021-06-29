@@ -58,6 +58,7 @@ module Spicy.Common
     tShow,
     text2Utf8Builder,
     removeWhiteSpace,
+    tellN,
 
     -- *** Fortran Formatting Functions
     -- $fortranFormatters
@@ -225,6 +226,7 @@ import System.IO
 import qualified System.Path as Path
 import System.Path.IO as Path
 import System.Path.PartClass
+import RIO.Writer
 
 {-
 ####################################################################################################
@@ -604,9 +606,8 @@ readFileUTF8 path' = readFileUtf8 (Path.toString path')
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Appending for UTF-8 encoded files in RIO's style of writing formatted text to a file, compatible
--- with typed paths.
+-- | Appending for UTF-8 encoded files in RIO's style of writing formatted text to a file,
+-- compatible with typed paths.
 appendFileUTF8 :: MonadIO m => Path.AbsRelFile -> Text -> m ()
 appendFileUTF8 path' text' = liftIO . Path.withFile path' Path.AppendMode $ \h -> do
   hSetEncoding h utf8
@@ -614,24 +615,27 @@ appendFileUTF8 path' text' = liftIO . Path.withFile path' Path.AppendMode $ \h -
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Converting things to show to a text.
+-- | Converting things to show to a text.
 tShow :: Show a => a -> Text
 tShow = utf8BuilderToText . displayShow
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Convert a 'Text' to an Utf8Builder as used by RIO.
+-- | Convert a 'Text' to an Utf8Builder as used by RIO.
 text2Utf8Builder :: Text -> Utf8Builder
 text2Utf8Builder = Utf8Builder . Builder.byteString . Text.encodeUtf8
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Removes all white space, even between words, from a text.
+-- | Removes all white space, even between words, from a text.
 removeWhiteSpace :: Text -> Text
 removeWhiteSpace = Text.concat . Text.words
+
+----------------------------------------------------------------------------------------------------
+
+-- | 'tell' with a appended line break.
+tellN :: (IsString w, MonadWriter w m) => w -> m ()
+tellN c = tell $ c <> "\n"
 
 {-
 ====================================================================================================

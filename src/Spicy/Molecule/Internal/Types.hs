@@ -83,7 +83,6 @@ module Spicy.Molecule.Internal.Types
     EnergyDerivatives (..),
 
     -- ** Wrapper Context
-    NumericalEfficiency (..),
     WrapperTask (..),
     QMContext (..),
     MMContext (..),
@@ -99,13 +98,26 @@ module Spicy.Molecule.Internal.Types
     _XTB,
     _Psi4,
     _Turbomole,
+    _ProgramHamiltonian,
     isPsi4,
     isXTB,
     isTurbomole,
-    Psi4Info (..),
     GFN (..),
-    TurbomoleInfo (..),
     renderGFN,
+
+    -- *** Generic information for all QC programs
+    QCHamiltonian (..),
+    BasisSet (..),
+    SCF (..),
+    Damp (..),
+    RI (..),
+    _OtherRI,
+    RefWfn (..),
+    DFT (..),
+    _RKS,
+    _UKS,
+    Correlation (..),
+    Excitations (..),
 
     -- * Local Helper Types
     FragmentAtomInfo (..),
@@ -115,15 +127,11 @@ where
 
 import Data.Aeson
 import Data.Default
-import Data.List.Split (chunksOf)
-import Formatting
 import Optics hiding (element)
 import RIO hiding (Lens', lens, view, (^.))
-import qualified RIO.Text as Text
 import Spicy.Aeson
 import Spicy.Common
 import Spicy.Wrapper.IPI.Types hiding (hessian, input, output)
-import qualified Spicy.Wrapper.Internal.Input.Language.Turbomole as TM
 
 {-
 ####################################################################################################
@@ -1284,22 +1292,6 @@ instance (k ~ A_Lens, a ~ Maybe (MatrixS Double), b ~ a) => LabelOptic "hessian"
 ====================================================================================================
 -}
 
--- | How efficient a task can be performed. Used for gradient calculations mainly.
-data NumericalEfficiency
-  = -- | Analytical derivatives are available and will be used.
-    Analytical
-  | -- | Finite displacements will be used for derivatives.
-    Numerical
-  deriving (Eq, Show, Generic)
-
-instance ToJSON NumericalEfficiency where
-  toEncoding = genericToEncoding spicyJOption
-
-instance FromJSON NumericalEfficiency where
-  parseJSON = genericParseJSON spicyJOption
-
-----------------------------------------------------------------------------------------------------
-
 -- | A task the wrapper needs to perform.
 data WrapperTask
   = -- | Single point energy calculation.
@@ -1524,9 +1516,9 @@ instance (k ~ A_Lens, a ~ IntMap Multipoles, b ~ a) => LabelOptic "multipoles" k
 
 -- | A known computational chemistry program to use, and some program-specific data.
 data Program
-  = Psi4 Psi4Info
+  = Psi4 QCHamiltonian
   | XTB GFN
-  | Turbomole TurbomoleInfo
+  | Turbomole QCHamiltonian
   deriving (Eq, Show, Generic)
 
 instance ToJSON Program where
@@ -1540,15 +1532,23 @@ _XTB = prism' XTB $ \s -> case s of
   XTB b -> Just b
   _ -> Nothing
 
-_Psi4 :: Prism' Program Psi4Info
+_Psi4 :: Prism' Program QCHamiltonian
 _Psi4 = prism' Psi4 $ \s -> case s of
   Psi4 info -> Just info
   _ -> Nothing
 
-_Turbomole :: Prism' Program TurbomoleInfo
+_Turbomole :: Prism' Program QCHamiltonian
 _Turbomole = prism' Turbomole $ \s -> case s of
   Turbomole info -> Just info
   _ -> Nothing
+
+-- | Extra prism, that gets the QC Hamiltonian, regardless of which constructor supplies it
+-- (if it supplies ...).
+_ProgramHamiltonian :: Prism' Program QCHamiltonian
+_ProgramHamiltonian = prism' Turbomole $ \s -> case s of
+  Turbomole h -> Just h
+  Psi4 h -> Just h
+  XTB _ -> Nothing
 
 -- Auxilliary functions for working with Program data
 
@@ -1566,33 +1566,6 @@ isXTB _ = False
 isTurbomole :: Program -> Bool
 isTurbomole (Turbomole _) = True
 isTurbomole _ = False
-
-----------------------------------------------------------------------------------------------------
-
--- | Program specific information for Psi4. Contains the
--- desired basis set and calculation type.
-data Psi4Info = Psi4Info
-  { -- | The requested basis set. Will be printed into the program input verbatim.
-    basisSet :: Text,
-    -- | The required calculation type (hf, ccsd,..). Will be printed
-    -- into the program input verbatim
-    calculationType :: Text
-  }
-  deriving (Eq, Show, Generic)
-
-instance ToJSON Psi4Info where
-  toEncoding = genericToEncoding spicyJOption
-
-instance FromJSON Psi4Info where
-  parseJSON = genericParseJSON spicyJOption
-
-instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "basisSet" k Psi4Info Psi4Info a b where
-  labelOptic = lens basisSet $ \s b -> s {basisSet = b}
-
-instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "calculationType" k Psi4Info Psi4Info a b where
-  labelOptic = lens calculationType $ \s b -> s {calculationType = b}
-
-
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1620,84 +1593,296 @@ renderGFN GFNTwo = "2"
 ----------------------------------------------------------------------------------------------------
 
 -- | Program specific information for Turbomole.
-data TurbomoleInfo = TurbomoleInfo
+data QCHamiltonian = QCHamiltonian
   { -- | Basis set specifications
-    basis :: TM.Atoms,
+    basis :: BasisSet,
     -- | SCF settings
-    scf :: Maybe TM.SCF,
+    scf :: Maybe SCF,
     -- | Reference wavefunction settings
-    ref :: TM.RefWfn,
+    ref :: RefWfn,
     -- | Settings for resolution of identity
-    ri :: Maybe TM.RI,
+    ri :: Maybe RI,
     -- | Correlation of the wavefunction and excited states
-    corr :: Maybe TM.CorrelationExc,
+    corr :: Maybe Correlation,
+    -- | Excited states
+    exc :: Maybe Excitations,
     -- | Other keywords to use verbatim
     other :: Maybe [Text]
   }
   deriving (Eq, Show, Generic)
 
-instance ToJSON TurbomoleInfo where
+instance ToJSON QCHamiltonian where
   toEncoding = genericToEncoding spicyJOption
 
-instance FromJSON TurbomoleInfo where
+instance FromJSON QCHamiltonian where
   parseJSON = genericParseJSON spicyJOption
 
-instance (k ~ A_Lens, a ~ TM.Atoms, b ~ a) => LabelOptic "basis" k TurbomoleInfo TurbomoleInfo a b where
-  labelOptic = lens basis $ \s b -> s {basis = b}
+instance (k ~ A_Lens, a ~ BasisSet, b ~ a) => LabelOptic "basis" k QCHamiltonian QCHamiltonian a b where
+  labelOptic = lens (basis :: QCHamiltonian -> BasisSet) $ \s b -> (s {basis = b} :: QCHamiltonian)
 
-instance (k ~ A_Lens, a ~ Maybe TM.SCF, b ~ a) => LabelOptic "scf" k TurbomoleInfo TurbomoleInfo a b where
+instance (k ~ A_Lens, a ~ Maybe SCF, b ~ a) => LabelOptic "scf" k QCHamiltonian QCHamiltonian a b where
   labelOptic = lens scf $ \s b -> s {scf = b}
 
-instance (k ~ A_Lens, a ~ TM.RefWfn, b ~ a) => LabelOptic "ref" k TurbomoleInfo TurbomoleInfo a b where
+instance (k ~ A_Lens, a ~ RefWfn, b ~ a) => LabelOptic "ref" k QCHamiltonian QCHamiltonian a b where
   labelOptic = lens ref $ \s b -> s {ref = b}
 
-instance (k ~ A_Lens, a ~ Maybe TM.RI, b ~ a) => LabelOptic "ri" k TurbomoleInfo TurbomoleInfo a b where
+instance (k ~ A_Lens, a ~ Maybe RI, b ~ a) => LabelOptic "ri" k QCHamiltonian QCHamiltonian a b where
   labelOptic = lens ri $ \s b -> s {ri = b}
 
-instance (k ~ A_Lens, a ~ Maybe TM.CorrelationExc, b ~ a) => LabelOptic "corr" k TurbomoleInfo TurbomoleInfo a b where
+instance (k ~ A_Lens, a ~ Maybe Correlation, b ~ a) => LabelOptic "corr" k QCHamiltonian QCHamiltonian a b where
   labelOptic = lens corr $ \s b -> s {corr = b}
 
-instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k TurbomoleInfo TurbomoleInfo a b where
-  labelOptic = lens other $ \s b -> s {other = b}
+instance (k ~ A_Lens, a ~ Maybe Excitations, b ~ a) => LabelOptic "exc" k QCHamiltonian QCHamiltonian a b where
+  labelOptic = lens exc $ \s b -> s {exc = b}
 
-{-
-====================================================================================================
--}
-
-{-
-####################################################################################################
--}
-
--- $prettyPrinters
--- Helper functions to implement the 'PrettyPrint' class for various elements.
-
--- | Formatter for short doubles.
-fShortDouble :: Double -> Text
-fShortDouble = sformat (left 8 ' ' %. fixed 6)
-
--- | Formatter for long doubles.
-fLongDouble :: Double -> Text
-fLongDouble = sformat (left 8 ' ' %. fixed 6)
+instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k QCHamiltonian QCHamiltonian a b where
+  labelOptic = lens (other :: QCHamiltonian -> Maybe [Text]) $ \s b -> (s {other = b} :: QCHamiltonian)
 
 ----------------------------------------------------------------------------------------------------
 
--- | Formatter for the multipole labels.
-fMPLabel :: Text -> Text
-fMPLabel = sformat ((fitRight 4 %. right 4 ' ' %. stext) Formatting.% " = ")
+-- | Specifications of various basis sets for quantum chemistry packages.
+data BasisSet = BasisSet
+  { -- | Basis from the turbomole basis set library
+    basis :: Text,
+    -- | Auxiliary coulomb-fitting basis from the library
+    jbas :: Maybe Text,
+    -- | Auxiliary JK-fitting basis from the library
+    jkbas :: Maybe Text,
+    -- | Effective core potential from the library
+    ecp :: Maybe Text,
+    -- | Correlation fitting basis from the library
+    cbas :: Maybe Text,
+    -- | Complementary auxiliary basis for explicitly correlated calculations
+    cabs :: Maybe Text,
+    -- | Other keywords to put verbatim in the @$atoms@ block
+    other :: Maybe [Text]
+  }
+  deriving (Eq, Show, Generic)
 
--- | Formatter for a labeled Multipole component.
-fMPComp :: (Text, Double) -> Text
-fMPComp (mLabel, value) = fMPLabel mLabel <> fShortDouble value
+instance FromJSON BasisSet
 
--- | Formatter for components of the multipole.
-fMP :: [(Text, Double)] -> Utf8Builder
-fMP components =
-  display
-    . Text.unlines
-    . fmap (foldl' (<>) mempty)
-    . chunksOf 5
-    . fmap ((<> "  ") . fMPComp)
-    $ components
+instance ToJSON BasisSet
+
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "basis" k BasisSet BasisSet a b where
+  labelOptic = lens (basis :: BasisSet -> Text) $ \s b -> (s {basis = b} :: BasisSet)
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "jbas" k BasisSet BasisSet a b where
+  labelOptic = lens jbas $ \s b -> s {jbas = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "jkbas" k BasisSet BasisSet a b where
+  labelOptic = lens jkbas $ \s b -> s {jkbas = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "ecp" k BasisSet BasisSet a b where
+  labelOptic = lens ecp $ \s b -> s {ecp = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "cbas" k BasisSet BasisSet a b where
+  labelOptic = lens cbas $ \s b -> s {cbas = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "cabs" k BasisSet BasisSet a b where
+  labelOptic = lens cabs $ \s b -> s {cabs = b}
+
+instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k BasisSet BasisSet a b where
+  labelOptic = lens (other :: BasisSet -> Maybe [Text]) $ \s b -> (s {other = b} :: BasisSet)
+
+----------------------------------------------------------------------------------------------------
+
+-- | SCF settings. Serialise to multiple fields but control SCF cycles as common ground.
+data SCF = SCF
+  { -- | SCF convergence threshold as exponent.
+    conv :: Natural,
+    -- | Maximum number of iterations of the SCF.
+    iter :: Natural,
+    -- | Damping control.
+    damp :: Maybe Damp,
+    -- | Orbital level shift
+    shift :: Maybe Double,
+    -- | Other SCF settings to be used verbatim
+    other :: Maybe [Text]
+  }
+  deriving (Eq, Show, Generic)
+
+instance FromJSON SCF
+
+instance ToJSON SCF
+
+instance Default SCF where
+  def = SCF {conv = 8, iter = 200, damp = def, shift = Nothing, other = Nothing}
+
+instance (k ~ A_Lens, a ~ Natural, b ~ a) => LabelOptic "conv" k SCF SCF a b where
+  labelOptic = lens conv $ \s b -> s {conv = b}
+
+instance (k ~ A_Lens, a ~ Natural, b ~ a) => LabelOptic "iter" k SCF SCF a b where
+  labelOptic = lens (iter :: SCF -> Natural) $ \s b -> (s {iter = b} :: SCF)
+
+instance (k ~ A_Lens, a ~ Maybe Damp, b ~ a) => LabelOptic "damp" k SCF SCF a b where
+  labelOptic = lens damp $ \s b -> s {damp = b}
+
+instance (k ~ A_Lens, a ~ Maybe Double, b ~ a) => LabelOptic "shift" k SCF SCF a b where
+  labelOptic = lens shift $ \s b -> s {shift = b}
+
+instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k SCF SCF a b where
+  labelOptic = lens (other :: SCF -> Maybe [Text]) $ \s b -> (s {other = b} :: SCF)
+
+----------------------------------------------------------------------------------------------------
+
+-- | Settings of the SCF damping
+data Damp = Damp
+  { -- | Amount of old fock matrix to be mixed in.
+    start :: Double,
+    -- | On good convergece how much to reduce the mixing amount in each SCF step. Not used by all
+    -- programs.
+    step :: Double,
+    -- | Minimum amount of the old fock matrix to be used in damping. Will not drop below this.
+    lower :: Double
+  }
+  deriving (Eq, Show, Generic)
+
+instance FromJSON Damp
+
+instance ToJSON Damp
+
+instance Default Damp where
+  def = Damp {start = 0.75, step = 0.05, lower = 0.1}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "start" k Damp Damp a b where
+  labelOptic = lens start $ \s b -> s {start = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "step" k Damp Damp a b where
+  labelOptic = lens step $ \s b -> s {step = b}
+
+instance (k ~ A_Lens, a ~ Double, b ~ a) => LabelOptic "lower" k Damp Damp a b where
+  labelOptic = lens (lower :: Damp -> Double) $ \s b -> s {lower = b}
+
+----------------------------------------------------------------------------------------------------
+
+-- | Type of RI approximation for the reference wavefunction.
+data RI = RIJ | RIJK | OtherRI Text deriving (Eq, Show, Generic)
+
+instance FromJSON RI
+
+instance ToJSON RI
+
+_OtherRI :: Prism' RI Text
+_OtherRI = prism' (\t -> OtherRI t) $ \s -> case s of
+  OtherRI t -> Just t
+  _ -> Nothing
+
+----------------------------------------------------------------------------------------------------
+
+-- | Reference wavefunction specification.
+data RefWfn
+  = -- | Restricted Hartree-Fock
+    RHF
+  | -- | Unrestricted Hartree-Fock. Needs a multiplicity.
+    UHF
+  | -- | Restricted Kohn-Sham DFT
+    RKS DFT
+  | -- | Unrestricted Kohn-Sham DFT. Needs a multiplicity.
+    UKS DFT
+  deriving (Eq, Show, Generic)
+
+instance FromJSON RefWfn
+
+instance ToJSON RefWfn
+
+_RKS :: Prism' RefWfn DFT
+_RKS = prism' (\d -> RKS d) $ \s -> case s of
+  RKS d -> Just d
+  _ -> Nothing
+
+_UKS :: Prism' RefWfn DFT
+_UKS = prism' (\d -> UKS d) $ \s -> case s of
+  UKS d -> Just d
+  _ -> Nothing
+
+----------------------------------------------------------------------------------------------------
+
+-- | Settings for density functional theory.
+data DFT = DFT
+  { -- | Density functional to be used
+    functional :: Text,
+    -- | DFT grid specification
+    grid :: Maybe Text,
+    -- | Dispersion correction
+    disp :: Maybe Text,
+    -- | Other keywords to put verbatim in the DFT input.
+    other :: Maybe [Text]
+  }
+  deriving (Eq, Show, Generic)
+
+instance FromJSON DFT
+
+instance ToJSON DFT
+
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "functional" k DFT DFT a b where
+  labelOptic = lens functional $ \s b -> s {functional = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "grid" k DFT DFT a b where
+  labelOptic = lens grid $ \s b -> s {grid = b}
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "disp" k DFT DFT a b where
+  labelOptic = lens disp $ \s b -> s {disp = b}
+
+instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k DFT DFT a b where
+  labelOptic = lens (other :: DFT -> Maybe [Text]) $ \s b -> (s {other = b} :: DFT)
+
+----------------------------------------------------------------------------------------------------
+
+-- | Correlation on top of the reference wavefunction.
+data Correlation = Correlation
+  { -- | The program module, which to use for correlation calculation. Not used in all programs.
+    corrModule :: Maybe Text,
+    -- | Wavefunciton correlation model to be used
+    method :: Text,
+    -- | Maximum number of iterations in convergence of correlation
+    iter :: Maybe Natural,
+    -- | Other keywords to put verbatim in the input
+    other :: Maybe [Text]
+  }
+  deriving (Eq, Show, Generic)
+
+instance FromJSON Correlation
+
+instance ToJSON Correlation
+
+instance (k ~ A_Lens, a ~ Maybe Text, b ~ a) => LabelOptic "corrModule" k Correlation Correlation a b where
+  labelOptic = lens corrModule $ \s b -> s {corrModule = b}
+
+instance (k ~ A_Lens, a ~ Text, b ~ a) => LabelOptic "method" k Correlation Correlation a b where
+  labelOptic = lens method $ \s b -> s {method = b}
+
+instance (k ~ A_Lens, a ~ Maybe Natural, b ~ a) => LabelOptic "iter" k Correlation Correlation a b where
+  labelOptic = lens (iter :: Correlation -> Maybe Natural) $ \s b -> (s {iter = b} :: Correlation)
+
+instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k Correlation Correlation a b where
+  labelOptic = lens (other :: Correlation -> Maybe [Text]) $ \s b -> (s {other = b} :: Correlation)
+
+----------------------------------------------------------------------------------------------------
+
+-- | Excitations. Either on top of the correlated wavefunction (if used) or ontop of the reference
+-- wavefunction, if no correlation is given.
+data Excitations = Excitations
+  { -- | Number of states to be calculated.
+    states :: Natural,
+    -- | Possibly a target root, for which to calculate properties like gradients or densities
+    target :: Maybe Natural,
+    -- | Other information, that will be put verbatim into the input file.
+    other :: Maybe [Text]
+  }
+  deriving (Eq, Show, Generic)
+
+instance FromJSON Excitations
+
+instance ToJSON Excitations
+
+instance (k ~ A_Lens, a ~ Natural, b ~ a) => LabelOptic "states" k Excitations Excitations a b where
+  labelOptic = lens states $ \s b -> s {states = b}
+
+instance (k ~ A_Lens, a ~ Maybe Natural, b ~ a) => LabelOptic "target" k Excitations Excitations a b where
+  labelOptic = lens target $ \s b -> s {target = b}
+
+instance (k ~ A_Lens, a ~ Maybe [Text], b ~ a) => LabelOptic "other" k Excitations Excitations a b where
+  labelOptic = lens (other :: Excitations -> Maybe [Text]) $ \s b -> (s {other = b} :: Excitations)
 
 {-
 ####################################################################################################

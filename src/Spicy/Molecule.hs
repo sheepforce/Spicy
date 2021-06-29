@@ -58,7 +58,6 @@ module Spicy.Molecule
     EnergyDerivatives (..),
 
     -- ** Wrapper Context
-    NumericalEfficiency (..),
     WrapperTask (..),
     QMContext (..),
     MMContext (..),
@@ -71,8 +70,29 @@ module Spicy.Molecule
 
     -- ** Programs
     Program (..),
+    _XTB,
+    _Psi4,
+    _Turbomole,
+    _ProgramHamiltonian,
     isPsi4,
     isXTB,
+    isTurbomole,
+    GFN (..),
+    renderGFN,
+
+    -- *** Generic information for all QC programs
+    QCHamiltonian (..),
+    BasisSet (..),
+    SCF (..),
+    Damp (..),
+    RI (..),
+    _OtherRI,
+    RefWfn (..),
+    DFT (..),
+    _RKS,
+    _UKS,
+    Correlation (..),
+    Excitations (..),
 
     -- * Parser
     xyz,

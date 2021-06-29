@@ -15,53 +15,33 @@ module Spicy.Wrapper.Internal.Input.Language
   )
 where
 
-{-
-The approach in this file is intended to be modular and expandable. Some notes:
-- In order to add a new input option to an input file, follow these steps:
-  * Add a new constructor to the language functor. All necessary information
-    should be contained in a field of this constructor. (i.e. XTBNewInputOption Value a)
-  * In the serialize<program> function, add instructions for how to write the new
-    input options into the file
-  * In the <program>Input function, implement the logic regarding the new input
-    (when to include it, how to obtain values, etc.)
-- The intermediate data representation can be inspected for correctness or
-  other properties, although this is not currently done
-- We can define different interpreters, for example for logging, or store/serilize
-  the representation
--}
-
-import Control.Monad.Free hiding (iter)
-import Data.Aeson
-import Data.Aeson.Text
 import Data.Default
 import Data.Massiv.Array as Massiv hiding (forM_, iter, mapM_)
-import qualified Data.Massiv.Array as Massiv
 import Optics hiding (element)
 import RIO hiding (Lens', lens, min, view, (^.), (^?))
-import RIO.Text
 import qualified RIO.Text as Text
-import RIO.Text.Lazy (toStrict)
 import RIO.Writer
 import Spicy.Common
-import Spicy.Data
 import Spicy.Molecule
-import Spicy.Molecule.Internal.Types
-import qualified Spicy.Wrapper.Internal.Input.Language.Turbomole as TM
 import Spicy.Wrapper.Internal.Input.Representation
 import System.Path ((<.>), (</>))
 import qualified System.Path as Path
 
+-- | Key-Value type line, that is only printed, if a value is availabel for this key.
+optKW :: Show a => Text -> Maybe a -> Text
+optKW _ Nothing = mempty
+optKW k (Just v) = k <> tshow v
+
+-- FIXME - Why is the MonadInput constraint not working here?
+
 -- | Construct the appropriate text for an input file, based
 -- on the program.
-makeInput :: (MonadInput m) => m Text
-makeInput = do
-  thisSoftware <- getSoftware
-  task <- getTask
-  mol <- getMolecule
-  case thisSoftware of
-    Psi4 _ -> psi4Input <&> execWriter . foldFree serialisePsi4
-    XTB _ -> xtbInput <&> execWriter . foldFree serialiseXTB
-    Turbomole _ -> turbomoleInput <&> execWriter . foldFree (serialiseTurbomole task (mol ^. #atoms))
+makeInput :: (MonadReader (Molecule, CalcInput) m, MonadThrow m) => m Text
+makeInput =
+  getSoftware >>= \soft -> case soft of
+    Psi4 _ -> execWriterT serialisePsi4
+    XTB _ -> execWriterT serialiseXTB
+    Turbomole _ -> execWriterT serialiseTurbomole
 
 {-
 ====================================================================================================
@@ -78,34 +58,28 @@ makeInput = do
 --    The reason is that we may want to use different monads, e.g. a pure State
 --    for testing, or a non-reader IO for an interactive behaviour.
 class MonadThrow m => MonadInput m where
-  getSoftware :: m Program
   getCharge :: m Int
   getMult :: m Int
-  getMethod :: m GFN
-  getBasisSet :: m Text
-  getProgramInfo :: m Program
   getMemory :: m Int
   getMolecule :: m Molecule
   getPrefix :: m String
   getPermaDir :: m JDirPathAbs
   getTask :: m WrapperTask
-  getAdditionalInput :: m (Maybe Text)
+  getSoftware :: m Program
+  getQCHamiltonian :: m QCHamiltonian
 
 -- This instance expects the /current/ molecule layer, that is,
 -- the one for which the input will be prepared.
 instance (MonadThrow m, MonadReader (Molecule, CalcInput) m) => MonadInput m where
-  getSoftware = gget (_2 % #software) "Software"
   getCharge = gget (_2 % #qMMMSpec % _QM % #charge) "Charge"
   getMult = gget (_2 % #qMMMSpec % _QM % #mult) "Mult"
-  getMethod = gget (_2 % #software % _XTB) "Method"
-  getBasisSet = gget (_2 % #software % _Psi4 % #basisSet) "BasisName"
-  getProgramInfo = gget (_2 % #software) "ProgramInfo"
   getMemory = gget (_2 % #memory) "Memory"
   getMolecule = gget _1 "Molecule"
   getPrefix = gget (_2 % #prefixName) "Prefix"
   getPermaDir = gget (_2 % #permaDir) "PermaDir"
   getTask = gget (_2 % #task) "Tasks"
-  getAdditionalInput = gget (_2 % #additionalInput) "AdditionalInput"
+  getSoftware = gget (_2 % #software) "Program"
+  getQCHamiltonian = gget (_2 % #software % _ProgramHamiltonian) "QCHamiltonian"
 
 -- | General getting action.
 gget ::
@@ -121,69 +95,23 @@ gget af str = asks (^? af) >>= maybe2MThrow (WrapperGenericException ("get" <> s
 ====================================================================================================
 -}
 
--- The XTB Input specification
-
-type XTBInput = Free XTBInputF ()
-
--- | A functor enumerating all common input options in an XTB input file. This functor is meant
--- to be used as the base functor for a free monad, which will specify the input structure.
--- The dummy type parameter is needed to enable fixpoint recursion.
--- The arbitrary field allows users to insert arbitrary text into the input file.
-data XTBInputF a
-  = -- | Molecular charge
-    XTBCharge Int a
-  | -- | Number of open shells
-    XTBNOpen Int a
-  | -- | Version of the GFN Hamiltonian
-    XTBMethod GFN a
-  | -- | Multipole representation
-    XTBMultipoleInput Text a
-  | -- | User-specified Text
-    XTBArbitrary Text a
-  deriving (Functor)
-
--- | This function embodies the /logical/ structure of the xtb input file,
--- and produces a /data/ representation of said file.
-xtbInput :: (MonadInput m) => m XTBInput
-xtbInput = do
-  -- Get input information
-  chrg <- getCharge
-  mult <- getMult
-  let nopen = mult - 1
-  mthd <- getMethod
-  (JDirPathAbs perma) <- getPermaDir
+-- | Serialise the XTB input into a control-like input file.
+serialiseXTB :: (MonadInput m, MonadWriter Text m) => m ()
+serialiseXTB = do
+  charge <- getCharge
+  nOpen <- getMult >>= \m -> pure $ m - 1
+  permaDir <- getPermaDir
   prefix <- getPrefix
-  arb <- getAdditionalInput
-
-  -- Build input representation
-  return $ do
-    liftF $ XTBCharge chrg ()
-    liftF $ XTBNOpen nopen ()
-    liftF $ XTBMethod mthd ()
-    let pth = path2Text $ xtbMultPath perma (Path.path prefix)
-    liftF $ XTBMultipoleInput pth ()
-    case arb of
-      Nothing -> return ()
-      Just t -> liftF $ XTBArbitrary t ()
-
--- | This function specifies how to serialize the information contained in the
--- abstract input representation into a text representation.
-serialiseXTB :: MonadWriter Text m => XTBInputF a -> m a
-serialiseXTB (XTBCharge chrg a) = do
-  tell $ "$chrg " <> tshow chrg <> "\n"
-  return a
-serialiseXTB (XTBNOpen nopen a) = do
-  tell $ "$spin " <> tshow nopen <> "\n"
-  return a
-serialiseXTB (XTBMethod gfn a) = do
-  tell $ "$gfn\n method=" <> renderGFN gfn <> "\n"
-  return a
-serialiseXTB (XTBMultipoleInput t a) = do
-  tell $ "$embedding\n input=" <> t <> "\n"
-  return a
-serialiseXTB (XTBArbitrary t a) = do
-  tell $ t <> "\n"
-  return a
+  software <- getSoftware
+  gfnVersion <- maybe2MThrow (localExc "GFN Hamiltonian unspecified. Cannot continue") $ software ^? _XTB
+  tellN $ "$chrg " <> tshow charge
+  tellN $ "$spin " <> tshow nOpen
+  tellN "$gfn"
+  tellN $ "  method=" <> renderGFN gfnVersion
+  tellN "$embedding"
+  tellN $ "  input=" <> path2Text (xtbMultPath (getDirPathAbs permaDir) (Path.path prefix))
+  where
+    localExc = WrapperGenericException "serialiseXTB"
 
 -- | Using this function to build the path to the XTB multipole file
 -- ensures that it is consistent across the program.
@@ -192,314 +120,291 @@ xtbMultPath perma prefix = perma </> prefix <.> ".pc"
 
 ----------------------------------------------------------------------------------------------------
 
--- The Psi4 input specification
+-- | Serialise a Psi4 input in a standard Psithon input file. No excited states yet in Psi4.
+serialisePsi4 :: (MonadInput m, MonadWriter Text m) => m ()
+serialisePsi4 = do
+  psi4SerialiseMemory
+  psi4SerialiseMolecule
+  psi4SerialiseBasis
+  psi4SerialiseRefWfnSettings
+  psi4SerialiseSCF
+  psi4SerialiseCorrelation
+  psi4SerialiseOther
+  psi4SerialiseEmbedding
+  psi4SerialiseCall
 
-type Psi4Input = Free Psi4InputF ()
+-- | Serialise the memory into a psithon file.
+psi4SerialiseMemory :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseMemory = getMemory >>= \mem -> tellN $ "memory " <> tshow mem <> "MiB"
 
--- | A functor enumerating all common input options in a Psi4 input file. This functor is meant
--- to be used as the base functor for a free monad, which will specify the input structure.
--- The dummy type parameter is needed to enable fixpoint recursion.
--- The arbitrary field allows users to insert arbitrary text into the input file.
-data Psi4InputF a
-  = -- | Memory in MB
-    Psi4Memory Int a
-  | -- | Charge, multiplicity , molecule representation
-    Psi4Molecule Int Int Text a
-  | -- | Basis set
-    Psi4Set Text a
-  | -- | Output name, wavefunction name, method, Task
-    Psi4Define Text Text Text WrapperTask a
-  | -- | Output identifier, .fchk file prefix
-    Psi4FCHK Text String a
-  | -- | Wavefunction identifier
-    Psi4Hessian Text a
-  | -- | Multiple representation
-    Psi4Multipoles Text a
-  | -- | User-specified Text
-    Psi4Arbitrary Text a
-  deriving (Functor)
-
--- | This function embodies the /logical/ structure of the psi4 input file,
--- and produces a /data/ representation of said file.
-psi4Input :: (MonadInput m) => m Psi4Input
-psi4Input = do
-  -- Acquire all necessary values
-  mem <- getMemory
-  chrg <- getCharge
-  mult <- getMult
-  mol <- getMolecule
-  molRepr <- simpleCartesianAngstrom mol
-  programInfo <- getProgramInfo
-  calcType <-
-    maybe2MThrow (WrapperGenericException "psi4Input" "Calculation type could not be found") $
-      programInfo ^? _Psi4 % #calculationType
-  basis <- getBasisSet
+-- | XYZ representation of the molecule in Psi4, that ensures C1 symmetry.
+psi4SerialiseMolecule :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseMolecule = do
   prefix <- getPrefix
+  molRep <- getMolecule >>= simpleCartesianAngstrom
+  charge <- getCharge
+  mult <- getMult
+  tellN $ "molecule " <> Text.pack prefix <> " {"
+  tellN $ "  " <> tshow charge <> " " <> tshow mult
+  tellN "  symmetry c1"
+  tellN molRep
+  tellN "}"
+
+-- | Serialise the basis sets for Psi4
+psi4SerialiseBasis :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseBasis = do
+  basisSets <- getQCHamiltonian <&> (^. #basis)
+  tellN $ "set basis " <> (basisSets ^. #basis)
+  tellN . optKW "  set df_basis_cc " $ (basisSets ^. #cbas)
+  tellN . optKW "  set df_basis_mp " $ (basisSets ^. #cbas)
+  tellN . optKW "  set df_basis_mp2 " $ (basisSets ^. #cbas)
+  tellN . optKW "  set df_basis_sapt " $ (basisSets ^. #cbas)
+  tellN . optKW "  set df_basis_scf " $ (basisSets ^. #jkbas)
+  forM_ (basisSets ^. #other) (mapM_ tellN)
+
+-- | Serialises settings for the reference wavefunction. Does not call it and sets only the
+-- reference type. The rest goes into the call of the function.
+psi4SerialiseRefWfnSettings :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseRefWfnSettings = do
+  ref <- getQCHamiltonian <&> (^. #ref)
+  case ref of
+    RHF -> tellN "set reference rhf"
+    UHF -> tellN "set reference uhf"
+    RKS DFT {other} -> tellN "set reference rks" >> forM_ other (mapM_ tellN)
+    UKS DFT {other} -> tellN "set reference rks" >> forM_ other (mapM_ tellN)
+
+-- | Serialise the Psi4 SCF settings.
+psi4SerialiseSCF :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseSCF =
+  getQCHamiltonian <&> (^. #scf) >>= \scf -> case scf of
+    Nothing -> return ()
+    Just SCF {..} -> do
+      tellN $ "set d_convergence 1.0e-" <> tshow conv
+      tellN $ "set maxiter " <> tshow iter
+      case damp of
+        Nothing -> return ()
+        Just Damp {start} -> tellN $ "set damping_percentage " <> tshow (start * 100)
+      forM_ other (mapM_ tellN)
+
+-- | Serialise correlation of the wavefunction. Does not call the proper hamiltonian, but just puts
+-- settings in set blocks.
+psi4SerialiseCorrelation :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseCorrelation =
+  getQCHamiltonian <&> (^. #corr) >>= \corr -> case corr of
+    Nothing -> return ()
+    Just Correlation {..} -> do
+      tellN $ "set mo_maxiter " <> tshow iter
+      tellN $ "set maxiter " <> tshow iter
+      forM_ other (mapM_ tellN)
+
+-- | Serialises all other fields verbatim into the Psi4 input, before calling the hamiltonian and
+-- actual functions.
+psi4SerialiseOther :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseOther = getQCHamiltonian >>= \QCHamiltonian {other} -> forM_ other (mapM_ tellN)
+
+-- | Serialises the point charges into a Psi4 representaiton.
+psi4SerialiseEmbedding :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseEmbedding = getMolecule >>= psi4MultipoleRep >>= tellN
+
+-- | Serialise the actual call and file handling of Psi4. If the reference wavefunction was DFT,
+-- and a correlation is specified, the correlation part will take precendence over DFT. It is tried
+-- to make sure that a relaxed density is available for correlation methods. If this is not
+-- availabel in Psi4 (and it will crash), the method is also simply not suitable for ONIOM.
+psi4SerialiseCall :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseCall = do
+  prefix <- getPrefix
+  hamiltonian <- getQCHamiltonian
   task <- getTask
-  multipoleRep <- psi4MultipoleRep mol
-  arb <- getAdditionalInput
+  let corr = hamiltonian ^. #corr
+      ref = hamiltonian ^. #ref
 
-  -- Form the monadic input construct
-  return $ do
-    liftF $ Psi4Memory mem ()
-    liftF $ Psi4Molecule chrg mult molRepr ()
-    liftF $ Psi4Set basis ()
-    case arb of
-      Nothing -> return ()
-      Just t -> liftF $ Psi4Arbitrary t ()
-    liftF $ Psi4Multipoles multipoleRep ()
-    (o, wfn) <- defaultDefine task calcType
-    liftF $ Psi4FCHK wfn prefix ()
-    when (task == WTHessian) . liftF $ Psi4Hessian o ()
+  -- Call the QC method
+  case (ref, corr) of
+    (RKS DFT {..}, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
+    (UKS DFT {..}, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
+    (_, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"scf\", return_wfn = True)"
+    (RKS DFT {functional}, Just Correlation {..}) -> do
+      tellN $ "oRef, wfnRef = " <> "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
+      tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow method <> "\", ref_wfn = wfnRef, return_wfn = True)"
+    (UKS DFT {functional}, Just Correlation {..}) -> do
+      tellN $ "oRef, wfnRef = " <> "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
+      tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow method <> "\", ref_wfn = wfnRef, return_wfn = True)"
+    (_, Just Correlation {..}) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow method <> "\", return_wfn = True)"
+
+  -- Write the wavefunction with relaxed 1PDM to FCHK and a hessian to a file, if requested.
+  tellN $ "fchk(wfn, \"" <> Text.pack prefix <> ".fchk\")"
+  when (task == WTHessian) . tellN $ "np.array(o)"
   where
-    defaultDefine tsk mthd =
-      let (o, wfn) = ("o", "wfn")
-       in liftF $ Psi4Define o wfn mthd tsk (o, wfn)
-
--- | This function specifies how to serialize the information contained in the
--- abstract input representation into a text representation.
-serialisePsi4 :: MonadWriter Text m => Psi4InputF a -> m a
-serialisePsi4 (Psi4Memory m a) = do
-  tell $ "memory " <> tShow m <> "MB\n"
-  return a
-serialisePsi4 (Psi4Molecule c m mol a) = do
-  tell "molecule {\n"
-  tell $ "  " <> tShow c <> " " <> tShow m <> "\n"
-  tell $ mol <> "\n}\n"
-  return a
-serialisePsi4 (Psi4Set basis a) = do
-  tell "set {\n"
-  tell $ "  basis " <> basis
-  tell "\n}\n"
-  return a
-serialisePsi4 (Psi4Define o wfn mthd task a) = do
-  let tskStr = case task of
-        WTEnergy -> "energy"
-        WTGradient -> "gradient"
-        WTHessian -> "hessian"
-  tell $ o <> ", " <> wfn <> " = " <> tskStr <> "(\"" <> mthd <> "\", return_wfn = True)\n"
-  return a
-serialisePsi4 (Psi4FCHK wfn prefix a) = do
-  tell $ "fchk( " <> wfn <> ", \"" <> pack prefix <> ".fchk\" )\n"
-  return a
-serialisePsi4 (Psi4Hessian o a) = do
-  tell $ "np.array(" <> o <> ")\n"
-  return a
-serialisePsi4 (Psi4Multipoles multipoles a) = do
-  tell $ multipoles <> "\n"
-  return a
-serialisePsi4 (Psi4Arbitrary t a) = do
-  tell $ t <> "\n"
-  return a
+    -- Ensures that the density matrix is always relaxed.
+    taskString t = case t of
+      WTEnergy -> "gradient"
+      WTGradient -> "gradient"
+      WTHessian -> "hessian"
 
 ----------------------------------------------------------------------------------------------------
 
-turbomoleInput :: MonadInput m => m TM.TurbomoleInput
-turbomoleInput = do
-  -- Acquire information about turbomole run.
-  mem <- getMemory
-  charge <- getCharge
-  programInfo <- getProgramInfo
-  tmInput <-
-    maybe2MThrow (WrapperGenericException "turbomoleInput" "Turbomole settings could not be found!") $
-      programInfo ^? _Turbomole
-  other <- getAdditionalInput
+-- TODO - Serialise embedding charges
 
-  -- Construct the 'TM.Control' structure.
-  let control =
-        TM.Control
-          { atoms = tmInput ^. #basis,
-            charge,
-            scf = fromMaybe def $ tmInput ^. #scf,
-            refWfn = tmInput ^. #ref,
-            ri = tmInput ^. #ri,
-            excorr = tmInput ^. #corr,
-            memory = fromIntegral mem,
-            other
-          }
-
-  return $ do
-    liftF $ TM.Input control ()
-
--- | Key-Value type line, that is only printed, if a value is availabel for this key.
-optKW :: Show a => Text -> Maybe a -> Text
-optKW _ Nothing = mempty
-optKW k (Just v) = k <> tshow v
-
--- | 'tell' with a appended line break.
-tellN :: (IsString w, MonadWriter w m) => w -> m ()
-tellN c = tell $ c <> "\n"
-
--- | Use a JSON instance to serialise to a turbomole value
-json2TM :: ToJSON a => a -> Text
-json2TM a = Text.filter (/= '"') . toStrict . encodeToLazyText . toJSON $ a
-
--- | Serialise the turbomole record to a control file.
-serialiseTurbomole :: (MonadWriter Text m, Traversable t) => WrapperTask -> t Atom -> TM.TurbomoleInputF a -> m a
-serialiseTurbomole task ats (TM.Input TM.Control {..} a) = do
-  -- Serialise always required fields, that are not part of the input.
+-- | Serialise the turbomole information into a control file.
+serialiseTurbomole :: (MonadInput m, MonadWriter Text m) => m ()
+serialiseTurbomole = do
+  -- Always required fields
   tellN "$symmetry c1"
 
-  -- Serialise the record into a control file
-  serialiseTMAtoms atoms
-  serialiseTMCoord ats
-  serialiseTMSCF scf
-  serialiseTMRefWfn charge ats refWfn
-  serialiseRI ri
-  serialiseExCorr task refWfn excorr
-  tellN $ "$maxcor " <> tshow memory <> " MiB per_core"
-  forM_ other tellN
+  tmSerialiseBasis
+  tmSerialiseCoords
+  tmSerialiseSCF
+  tmSerialiseRefWfn
+  tmSerialiseCorr
+  tmSerialiseExcitations
+  tmSerialiseMemory
+
+  -- Other fields to print verbatim
+  getQCHamiltonian >>= \hamil -> forM_ (hamil ^. #other) (mapM_ tellN)
+
+  -- Multipoles at the end. They are potentially very long ...
+  tmSerialiseMultipoles
 
   -- End the control file
   tellN "$end"
 
-  return a
-
--- | Serialise the @$atoms@ block of a turbomole input.
-serialiseTMAtoms :: MonadWriter Text m => TM.Atoms -> m ()
-serialiseTMAtoms TM.Atoms {..} = do
+-- | Serialise basis set information for Turbomole. This constitutes the @$atoms@ block of a control
+-- file.
+tmSerialiseBasis :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseBasis = do
+  basisSets <- getQCHamiltonian <&> (^. #basis)
   tellN "$atoms"
-  tellN $ "  basis = " <> basis
-  tellN . optKW "  jbas  = " $ jbas
-  tellN . optKW "  jkbas = " $ jkbas
-  tellN . optKW "  ecp   = " $ ecp
-  tellN . optKW "  cbas  = " $ cbas
-  tellN . optKW "  cabs  = " $ cabs
-  forM_ other (mapM_ tellN)
+  tellN $ "  basis = " <> (basisSets ^. #basis)
+  tellN . optKW "  jbas  = " $ basisSets ^. #jbas
+  tellN . optKW "  jkbas = " $ basisSets ^. #jkbas
+  tellN . optKW "  ecp   = " $ basisSets ^. #ecp
+  tellN . optKW "  cbas  = " $ basisSets ^. #cbas
+  tellN . optKW "  cabs  = " $ basisSets ^. #cabs
+  forM_ (basisSets ^. #other) (mapM_ tellN)
 
--- | Serialise the various scf settings into various scf relatex blocks.
-serialiseTMSCF :: MonadWriter Text m => TM.SCF -> m ()
-serialiseTMSCF TM.SCF {..} = do
-  tellN $ "$scfiterlimit " <> tshow iter
-  tellN $ "$scfconv" <> tshow conv
-  case damp of
+-- | Serialise various SCF settings. Forms multiple blocks.
+tmSerialiseSCF :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseSCF = do
+  scfSettings <- fromMaybe def <$> (getQCHamiltonian <&> (^. #scf))
+  tellN $ "$scfiterlimit" <> tshow (scfSettings ^. #iter)
+  tellN $ "$scfconv" <> tshow (scfSettings ^. #conv)
+  case scfSettings ^. #damp of
     Nothing -> return ()
-    Just TM.Damp {..} -> tellN $ "$scfdamp start=" <> tshow start <> " step=" <> tshow step <> " min=" <> tshow min
-  tellN . optKW "$scforbitalshift automatic " $ shift
+    Just Damp {..} -> tellN $ "$scfdamp start=" <> tshow start <> " step=" <> tshow step <> " min=" <> tshow lower
+  tellN . optKW "$scforbitalshift automatic " $ (scfSettings ^. #shift)
 
--- | Serialise the @$coord@ block of a turbomole input.
-serialiseTMCoord :: (MonadWriter Text m, Traversable t) => t Atom -> m ()
-serialiseTMCoord atoms = do
-  tellN "$coord"
-  forM_ atoms $ \Atom {..} -> do
-    let coords = compute @U . Massiv.map angstrom2Bohr . getVectorS $ coordinates
-    tell "  "
-    Massiv.forM_ coords $ tell . tshow
-    tell "  "
-    tellN . Text.toLower . tshow $ element
+-- | Write the coordinates inline to turbomole.
+tmSerialiseCoords :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseCoords = getMolecule >>= coord >>= tell
 
--- | Serialise the input for the reference wavefunction.
-serialiseTMRefWfn :: (MonadWriter Text m, Traversable t) => Int -> t Atom -> TM.RefWfn -> m ()
-serialiseTMRefWfn charge atoms ref = case ref of
-  TM.RHF -> commonClosed
-  TM.UHF m -> tellN "$uhf" >> commonOpen m
-  TM.RKS dft -> commonClosed >> commonDFT dft
-  TM.UKS m dft -> tellN "$uhf" >> commonOpen m >> commonDFT dft
+-- | Serialise the multipoles to point charges in turbomole. Makes sure not to include selfenergy
+-- in the energy and its derivatives and disables checks, that could mess up the multipoles.
+tmSerialiseMultipoles :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseMultipoles = do
+  mPoleRep <- getMolecule >>= turbomoleMultipoleRep
+  tellN "$point_charges thr=0 nocheck"
+  tell mPoleRep
+
+-- | Serialise the reference wavefunction to the control file.
+tmSerialiseRefWfn :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseRefWfn = do
+  atoms <- getMolecule <&> (^. #atoms)
+  charge <- getCharge
+  mult <- getMult
+  getQCHamiltonian <&> (^. #ref) >>= \ref -> case ref of
+    RHF -> commonClosed $ nElectrons atoms charge
+    UHF -> tellN "$uhf" >> commonOpen mult (nElectrons atoms charge)
+    RKS dft -> commonClosed (nElectrons atoms charge) >> commonDFT dft
+    UKS dft -> commonOpen mult (nElectrons atoms charge) >> commonDFT dft
   where
-    nElectrons = RIO.foldl' (\acc a -> acc + fromEnum (a ^. #element)) (- charge) atoms
+    nElectrons atoms charge = RIO.foldl' (\acc a -> acc + fromEnum (a ^. #element)) (- charge) atoms
     nExcEl m = fromIntegral $ m - 1
-    nClosed m = (nElectrons - nExcEl m) `div` 2
-    commonClosed = do
+    nClosed :: Int -> Int -> Int
+    nClosed m n = (n - nExcEl m) `div` 2
+    commonClosed n = do
       tellN "$closed shells"
-      tellN $ "  a  1-" <> tshow (nClosed 1) <> " ( 2 )"
-    commonOpen m = do
+      tellN $ "  a  1-" <> tshow (nClosed 1 n) <> " ( 2 )"
+    commonOpen m n = do
       tellN "$alpha shells"
-      tellN $ "  a   1-" <> tshow (nClosed m + nExcEl m) <> " ( 1 )"
+      tellN $ "  a   1-" <> tshow (nClosed m n + nExcEl m) <> " ( 1 )"
       tellN "$beta shells"
-      tellN $ "  a   1-" <> tshow (nClosed m) <> " ( 1 )"
-    commonDFT TM.DFT {..} = do
+      tellN $ "  a   1-" <> tshow (nClosed m n) <> " ( 1 )"
+    --commonDFT :: (MonadInput m, MonadWriter Text m) => DFT -> m ()
+    commonDFT DFT {..} = do
       tellN "$dft"
-      tellN $ "  functional" <> json2TM functional
-      tellN $ "  gridsize " <> json2TM functional
+      tellN $ "  functional" <> functional
+      tellN $ "  gridsize " <> fromMaybe "m4" grid
       case disp of
         Nothing -> return ()
-        Just TM.D3 -> tellN "$disp3"
-        Just TM.D3BJ -> tellN "$disp bj"
-        Just TM.D4 -> tellN "$disp4"
+        Just "d3" -> tellN "$disp3"
+        Just "d3bj" -> tellN "$disp bj"
+        Just "d4" -> tellN "$disp4"
+        Just o -> tellN o
 
--- | Serialise the optional RI settings
-serialiseRI :: MonadWriter Text m => Maybe TM.RI -> m ()
-serialiseRI ri = case ri of
-  Nothing -> return ()
-  Just TM.RIJ -> tellN "$rij"
-  Just TM.RIJK -> tellN "$rij" >> tellN "$rik"
+-- | Serialise RI settings.
+tmSerialiseRI :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseRI =
+  getQCHamiltonian <&> (^. #ri) >>= \ri -> case ri of
+    Nothing -> return ()
+    Just RIJ -> tellN "$rij"
+    Just RIJK -> tellN "$rij" >> tellN "$rik"
+    Just (OtherRI a) -> tellN a
 
--- | Serialise the wavefunction correlation and excited state settings.
-serialiseExCorr :: MonadWriter Text m => WrapperTask -> TM.RefWfn -> Maybe TM.CorrelationExc -> m ()
-serialiseExCorr task refwfn excorr = case excorr of
-  Nothing -> return ()
-  Just TM.PNOCCSD {..} -> do
-    tellN "$denconv 1.0e-7"
-    tellN "$pnoccsd"
-    tellN $ "  " <> json2TM model
-    tellN . optKW "  maxiter=" $ iter
-    forM_ other (mapM_ tellN)
-    case exci of
-      Nothing -> return ()
-      Just nStates -> tellN "  prepno davidso" >> commonExcBlock nStates
-  Just TM.RICC {..} -> do
-    tellN "$denconv 1.0e-7"
-    tellN "$ricc2"
-    tellN $ "  " <> (if task == WTGradient then "geoopt model=" else mempty) <> json2TM model
-    tellN . optKW "  maxiter=" $ iter
-    forM_ other (mapM_ tellN)
-    forM_ exci commonExcBlock
-  Just TM.TDSCF {..} -> do
-    tellN $
-      "$scfinstab " <> case (approx, refwfn) of
-        (TM.TDA, TM.RHF) -> "rpas"
-        (TM.TDA, TM.RKS _) -> "rpas"
-        (TM.TDA, _) -> "urpa"
-        (TM.RPA, TM.RHF) -> "ciss"
-        (TM.RPA, TM.RKS _) -> "ciss"
-        (TM.RPA, _) -> "ucis"
-    tellN "$soes"
-    tellN $ "  a " <> tshow (fromMaybe 1 exci)
+-- | Serialise correlation of the wavefunction.
+tmSerialiseCorr :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseCorr = do
+  task <- getTask
+  hamiltonian <- getQCHamiltonian
+  let corr = hamiltonian ^. #corr
+      exc = hamiltonian ^. #exc
+  case corr of
+    Nothing -> return ()
+    Just Correlation {..} -> case corrModule of
+      Nothing -> throwM . localExc $ "The correlation module must be specified"
+      Just "pnoccsd" -> do
+        tellN "$denconv 1.0e-7"
+        tellN "$pnoccsd"
+        tellN $ "  " <> method
+        tellN . optKW "  maxiter=" $ iter
+        case exc of
+          Nothing -> return ()
+          Just _ -> tellN "  prepno davidson"
+        forM_ other (mapM_ tellN)
+      Just "ricc" -> do
+        tellN "$denconv 1.0e-7"
+        tellN "$ricc2"
+        when (task == WTGradient) . tellN $ "  geoopt model=" <> method
+        tellN . optKW "  maxiter=" $ iter
+        forM_ other (mapM_ tellN)
+      Just u -> throwM . localExc $ "Unkown correlation module " <> show u
   where
-    commonExcBlock ns = do
-      tellN "$excitations"
-      tell "  irrep=a "
-      case refwfn of
-        TM.RKS _ -> tell "multiplicity=1 "
-        TM.RHF -> tell "multiplicity=1 "
-        _ -> return ()
-      tellN $ "nexc=" <> tshow ns
-      tellN "  spectrum states=all operators=diplen"
+    localExc = WrapperGenericException "serialiseTurbomole"
 
-----------------------------------------------------------------------------------------------------
+-- | Serialise excitations block.
+tmSerialiseExcitations :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseExcitations = do
+  hamiltonian <- getQCHamiltonian
+  let ref = hamiltonian ^. #ref
+      corr = hamiltonian ^. #corr
+      exc = hamiltonian ^. #exc
+  case exc of
+    Nothing -> return ()
+    Just Excitations {..} -> case corr of
+      -- TD-DFT or TD-HF
+      Nothing -> case ref of
+        RHF -> tellN "$scfinstab rpas"
+        RKS _ -> tellN "$scfinstab rpas"
+        UHF -> tellN "$scfinstab urpa"
+        UKS _ -> tellN "$scfinstab urpa"
+      Just _ -> do
+        tellN "$excitations"
+        tell "  irrep=a "
+        case ref of
+          RHF -> tell "multiplicity=1 "
+          RKS _ -> tell "multiplicity=1 "
+          _ -> return ()
+        tellN $ "nexc=" <> tshow states
 
--- Input verification
-
--- | Check whether charge is reasonable, and generate a warning if not.
-checkCharge :: MonadWriter [Text] m => Int -> m ()
-checkCharge c = when (abs c > 10) $ tell ["Very large charge in this layer - are you sure this is what you want?"]
-
--- | Check whether multiplicity is reasonable, and generate appropriate warnings.
-checkMult :: MonadWriter [Text] m => Int -> m ()
-checkMult m = do
-  when (abs m > 10) $ tell ["Very large multiplicity in this layer - are you sure this is what you want?"]
-  when (m < 0) $ tell ["Negative number of open shells - this will likely cause problems."]
-
--- | Check whether memory is reasonable, and generate appropriate warnings.
-checkMemory :: MonadWriter [Text] m => Int -> m ()
-checkMemory mem = do
-  when (mem < 100 && signum mem >= 0) $ tell ["Very little memory (<100 MB) specified - are you sure this is what you want?"]
-  when (mem < 0) $ tell ["Negative memory specified - this will likely cause problems."]
-
--- | Go through an XTB input and generate warnings for the user.
-checkXTB :: (MonadWriter [Text] m) => XTBInputF a -> m a
-checkXTB (XTBCharge c a) = checkCharge c >> return a
-checkXTB (XTBNOpen nopen a) = checkMult nopen >> return a
-checkXTB (XTBMethod _ a) = return a
-checkXTB (XTBMultipoleInput _ a) = return a
-checkXTB (XTBArbitrary _ a) = return a
-
-checkPsi4 :: MonadWriter [Text] m => Psi4InputF a -> m a
-checkPsi4 (Psi4Memory m a) = checkMemory m >> return a
-checkPsi4 (Psi4Molecule c m _ a) = checkCharge c >> checkMult m >> return a
-checkPsi4 (Psi4Set _ a) = return a
-checkPsi4 (Psi4Define _ _ _ _ a) = return a
-checkPsi4 (Psi4FCHK _ _ a) = return a
-checkPsi4 (Psi4Hessian _ a) = return a
-checkPsi4 (Psi4Multipoles _ a) = return a
-checkPsi4 (Psi4Arbitrary _ a) = return a
+-- | Serialise the memory requirements for Turbomole
+tmSerialiseMemory :: (MonadInput m, MonadWriter Text m) => m ()
+tmSerialiseMemory = getMemory >>= \mem -> tellN $ "$maxcor " <> tshow mem <> " MiB per_core"
