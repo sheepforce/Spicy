@@ -79,11 +79,13 @@ runCalculation calcID = do
   case software of
     Psi4 _ -> executePsi4 calcID
     XTB _ -> executeXTB calcID
+    Turbomole _ -> executeTurbomole calcID
 
   -- Parse the output, that has been produced by the wrapper.
   calcOutput <- case software of
     Psi4 _ -> analysePsi4 calcID
     XTB _ -> analyseXTB calcID
+    Turbomole _ -> analyseTurbomole calcID
 
   -- Insert the output, that has been obtained for this calculation into the corresponding CalcID.
   let molUpdated = mol & calcLens % #output ?~ calcOutput
@@ -101,8 +103,7 @@ runCalculation calcID = do
 -- Functions to call computational chemistry software with the appropiate arguments. These functions
 -- are not responsible for processing of the output.
 
--- |
--- Run Psi4 on a given calculation. A Psi4 run will behave as follows:
+-- | Run Psi4 on a given calculation. A Psi4 run will behave as follows:
 --
 -- - All permanent files will be in the 'calcInput_PermaDir'.
 -- - The 'calcInput_ScratchDir' will be used for scratch files and keep temporary files after
@@ -141,7 +142,8 @@ executePsi4 calcID = do
 
   -- Check if this function is appropiate to execute the calculation at all.
   unless (software & isPsi4) $ do
-    logErrorS "psi4"
+    logErrorS
+      "psi4"
       "A calculation should be done with the Psi4 driver function,\
       \ but the calculation is not a Psi4 calculation."
     throwM $
@@ -215,7 +217,8 @@ executeXTB calcID = do
 
   -- Check if this function is appropiate to execute the calculation at all.
   unless (thisSoftware & isXTB) $ do
-    logErrorS "xtb"
+    logErrorS
+      "xtb"
       "A calculation should be done with the XTB driver function,\
       \ but the calculation is not a XTB calculation."
     throwM $
@@ -267,6 +270,117 @@ executeXTB calcID = do
     logErrorS "xtb" $ "Error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbErr)
     logErrorS "xtb" $ "Stdout messsages:\n" <> (displayBytesUtf8 . toStrictBytes $ xtbOut)
     throwM $ WrapperGenericException "executeXTB" "XTB execution terminated abnormally."
+
+----------------------------------------------------------------------------------------------------
+
+-- | Executes a given Turbomole calculation. Based on the associated QC Hamiltonian it will make
+-- best attempts to figure out which of the various Turbomole executables need to be called.
+executeTurbomole ::
+  (HasWrapperConfigs env, HasMolecule env, HasLogFunc env, HasProcessContext env) =>
+  CalcID ->
+  RIO env ()
+executeTurbomole calcID = do
+  -- Obtain the turbomole installation bin directory, in which the executables are expected.
+  turbomoleBinDir <-
+    view (wrapperConfigsL % #turbomole) >>= \wrapper -> case wrapper of
+      Just w -> return . getDirPath $ w
+      Nothing -> throwM (localExc "Turbomole wrapper is not configured. Cannot execute.")
+  turbomoleBindDirAbs <- liftIO . Path.genericMakeAbsoluteFromCwd $ turbomoleBinDir
+
+  -- Look for all executables, that we need. If any cannot be found we must assume that the
+  -- turbomole installation is broken and crash.
+  let exes = ["dscf", "escf", "ridft", "ricc2", "rigrad", "egrad", "grad", "pnoccsd", "actual"]
+  exesPaths <- fmap Map.fromList . forM exes $ \e -> do
+    let exeAbsFile = turbomoleBindDirAbs </> Path.relFile e
+    hasExe <- liftIO . Dir.doesFileExist $ turbomoleBinDir </> Path.relFile e
+    unless hasExe $ do
+      logErrorS logSourceS $ "Could not find Turbomole executable: " <> displayShow e
+      throwM . localExc $ "Could not find executable " <> show exes
+    return (e, exeAbsFile)
+
+  -- Create the calculation context lens.
+  let calcLens = calcIDLensGen calcID
+
+  -- Gather information for a turbomole run.
+  mol <- view moleculeL >>= readTVarIO
+  calcContext <-
+    maybe2MThrow (MolLogicException "runCalculation" "Requested to perform a calculation, which does not exist.") $
+      mol ^? calcLens
+
+  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+      scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
+      software = calcContext ^. #input % #software
+      task = calcContext ^. #input % #task
+
+  -- Check suitability and obtain the hamiltonian. The Hamiltonian is required
+  hamiltonian <- case software of
+    Turbomole h -> return h
+    _ -> do
+      logErrorS
+        logSourceS
+        "A calculation should be done with the Turbomole driver function,\
+        \ but the calculation is not a Turbomole calculation."
+      throwM . localExc $
+        "Requested to execute Turbomole on a calculation with CalcID "
+          <> show calcID
+          <> " but this is not a Turbomole calculation."
+
+  -- Write the Turbomole input file "control". Make a backup, which does not get modified.
+  inputFilePath <- writeInputs calcID
+  liftIO $ Dir.copyFile inputFilePath (Path.takeDirectory inputFilePath </> Path.relFile "control.bak")
+
+  -- Step 1: Calculate reference wavefunctions.
+  --   Figure out which turbomole executables to call. dscf and grad for HF and DFT without RI,
+  --   ridft and rigrad otherwise
+  case hamiltonian ^. #ri of
+    Nothing -> do
+      commonCaller permanentDir exesPaths "dscf"
+      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "grad"
+    Just RIJ -> do
+      commonCaller permanentDir exesPaths "ridft"
+      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rigrad"
+    Just RIJK -> do
+      commonCaller permanentDir exesPaths "ridft"
+      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rigrad"
+    Just (OtherRI _) -> do
+      logErrorS logSourceS "No other RI methods availabel in Turbomole."
+      throwM . localExc $ "Unknown RI settings for Turbomole."
+
+  -- Step 2: Calculate correlated wavefunctions if requested.
+  case hamiltonian ^. #corr of
+    Nothing -> return ()
+    Just Correlation {corrModule} -> case corrModule of
+      Nothing -> do
+        logErrorS logSourceS "No correlation module specified for Turbomole, but is required."
+        throwM . localExc $ "Correlation module for Turbomole not specified."
+      Just "pnoccsd" -> commonCaller permanentDir exesPaths "pnoccsd"
+      Just "ricc" -> commonCaller permanentDir exesPaths "ricc"
+      Just e -> do
+        logErrorS logSourceS $ "Unknown correlation module " <> display e <> " for Turbomole."
+        throwM . localExc $ "Unknown correlation module " <> show e <> " for Turbomole."
+
+  -- Step 3: If excitations were requested and not already calculated by the correlation module,
+  -- calculate them now.
+  case (hamiltonian ^. #exc, hamiltonian ^. #corr) of
+    (Just _, Nothing) -> commonCaller permanentDir exesPaths "escf"
+    _ -> return ()
+  where
+    localExc = WrapperGenericException "executeTurbomole"
+    logSourceS = "Turbomole"
+    commonCaller permanentDir exeMap exeName = do
+      logDebugS logSourceS $ "Calculating wavefunction with " <> displayShow exeName <> " ..."
+      (exitCode, out, err) <-
+        withWorkingDir (Path.toString permanentDir) $
+          proc
+            (Path.toString $ exeMap Map.! exeName)
+            mempty
+            readProcess
+      unless (exitCode == ExitSuccess) $ do
+        logErrorS logSourceS $ "Execution of " <> displayShow exeName <> " ended abnormally. Got exit code: " <> displayShow exitCode
+        logErrorS logSourceS $ "Error messages:\n" <> (displayBytesUtf8 . toStrictBytes $ err)
+        logErrorS logSourceS $ "Stdout messages:\n" <> (displayBytesUtf8 . toStrictBytes $ out)
+        throwM . localExc $ "Turbomole dscf execution ended abnormally."
+      writeFileBinary (Path.toString $ permanentDir </> Path.relFile (exeName <> ".out")) . toStrictBytes $ out
 
 ----------------------------------------------------------------------------------------------------
 
@@ -353,7 +467,8 @@ gdmaAnalysis fchkPath atoms expOrder = do
 
   -- Message if something is wrong with the number of poles expected and obtained.
   unless (List.length modelMultipoleList == List.length modelAtomKeys) $ do
-    logErrorS "gdma"
+    logErrorS
+      "gdma"
       "Number of model atoms and number of multipole expansions centres obtained from GDMA\
       \ do not match."
     throwM . localExcp $ "Problematic behaviour in GDMA multipole analysis."
@@ -429,6 +544,8 @@ analysePsi4 calcID = do
   where
     localExcp = WrapperGenericException "analysePsi4"
 
+----------------------------------------------------------------------------------------------------
+
 -- | Analyse the output of an xtb calculation. Unlike Psi4, xtb output file names
 -- are independent of the input (unless explicitly specified). This function
 -- is not reliant on gdma either.
@@ -495,3 +612,14 @@ analyseXTB calcID = do
   return calcOutput
   where
     localExcp = WrapperGenericException "analyseXTB"
+
+----------------------------------------------------------------------------------------------------
+
+-- | Analyse the output of an xtb calculation. Unlike Psi4, xtb output file names
+-- are independent of the input (unless explicitly specified). This function
+-- is not reliant on gdma either.
+analyseTurbomole ::
+  (HasLogFunc env, HasMolecule env) =>
+  CalcID ->
+  RIO env CalcOutput
+analyseTurbomole calcID = undefined
