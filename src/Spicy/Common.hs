@@ -219,6 +219,7 @@ import qualified RIO.Seq as Seq
 import qualified RIO.Set as Set
 import qualified RIO.Text as Text
 import qualified RIO.Text.Lazy as TL
+import RIO.Writer
 import System.IO
   ( hSetEncoding,
     utf8,
@@ -226,7 +227,6 @@ import System.IO
 import qualified System.Path as Path
 import System.Path.IO as Path
 import System.Path.PartClass
-import RIO.Writer
 
 {-
 ####################################################################################################
@@ -341,7 +341,6 @@ class Check a where
 
 ----------------------------------------------------------------------------------------------------
 
-
 -- | A class of default values, which need to be initialised by IO.
 class DefaultIO a where
   defIO :: MonadIO m => m a
@@ -399,17 +398,33 @@ skipLine = () <$ manyTill (satisfy $ not . isEndOfLine) endOfLine
 -- workaround for this issue.
 fortranDouble :: Parser Double
 fortranDouble = do
-  prefix <- double
-  _ <- char 'd' <|> char 'D'
-  mexp <- optional $ signed decimal
-  case mexp of
+  -- Potentially signed. But maybe also not ...
+  sign <- optional $ char '-' <|> char '+'
+
+  -- Potentially there is a number before the decimal point but you never know
+  -- (looking at you, Turbomole! >:| )
+  prefix <-
+    ( do
+        preDot <- optional digit
+        dot <- char '.'
+        postDot <- many1 digit
+        let base' = Text.pack $ fromMaybe '+' sign : fromMaybe '0' preDot : dot : postDot
+        return base'
+      )
+      >>= nextParse double
+
+  -- Looking for an exponent. Might be there or not ...
+  expoChar <- optional $ char 'd' <|> char 'D' <|> char 'e' <|> char 'E'
+
+  case expoChar of
     Nothing -> return prefix
-    Just (n :: Int) -> return $ prefix * 10 ^ n
+    Just _ -> do
+      expo <- signed (decimal @Int)
+      return $ prefix * 10 ^^ expo
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Parse a YAML file in a RIO monad with logging and print the warnings.
+-- | Parse a YAML file in a RIO monad with logging and print the warnings.
 parseYamlFile :: (FromJSON a, HasLogFunc env) => Path.AbsFile -> RIO env a
 parseYamlFile yamlPath = do
   let logSource = "Parse YAML file"
@@ -1720,7 +1735,7 @@ innerChunksOfN n matrix = Massiv.compute <$> go n (Massiv.toManifest matrix) Emp
     go :: Index ix => Int -> Massiv.Array M ix a -> Seq (Massiv.Array M ix a) -> Seq (Massiv.Array M ix a)
     go n' restMatrix groupAcc = case Massiv.splitAtM (Dim 1) n' restMatrix of
       Nothing ->
-        let (_ , Sz nColsRemaining) = Massiv.unsnocSz . Massiv.size $  restMatrix
+        let (_, Sz nColsRemaining) = Massiv.unsnocSz . Massiv.size $ restMatrix
          in if nColsRemaining == 0 then groupAcc else groupAcc |> restMatrix
       Just (thisChunk, restMinusThisChunk) -> go n' restMinusThisChunk (groupAcc |> thisChunk)
 

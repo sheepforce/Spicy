@@ -54,6 +54,7 @@ library
       Spicy.Wrapper.Internal.Input.Representation
       Spicy.Wrapper.Internal.Output.GDMA
       Spicy.Wrapper.Internal.Output.Generic
+      Spicy.Wrapper.Internal.Output.Turbomole
       Spicy.Wrapper.Internal.Output.XTB
       Spicy.Wrapper.IPI.Protocol
       Spicy.Wrapper.IPI.Pysisyphus

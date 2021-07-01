@@ -34,6 +34,7 @@ import Spicy.RuntimeEnv
 import Spicy.Wrapper.Internal.Input.IO
 import Spicy.Wrapper.Internal.Output.GDMA
 import Spicy.Wrapper.Internal.Output.Generic
+import qualified Spicy.Wrapper.Internal.Output.Turbomole as TMParse
 import Spicy.Wrapper.Internal.Output.XTB
 import System.Path
   ( (<++>),
@@ -44,7 +45,7 @@ import qualified System.Path as Path
 import qualified System.Path.Directory as Dir
 
 logSource :: LogSource
-logSource = "Wraper Executor"
+logSource = "Wrapper Executor"
 
 ----------------------------------------------------------------------------------------------------
 
@@ -289,7 +290,19 @@ executeTurbomole calcID = do
 
   -- Look for all executables, that we need. If any cannot be found we must assume that the
   -- turbomole installation is broken and crash.
-  let exes = ["dscf", "escf", "ridft", "ricc2", "rigrad", "egrad", "grad", "pnoccsd", "actual"]
+  let exes =
+        [ "dscf",
+          "escf",
+          "ridft",
+          "ricc2",
+          "rdgrad",
+          "egrad",
+          "grad",
+          "pnoccsd",
+          "actual",
+          "aoforce",
+          "NumForce"
+        ]
   exesPaths <- fmap Map.fromList . forM exes $ \e -> do
     let exeAbsFile = turbomoleBindDirAbs </> Path.relFile e
     hasExe <- liftIO . Dir.doesFileExist $ turbomoleBinDir </> Path.relFile e
@@ -308,7 +321,6 @@ executeTurbomole calcID = do
       mol ^? calcLens
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
-      scratchDir = getDirPathAbs $ calcContext ^. #input % #scratchDir
       software = calcContext ^. #input % #software
       task = calcContext ^. #input % #task
 
@@ -331,17 +343,17 @@ executeTurbomole calcID = do
 
   -- Step 1: Calculate reference wavefunctions.
   --   Figure out which turbomole executables to call. dscf and grad for HF and DFT without RI,
-  --   ridft and rigrad otherwise
+  --   ridft and rdgrad otherwise
   case hamiltonian ^. #ri of
     Nothing -> do
-      commonCaller permanentDir exesPaths "dscf"
-      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "grad"
+      commonCaller permanentDir exesPaths "dscf" mempty
+      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "grad" mempty
     Just RIJ -> do
-      commonCaller permanentDir exesPaths "ridft"
-      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rigrad"
+      commonCaller permanentDir exesPaths "ridft" mempty
+      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rdgrad" mempty
     Just RIJK -> do
-      commonCaller permanentDir exesPaths "ridft"
-      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rigrad"
+      commonCaller permanentDir exesPaths "ridft" mempty
+      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rdgrad" mempty
     Just (OtherRI _) -> do
       logErrorS logSourceS "No other RI methods availabel in Turbomole."
       throwM . localExc $ "Unknown RI settings for Turbomole."
@@ -353,8 +365,8 @@ executeTurbomole calcID = do
       Nothing -> do
         logErrorS logSourceS "No correlation module specified for Turbomole, but is required."
         throwM . localExc $ "Correlation module for Turbomole not specified."
-      Just "pnoccsd" -> commonCaller permanentDir exesPaths "pnoccsd"
-      Just "ricc" -> commonCaller permanentDir exesPaths "ricc"
+      Just "pnoccsd" -> commonCaller permanentDir exesPaths "pnoccsd" mempty
+      Just "ricc" -> commonCaller permanentDir exesPaths "ricc" mempty
       Just e -> do
         logErrorS logSourceS $ "Unknown correlation module " <> display e <> " for Turbomole."
         throwM . localExc $ "Unknown correlation module " <> show e <> " for Turbomole."
@@ -362,18 +374,37 @@ executeTurbomole calcID = do
   -- Step 3: If excitations were requested and not already calculated by the correlation module,
   -- calculate them now.
   case (hamiltonian ^. #exc, hamiltonian ^. #corr) of
-    (Just _, Nothing) -> commonCaller permanentDir exesPaths "escf"
+    (Just _, Nothing) -> commonCaller permanentDir exesPaths "escf" mempty
     _ -> return ()
+
+  -- Step 4: Calculate frequencies on top of the RIDFT or HF wavefunction or numerically on the
+  -- correlated wavefunctions.
+  when (task == WTHessian) $ case hamiltonian ^. #corr of
+    Just Correlation {corrModule = Just "ricc"} ->
+      commonCaller permanentDir exesPaths "NumForce" ["-ri", "-level cc2", "-central"]
+    Just Correlation {corrModule = Just "pnoccsd"} -> do
+      logErrorS logSourceS "The pnoccsd module cannot calculate gradients and therefore also no hessians."
+      throwM . localExc $ "Hessians not available with pnoccsd module"
+    Just _ -> do
+      logErrorS logSourceS "Unknown settings for calculation of hessians on a correlated wavefunction."
+      throwM . localExc $ "Hessians not available with for unknown correlated wavefunction type."
+    Nothing -> case hamiltonian ^. #ri of
+      Just RIJ -> commonCaller permanentDir exesPaths "aoforce" ["-ri"]
+      Just RIJK -> commonCaller permanentDir exesPaths "aoforce" ["-ri"]
+      Just (OtherRI _) -> do
+        logErrorS logSourceS "Unknown RI setting for Turbomole. Don't know how to calculate hessian."
+        throwM . localExc $ "Unkown RI setting for Turbomole. Don't know how to calculate hessian."
+      Nothing -> commonCaller permanentDir exesPaths "aoforce" mempty
   where
     localExc = WrapperGenericException "executeTurbomole"
     logSourceS = "Turbomole"
-    commonCaller permanentDir exeMap exeName = do
+    commonCaller permanentDir exeMap exeName args = do
       logDebugS logSourceS $ "Calculating wavefunction with " <> displayShow exeName <> " ..."
       (exitCode, out, err) <-
         withWorkingDir (Path.toString permanentDir) $
           proc
             (Path.toString $ exeMap Map.! exeName)
-            mempty
+            args
             readProcess
       unless (exitCode == ExitSuccess) $ do
         logErrorS logSourceS $ "Execution of " <> displayShow exeName <> " ended abnormally. Got exit code: " <> displayShow exitCode
@@ -563,7 +594,7 @@ analyseXTB calcID = do
   localMol <- maybe2MThrow (localExcp "Specified molecule not found in hierarchy") $ mol ^? molLens
   calcContext <-
     maybe2MThrow
-      (MolLogicException "analyseXTB" "Requested to analyze a Calculation, which does not exist.")
+      (MolLogicException "analyseXTB" "Requested to analyse a Calculation, which does not exist.")
       (mol ^? calcLens)
 
   let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
@@ -615,11 +646,51 @@ analyseXTB calcID = do
 
 ----------------------------------------------------------------------------------------------------
 
--- | Analyse the output of an xtb calculation. Unlike Psi4, xtb output file names
--- are independent of the input (unless explicitly specified). This function
--- is not reliant on gdma either.
+-- | Analyse the output of a Turbomole calculation. Turbomole file names should alway be the same
+-- and follow a common layout, independent of the module.
 analyseTurbomole ::
   (HasLogFunc env, HasMolecule env) =>
   CalcID ->
   RIO env CalcOutput
-analyseTurbomole calcID = undefined
+analyseTurbomole calcID = do
+  -- Create the calcID lens and the mol lens.
+  let molLens = molIDLensGen (calcID ^. #molID)
+      calcLens = calcIDLensGen calcID
+
+  -- Gather information about the molecule.
+  mol <- view moleculeL >>= readTVarIO
+  localMol <- maybe2MThrow (localExc "Specified molecule not found in hierarchy") $ mol ^? molLens
+  calcContext <-
+    maybe2MThrow
+      (MolLogicException "analyseTurbomole" "Requested to analyse a Calculation, which does not exist.")
+      (mol ^? calcLens)
+
+  let task = calcContext ^. #input % #task
+      permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+      energyFile = Path.toAbsRel $ permanentDir </> Path.relFile "energy"
+      gradientFile = Path.toAbsRel $ permanentDir </> Path.relFile "gradient"
+      hessianFile = Path.toAbsRel $ permanentDir </> Path.relFile "nprhessian"
+      basisFile = Path.toAbsRel $ permanentDir </> Path.relFile "basis"
+      mosFile = Path.toAbsRel $ permanentDir </> Path.relFile "mos"
+      alphaMosFile = Path.toAbsRel $ permanentDir </> Path.relFile "alpha"
+      betaMosFile = Path.toAbsRel $ permanentDir </> Path.relFile "beta"
+
+  -- Start parsing files
+  energy <- Just <$> (readFileUTF8 energyFile >>= parse' TMParse.energy)
+  gradient <- case task of
+    WTEnergy -> return Nothing
+    _ -> Just <$> (readFileUTF8 gradientFile >>= parse' TMParse.gradient)
+  hessian <- case task of
+    WTHessian -> Just <$> (readFileUTF8 hessianFile >>= parse' TMParse.hessian)
+    _ -> return Nothing
+  basis <- readFileUTF8 basisFile >>= parse' TMParse.basis
+
+  let calcOutput =
+        CalcOutput
+          { energyDerivatives = EnergyDerivatives {energy, gradient, hessian},
+            multipoles = undefined
+          }
+
+  return calcOutput
+  where
+    localExc = WrapperGenericException "analyseTurbomole"

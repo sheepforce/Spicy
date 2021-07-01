@@ -250,6 +250,8 @@ serialiseTurbomole :: (MonadInput m, MonadWriter Text m) => m ()
 serialiseTurbomole = do
   -- Always required fields
   tellN "$symmetry c1"
+  tellN "$noproj"
+  tellN "$nprhessian file=nprhessian"
 
   tmSerialiseBasis
   tmSerialiseCoords
