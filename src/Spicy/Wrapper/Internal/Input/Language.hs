@@ -136,7 +136,7 @@ serialisePsi4 = do
 
 -- | Serialise the memory into a psithon file.
 psi4SerialiseMemory :: (MonadInput m, MonadWriter Text m) => m ()
-psi4SerialiseMemory = getMemory >>= \mem -> tellN $ "memory " <> tshow mem <> "MiB"
+psi4SerialiseMemory = getMemory >>= \mem -> tellN $ "memory " <> tshow mem <> " MiB"
 
 -- | XYZ representation of the molecule in Psi4, that ensures C1 symmetry.
 psi4SerialiseMolecule :: (MonadInput m, MonadWriter Text m) => m ()
@@ -211,8 +211,8 @@ psi4SerialiseCorrelation =
   getQCHamiltonian <&> (^. #corr) >>= \corr -> case corr of
     Nothing -> return ()
     Just Correlation {..} -> do
-      tellN $ "set mo_maxiter " <> tshow iter
-      tellN $ "set maxiter " <> tshow iter
+      tellN . optKW "set mo_maxiter " . fmap tshow $ iter
+      tellN . optKW "set maxiter " . fmap tshow $ iter
       forM_ other (mapM_ tellN)
 
 -- | Serialises all other fields verbatim into the Psi4 input, before calling the hamiltonian and
