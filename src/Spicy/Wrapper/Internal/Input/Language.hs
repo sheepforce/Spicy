@@ -128,6 +128,7 @@ serialisePsi4 = do
   psi4SerialiseBasis
   psi4SerialiseRefWfnSettings
   psi4SerialiseSCF
+  psi4SerialiseRI
   psi4SerialiseCorrelation
   psi4SerialiseOther
   psi4SerialiseEmbedding
@@ -147,7 +148,7 @@ psi4SerialiseMolecule = do
   tellN $ "molecule " <> Text.pack prefix <> " {"
   tellN $ "  " <> tshow charge <> " " <> tshow mult
   tellN "  symmetry c1"
-  tellN molRep
+  tell molRep
   tellN "}"
 
 -- | Serialise the basis sets for Psi4
@@ -186,6 +187,23 @@ psi4SerialiseSCF =
         Just Damp {start} -> tellN $ "set damping_percentage " <> tshow (start * 100)
       forM_ other (mapM_ tellN)
 
+-- | Serialise the Psi4 RI settings for the reference wavefunction. Psi4 does always RI-JK, so both
+-- RI types will just give ri type "DF" in Psi4.
+psi4SerialiseRI :: (MonadInput m, MonadWriter Text m) => m ()
+psi4SerialiseRI = do
+  getQCHamiltonian <&> (^. #ri) >>= \ri -> case ri of
+    Nothing -> do
+      tellN "set scf_type pk"
+      tellN "set mp2_type conv"
+      tellN "set mp_type conv"
+      tellN "set cc_type conv"
+    Just (OtherRI ritype) -> tellN $ "set scf_type " <> ritype
+    Just _ -> do
+      tellN "set scf_type df"
+      tellN "set mp2_type df"
+      tellN "set mp_type df"
+      tellN "set cc_type df"
+
 -- | Serialise correlation of the wavefunction. Does not call the proper hamiltonian, but just puts
 -- settings in set blocks.
 psi4SerialiseCorrelation :: (MonadInput m, MonadWriter Text m) => m ()
@@ -220,16 +238,16 @@ psi4SerialiseCall = do
 
   -- Call the QC method
   case (ref, corr) of
-    (RKS DFT {..}, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
-    (UKS DFT {..}, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
+    (RKS DFT {..}, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> functional <> "\", return_wfn = True)"
+    (UKS DFT {..}, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> functional <> "\", return_wfn = True)"
     (_, Nothing) -> tellN $ "o, wfn = " <> taskString task <> "(\"scf\", return_wfn = True)"
     (RKS DFT {functional}, Just Correlation {..}) -> do
-      tellN $ "oRef, wfnRef = " <> "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
-      tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow method <> "\", ref_wfn = wfnRef, return_wfn = True)"
+      tellN $ "oRef, wfnRef = " <> "o, wfn = " <> taskString task <> "(\"" <> functional <> "\", return_wfn = True)"
+      tellN $ "o, wfn = " <> taskString task <> "(\"" <> method <> "\", ref_wfn = wfnRef, return_wfn = True)"
     (UKS DFT {functional}, Just Correlation {..}) -> do
-      tellN $ "oRef, wfnRef = " <> "o, wfn = " <> taskString task <> "(\"" <> tshow functional <> "\", return_wfn = True)"
-      tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow method <> "\", ref_wfn = wfnRef, return_wfn = True)"
-    (_, Just Correlation {..}) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> tshow method <> "\", return_wfn = True)"
+      tellN $ "oRef, wfnRef = " <> "o, wfn = " <> taskString task <> "(\"" <> functional <> "\", return_wfn = True)"
+      tellN $ "o, wfn = " <> taskString task <> "(\"" <> method <> "\", ref_wfn = wfnRef, return_wfn = True)"
+    (_, Just Correlation {..}) -> tellN $ "o, wfn = " <> taskString task <> "(\"" <> method <> "\", return_wfn = True)"
 
   -- Write the wavefunction with relaxed 1PDM to FCHK and a hessian to a file, if requested.
   tellN $ "fchk(wfn, \"" <> Text.pack prefix <> ".fchk\")"
