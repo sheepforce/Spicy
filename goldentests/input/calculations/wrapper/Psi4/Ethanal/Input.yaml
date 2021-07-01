@@ -5,12 +5,18 @@ molecule:
   fileType: mol2
 model:
   theoryLayer:
-    name: BP86/def2-SVP
+    name: RHF/def2-SVP
     program:
       tag: psi4
       contents:
-        calculationType: bp86
-        basisSet: def2-tzvp
+        basis:
+          basis: def2-SVP
+        ref:
+          tag: RHF
+        ri:
+          tag: RIJK
+        corr:
+          method: mp2
     charge: 0
     mult: 1
     execution:

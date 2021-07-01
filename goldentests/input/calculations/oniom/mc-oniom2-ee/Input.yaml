@@ -8,8 +8,10 @@ model:
     program:
       tag: psi4
       contents:
-        calculationType: hf
-        basisSet: sto-3g
+        basis:
+          basis: sto-3g
+        ref:
+          tag: RHF
     name: HF/STO-3G
     embedding:
       tag: mechanical
@@ -24,8 +26,14 @@ model:
     - program:
         tag: psi4
         contents:
-          calculationType: ccsd
-          basisSet: cc-pvdz
+          basis:
+            basis: cc-pvdz
+          ref:
+            tag: RHF
+          ri:
+            tag: RIJK
+          corr:
+            method: ccsd
       name: CCSD/cc-pVDZ
       embedding:
         tag: electronic
@@ -41,8 +49,14 @@ model:
     - program:
         tag: psi4
         contents:
-          calculationType: ccsd
-          basisSet: cc-pVDZ
+          basis:
+            basis: cc-pvdz
+          ref:
+            tag: RHF
+          ri:
+            tag: RIJK
+          corr:
+            method: ccsd
       name: CCSD/cc-pVDZ
       embedding:
         tag: electronic

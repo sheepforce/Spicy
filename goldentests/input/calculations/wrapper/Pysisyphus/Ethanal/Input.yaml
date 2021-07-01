@@ -9,8 +9,12 @@ model:
     program:
       tag: psi4
       contents:
-        basisSet: def2-svp
-        calculationType: hf
+        basis:
+          basis: def2-SVP
+        ref:
+          tag: RHF
+        ri:
+          tag: RIJK
     charge: 0
     mult: 1
     execution:

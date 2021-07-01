@@ -9,8 +9,14 @@ model:
     program:
       tag: psi4
       contents:
-        calculationType: bp86
-        basisSet: def2-svp
+        basis:
+          basis: def2-SVP
+        ref:
+          tag: RKS
+          contents:
+            functional: bp86
+        ri:
+          tag: RIJK
     charge: 0
     mult: 1
     execution:
