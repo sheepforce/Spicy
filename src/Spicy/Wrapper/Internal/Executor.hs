@@ -260,6 +260,9 @@ executeXTB calcID = do
         xtbCmdArgs
         readProcess
 
+  -- Writing an output file of the XTB run. 
+  writeFileBinary (Path.toString $ permanentDir </> Path.relFile "xtb.log") . toStrictBytes $ xtbOut
+
   -- Provide some information if something went wrong.
   unless (exitCode == ExitSuccess) $ do
     logErrorS "xtb" $ "Execution terminated abnormally. Got exit code: " <> displayShow exitCode
