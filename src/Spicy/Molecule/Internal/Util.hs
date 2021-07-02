@@ -752,7 +752,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
             energyDerivatives = slEnergyDerivatives,
             calcContext = slCalcContext,
             jacobian = Nothing,
-            neighbourlist = mol ^. #neighbourlist
+            neighbourlist = fmap restrictNeighbours $ mol ^. #neighbourlist
           }
 
   -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the
@@ -799,6 +799,10 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
         )
         (pure (maxAtomIndex', mol'))
         linkSeq
+
+    -- Restrict a neighbourlist to atoms of the new layer.
+    restrictNeighbours :: NeighbourList -> NeighbourList
+    restrictNeighbours nl = IntMap.map (IntSet.intersection newLayerInds) $ IntMap.restrictKeys nl newLayerInds
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1791,6 +1795,9 @@ fragmentDetectionDetached mol = do
 -- 'Spicy.Molecule.Internal.Multipoles.molToPointCharges', where the atoms of the layer above are
 -- dummy atoms but still connected in the bond matrix, which is important for definition of the
 -- local axes system of the multipole point charges.
+--
+-- It will furthermore join all neighbour lists top down, so that also for dummy atoms neighbours
+-- are available.
 getPolarisationCloudFromAbove ::
   (MonadThrow m) =>
   -- | The whole molecular system with the multipoles at least in the layer above the
@@ -1846,12 +1853,19 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
               . IntMap.filter (\a -> not $ a ^. #isDummy)
               . IntMap.map (\a -> a & #isLink .~ NotLink)
               $ localReal ^. #atoms
+          realAtomsKeys = IntMap.keysSet realAtoms
           -- - The bond matrix will be updated only to contain the filtered atoms.
-          realBonds = cleanBondMatByAtomInds (localReal ^. #bonds) (IntMap.keysSet realAtoms)
+          realBonds = cleanBondMatByAtomInds (localReal ^. #bonds) realAtomsKeys
+          -- - The neighbourlist will be updated to contain only filtered atoms.
+          realNeighbours = fmap (\nlAtDist ->
+            let keysRestricted = IntMap.restrictKeys nlAtDist realAtomsKeys
+                targetsRestricted = IntMap.map (IntSet.intersection realAtomsKeys) keysRestricted
+            in targetsRestricted)
+            $ localReal ^. #neighbourlist
           -- - The fragments will be updated only to contain the filtered atoms.
           realFragments =
             IntMap.map
-              (\f -> f & #atoms %~ IntSet.intersection (IntMap.keysSet realAtoms))
+              (\f -> f & #atoms %~ IntSet.intersection realAtomsKeys)
               $ localReal ^. #fragment
 
       -- Get the link atoms of the model system and groups of their bonding partners in the real
@@ -1882,6 +1896,7 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
             localModel
               & #atoms %~ (<> realAtomsScaled)
               & #bonds %~ HashMap.unionWith (||) realBonds
+              & #neighbourlist %~ combineNLs realNeighbours
               & #fragment
                 %~ IntMap.unionWith
                   (\fM fR -> fM & #atoms %~ (<> fR ^. #atoms))
@@ -1896,6 +1911,16 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
         (\accAtoms sel -> IntMap.adjust (& #multipoles %~ modifyMultipole (* factor)) sel accAtoms)
         atoms
         selection
+
+    -- Combines given neighbour lists at a distance.
+    combineNLAtDist :: NeighbourList -> NeighbourList -> NeighbourList
+    combineNLAtDist nlReal nlModel  = IntMap.unionWith (<>) nlModel nlReal
+
+    -- Combine all neighbour lists at all distances.
+    combineNLs :: Map Double NeighbourList -> Map Double NeighbourList -> Map Double NeighbourList
+    combineNLs nlsModel nlsReal = Map.unionWith combineNLAtDist nlsReal nlsModel
+
+
 
 ----------------------------------------------------------------------------------------------------
 
