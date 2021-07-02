@@ -13,7 +13,7 @@ let
       "pysisyphus" = "${qchem.pysisyphus}/bin/pysis";
       "xtb" = "${qchem.xtb}/bin/xtb";
       "ipi" = "${qchem.i-pi}/bin/i-pi";
-    } // lib.attrsets.optionalAttrs (qchem.turbomole != null) {"turbomole" = "${qchem.turbomole}/bin/turbomole";}
+    } // lib.attrsets.optionalAttrs (qchem.turbomole != null) {"turbomole" = "${qchem.turbomole}/bin";}
     );
   };
 in
