@@ -319,7 +319,7 @@ makeReferenceGroups mol = do
     ( \acc' f -> do
         acc <- acc'
         let fragAtoms = IntMap.restrictKeys (mol ^. #atoms) (f ^. #atoms)
-            fragBonds = cleanBondMatByAtomInds (mol ^. #bonds) (f ^. #atoms)
+        let fragBonds = cleanBondMatByAtomInds (mol ^. #bonds) (f ^. #atoms)
         fragRefGroups <- groupsInFrag fragAtoms nl fragBonds
         return $ acc Seq.>< fragRefGroups
     )
@@ -340,10 +340,15 @@ groupsInFrag ::
   BondMatrix ->
   m (Seq BestBondPartners)
 groupsInFrag atoms nl bondMat = do
-  let dummyFrag = Fragment {label = "dummy", chain = Nothing, atoms = IntMap.keysSet atoms}
+  let dummyFrag =
+        Fragment
+          { label = "dummy",
+            chain = Nothing,
+            atoms = IntMap.keysSet atoms
+          }
       dummyMol =
         Molecule
-          { comment = mempty,
+          { comment = "Hey Hu In Scheiben",
             atoms = atoms,
             bonds = bondMat,
             subMol = mempty,
