@@ -752,7 +752,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
             energyDerivatives = slEnergyDerivatives,
             calcContext = slCalcContext,
             jacobian = Nothing,
-            neighbourlist = mol ^. #neighbourlist
+            neighbourlist = fmap restrictNeighbours $ mol ^. #neighbourlist
           }
 
   -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the
