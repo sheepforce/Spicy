@@ -262,7 +262,7 @@ executeXTB calcID = do
         xtbCmdArgs
         readProcess
 
-  -- Writing an output file of the XTB run. 
+  -- Writing an output file of the XTB run.
   writeFileBinary (Path.toString $ permanentDir </> Path.relFile "xtb.log") . toStrictBytes $ xtbOut
 
   -- Provide some information if something went wrong.
@@ -320,7 +320,8 @@ executeTurbomole calcID = do
     maybe2MThrow (MolLogicException "runCalculation" "Requested to perform a calculation, which does not exist.") $
       mol ^? calcLens
 
-  let permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
+  let nThreads = calcContext ^. #input % #nThreads
+      permanentDir = getDirPathAbs $ calcContext ^. #input % #permaDir
       software = calcContext ^. #input % #software
       task = calcContext ^. #input % #task
 
@@ -340,20 +341,21 @@ executeTurbomole calcID = do
   -- Write the Turbomole input file "control". Make a backup, which does not get modified.
   inputFilePath <- writeInputs calcID
   liftIO $ Dir.copyFile inputFilePath (Path.takeDirectory inputFilePath </> Path.relFile "control.bak")
+  liftIO $ Dir.renameFile inputFilePath (Path.takeDirectory inputFilePath </> Path.relFile "control")
 
   -- Step 1: Calculate reference wavefunctions.
   --   Figure out which turbomole executables to call. dscf and grad for HF and DFT without RI,
   --   ridft and rdgrad otherwise
   case hamiltonian ^. #ri of
     Nothing -> do
-      commonCaller permanentDir exesPaths "dscf" mempty
-      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "grad" mempty
+      commonCaller nThreads permanentDir exesPaths "dscf" mempty
+      when (task /= WTEnergy) $ commonCaller nThreads permanentDir exesPaths "grad" mempty
     Just RIJ -> do
-      commonCaller permanentDir exesPaths "ridft" mempty
-      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rdgrad" mempty
+      commonCaller nThreads permanentDir exesPaths "ridft" mempty
+      when (task /= WTEnergy) $ commonCaller nThreads permanentDir exesPaths "rdgrad" mempty
     Just RIJK -> do
-      commonCaller permanentDir exesPaths "ridft" mempty
-      when (task /= WTEnergy) $ commonCaller permanentDir exesPaths "rdgrad" mempty
+      commonCaller nThreads permanentDir exesPaths "ridft" mempty
+      when (task /= WTEnergy) $ commonCaller nThreads permanentDir exesPaths "rdgrad" mempty
     Just (OtherRI _) -> do
       logErrorS logSourceS "No other RI methods availabel in Turbomole."
       throwM . localExc $ "Unknown RI settings for Turbomole."
@@ -365,8 +367,8 @@ executeTurbomole calcID = do
       Nothing -> do
         logErrorS logSourceS "No correlation module specified for Turbomole, but is required."
         throwM . localExc $ "Correlation module for Turbomole not specified."
-      Just "pnoccsd" -> commonCaller permanentDir exesPaths "pnoccsd" mempty
-      Just "ricc" -> commonCaller permanentDir exesPaths "ricc" mempty
+      Just "pnoccsd" -> commonCaller nThreads permanentDir exesPaths "pnoccsd" mempty
+      Just "ricc" -> commonCaller nThreads permanentDir exesPaths "ricc2" mempty
       Just e -> do
         logErrorS logSourceS $ "Unknown correlation module " <> display e <> " for Turbomole."
         throwM . localExc $ "Unknown correlation module " <> show e <> " for Turbomole."
@@ -374,14 +376,14 @@ executeTurbomole calcID = do
   -- Step 3: If excitations were requested and not already calculated by the correlation module,
   -- calculate them now.
   case (hamiltonian ^. #exc, hamiltonian ^. #corr) of
-    (Just _, Nothing) -> commonCaller permanentDir exesPaths "escf" mempty
+    (Just _, Nothing) -> commonCaller nThreads permanentDir exesPaths "escf" mempty
     _ -> return ()
 
   -- Step 4: Calculate frequencies on top of the RIDFT or HF wavefunction or numerically on the
   -- correlated wavefunctions.
   when (task == WTHessian) $ case hamiltonian ^. #corr of
     Just Correlation {corrModule = Just "ricc"} ->
-      commonCaller permanentDir exesPaths "NumForce" ["-ri", "-level cc2", "-central"]
+      commonCaller nThreads permanentDir exesPaths "NumForce" ["-ri", "-level cc2", "-central"]
     Just Correlation {corrModule = Just "pnoccsd"} -> do
       logErrorS logSourceS "The pnoccsd module cannot calculate gradients and therefore also no hessians."
       throwM . localExc $ "Hessians not available with pnoccsd module"
@@ -389,22 +391,22 @@ executeTurbomole calcID = do
       logErrorS logSourceS "Unknown settings for calculation of hessians on a correlated wavefunction."
       throwM . localExc $ "Hessians not available with for unknown correlated wavefunction type."
     Nothing -> case hamiltonian ^. #ri of
-      Just RIJ -> commonCaller permanentDir exesPaths "aoforce" ["-ri"]
-      Just RIJK -> commonCaller permanentDir exesPaths "aoforce" ["-ri"]
+      Just RIJ -> commonCaller nThreads permanentDir exesPaths "aoforce" ["-ri"]
+      Just RIJK -> commonCaller nThreads permanentDir exesPaths "aoforce" ["-ri"]
       Just (OtherRI _) -> do
         logErrorS logSourceS "Unknown RI setting for Turbomole. Don't know how to calculate hessian."
         throwM . localExc $ "Unkown RI setting for Turbomole. Don't know how to calculate hessian."
-      Nothing -> commonCaller permanentDir exesPaths "aoforce" mempty
+      Nothing -> commonCaller nThreads permanentDir exesPaths "aoforce" mempty
   where
     localExc = WrapperGenericException "executeTurbomole"
     logSourceS = "Turbomole"
-    commonCaller permanentDir exeMap exeName args = do
+    commonCaller threads permanentDir exeMap exeName args = do
       logDebugS logSourceS $ "Calculating wavefunction with " <> displayShow exeName <> " ..."
       (exitCode, out, err) <-
         withWorkingDir (Path.toString permanentDir) $
           proc
             (Path.toString $ exeMap Map.! exeName)
-            args
+            ("-smpcpus" <> show threads : args)
             readProcess
       unless (exitCode == ExitSuccess) $ do
         logErrorS logSourceS $ "Execution of " <> displayShow exeName <> " ended abnormally. Got exit code: " <> displayShow exitCode
