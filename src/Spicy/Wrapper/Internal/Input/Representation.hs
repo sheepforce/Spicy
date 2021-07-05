@@ -18,6 +18,7 @@ module Spicy.Wrapper.Internal.Input.Representation
   )
 where
 
+import qualified Data.IntMap as IntMap
 import Data.Massiv.Array as Massiv hiding (drop, forM_)
 import Data.Text.Lazy (toStrict)
 import qualified Data.Text.Lazy.Builder as Builder
@@ -40,11 +41,11 @@ simpleCartesianAngstrom mol = Text.unlines . drop 2 . Text.lines <$> writeXYZ (i
 -- | Serialiase a geometry to a turbomole style @$coord@ block (does not contain @$end@!).
 coord :: MonadThrow m => Molecule -> m Text
 coord mol = do
-  let ats = mol ^. #atoms
+  let ats = IntMap.filter (not . isDummy) $ mol ^. #atoms
       repWriter :: Writer Text () = forM_ ats $ \Atom {..} -> do
         let coords = compute @U . Massiv.map angstrom2Bohr . getVectorS $ coordinates
         tell "  "
-        Massiv.mapM_ (tell . tshow) coords
+        Massiv.mapM_ (\c -> tell $ tshow c <> "  ") coords
         tell "  "
         tellN . Text.toLower . tshow $ element
   return . execWriter $ repWriter
@@ -62,7 +63,7 @@ xtbMultipoleRep mol = do
   pointCharges <- molToPointCharges mol
   let pointChargeVecs = Massiv.innerSlices pointCharges
       frmt = float F.% " " F.% float F.% " " F.% float F.% " " F.% float F.% " 99\n"
-      chargeLines = Massiv.foldMono (toText False frmt) pointChargeVecs
+      chargeLines = Massiv.foldMono (mp2Text (XTB undefined) frmt) pointChargeVecs
       countLine = (Builder.fromText . tShow . length $ pointChargeVecs) <> "\n"
       xtbBuilder = countLine <> chargeLines
   return . toStrict . Builder.toLazyText $ xtbBuilder
@@ -80,7 +81,7 @@ psi4MultipoleRep mol = do
   pointCharges <- molToPointCharges mol
   let pointChargeVecs = Massiv.innerSlices pointCharges
       fmrt = "Chrgfield.extern.addCharge(" F.% float F.% ", " F.% float F.% ", " F.% float F.% ", " F.% float F.% ")\n"
-      chargeLines = Massiv.foldMono (toText False fmrt) pointChargeVecs
+      chargeLines = Massiv.foldMono (mp2Text (Psi4 undefined) fmrt) pointChargeVecs
       settingsLine = "psi4.set_global_option_python('EXTERN', Chrgfield.extern)"
       psi4Builder = "Chrgfield = QMMM()\n" <> chargeLines <> settingsLine
   return . toStrict . Builder.toLazyText $ psi4Builder
@@ -98,28 +99,33 @@ turbomoleMultipoleRep ::
 turbomoleMultipoleRep mol = do
   pointCharges <- molToPointCharges mol
   let pointChargeVecs = Massiv.innerSlices pointCharges
-      frmt = "  " F.% float F.% float F.% float F.% float F.% "\n"
-      chargeLines = Massiv.foldMono (toText True frmt) pointChargeVecs
+      frmt = "  " F.% " " F.% float F.% " " F.% float F.% " " F.% float F.% " " F.% float F.% "\n"
+      chargeLines = Massiv.foldMono (mp2Text (Turbomole undefined) frmt) pointChargeVecs
   return . toStrict . Builder.toLazyText $ chargeLines
 
 ----------------------------------------------------------------------------------------------------
 
 -- | Auxilliary function which formats multipoles. Said vector must contain at least 4 entries,
--- thus unsafe and not to be exported. Coordinates of the point charges in Angstrom.
-toText ::
+-- thus unsafe and not to be exported. Coordinate units depend on the program.
+mp2Text ::
   (Massiv.Manifest r Ix1 Double) =>
-  -- | If 'True' the coordinates will be converted to Borh, if 'False' they will be kept as Angstrom.
-  Bool ->
+  Program ->
   -- | Formatter, which has three formatters for the cartesian components and one for the charge.
   Format Builder.Builder (Double -> Double -> Double -> Double -> t) ->
   -- | Array of point charges
   Massiv.Vector r Double ->
   t
-toText conv2Bohr fmrt vec =
+mp2Text software fmrt vec =
   let q = vec Massiv.! 3
       x = conv $ vec Massiv.! 0
       y = conv $ vec Massiv.! 1
       z = conv $ vec Massiv.! 2
-   in bformat fmrt q x y z
+   in case software of
+        Psi4 _ -> bformat fmrt q x y z
+        Turbomole _ -> bformat fmrt x y z q
+        XTB _ -> bformat fmrt q x y z
   where
-    conv = if conv2Bohr then angstrom2Bohr else id
+    conv = case software of
+      Psi4 _ -> id
+      XTB _ -> id
+      Turbomole _ -> angstrom2Bohr

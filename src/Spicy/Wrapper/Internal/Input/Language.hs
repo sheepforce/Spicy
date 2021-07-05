@@ -16,6 +16,7 @@ module Spicy.Wrapper.Internal.Input.Language
 where
 
 import Data.Default
+import qualified Data.IntMap as IntMap
 import Data.Massiv.Array as Massiv hiding (forM_, iter, mapM_)
 import Optics hiding (element)
 import RIO hiding (Lens', lens, min, view, (^.), (^?))
@@ -268,12 +269,15 @@ serialiseTurbomole :: (MonadInput m, MonadWriter Text m) => m ()
 serialiseTurbomole = do
   -- Always required fields
   tellN "$symmetry c1"
+  tellN "$energy file=energy"
+  tellN "$grad file=gradient"
   tellN "$noproj"
   tellN "$nprhessian file=nprhessian"
 
   tmSerialiseBasis
   tmSerialiseCoords
   tmSerialiseSCF
+  tmSerialiseRI
   tmSerialiseRefWfn
   tmSerialiseCorr
   tmSerialiseExcitations
@@ -306,8 +310,8 @@ tmSerialiseBasis = do
 tmSerialiseSCF :: (MonadInput m, MonadWriter Text m) => m ()
 tmSerialiseSCF = do
   scfSettings <- fromMaybe def <$> (getQCHamiltonian <&> (^. #scf))
-  tellN $ "$scfiterlimit" <> tshow (scfSettings ^. #iter)
-  tellN $ "$scfconv" <> tshow (scfSettings ^. #conv)
+  tellN $ "$scfiterlimit " <> tshow (scfSettings ^. #iter)
+  tellN $ "$scfconv " <> tshow (scfSettings ^. #conv)
   case scfSettings ^. #damp of
     Nothing -> return ()
     Just Damp {..} -> tellN $ "$scfdamp start=" <> tshow start <> " step=" <> tshow step <> " min=" <> tshow lower
@@ -315,7 +319,9 @@ tmSerialiseSCF = do
 
 -- | Write the coordinates inline to turbomole.
 tmSerialiseCoords :: (MonadInput m, MonadWriter Text m) => m ()
-tmSerialiseCoords = getMolecule >>= coord >>= tell
+tmSerialiseCoords = do
+  tellN "$coord"
+  getMolecule >>= coord >>= tell
 
 -- | Serialise the multipoles to point charges in turbomole. Makes sure not to include selfenergy
 -- in the energy and its derivatives and disables checks, that could mess up the multipoles.
@@ -329,27 +335,26 @@ tmSerialiseMultipoles = do
 tmSerialiseRefWfn :: (MonadInput m, MonadWriter Text m) => m ()
 tmSerialiseRefWfn = do
   atoms <- getMolecule <&> (^. #atoms)
+  let realAtoms = IntMap.filter (not . isDummy) atoms
   charge <- getCharge
   mult <- getMult
   getQCHamiltonian <&> (^. #ref) >>= \ref -> case ref of
-    RHF -> commonClosed $ nElectrons atoms charge
-    UHF -> tellN "$uhf" >> commonOpen mult (nElectrons atoms charge)
-    RKS dft -> commonClosed (nElectrons atoms charge) >> commonDFT dft
-    UKS dft -> commonOpen mult (nElectrons atoms charge) >> commonDFT dft
+    RHF -> commonClosed realAtoms charge
+    UHF -> tellN "$uhf" >> commonOpen realAtoms charge mult
+    RKS dft -> commonClosed realAtoms charge >> commonDFT dft
+    UKS dft -> commonOpen realAtoms charge mult >> commonDFT dft
   where
-    nElectrons atoms charge = RIO.foldl' (\acc a -> acc + fromEnum (a ^. #element)) (- charge) atoms
-    nExcEl m = fromIntegral $ m - 1
-    nClosed :: Int -> Int -> Int
-    nClosed m n = (n - nExcEl m) `div` 2
-    commonClosed n = do
+    nElectrons atoms charge = RIO.foldl' (\acc a -> acc + 1 + fromEnum (a ^. #element)) (- charge) atoms
+    nExcEl mult = fromIntegral @Int $ mult - 1
+    nClosed atoms charge mult = (nElectrons atoms charge - nExcEl mult) `div` 2
+    commonClosed atoms charge = do
       tellN "$closed shells"
-      tellN $ "  a  1-" <> tshow (nClosed 1 n) <> " ( 2 )"
-    commonOpen m n = do
+      tellN $ "  a  1-" <> tshow (nClosed atoms charge 1) <> " ( 2 )"
+    commonOpen atoms charge mult = do
       tellN "$alpha shells"
-      tellN $ "  a   1-" <> tshow (nClosed m n + nExcEl m) <> " ( 1 )"
+      tellN $ "  a   1-" <> tshow (nClosed atoms charge mult + nExcEl mult) <> " ( 1 )"
       tellN "$beta shells"
-      tellN $ "  a   1-" <> tshow (nClosed m n) <> " ( 1 )"
-    --commonDFT :: (MonadInput m, MonadWriter Text m) => DFT -> m ()
+      tellN $ "  a   1-" <> tshow (nClosed atoms charge mult) <> " ( 1 )"
     commonDFT DFT {..} = do
       tellN "$dft"
       tellN $ "  functional" <> functional
@@ -393,6 +398,7 @@ tmSerialiseCorr = do
       Just "ricc" -> do
         tellN "$denconv 1.0e-7"
         tellN "$ricc2"
+        tellN $ "  " <> method
         when (task == WTGradient) . tellN $ "  geoopt model=" <> method
         tellN . optKW "  maxiter=" $ iter
         forM_ other (mapM_ tellN)
