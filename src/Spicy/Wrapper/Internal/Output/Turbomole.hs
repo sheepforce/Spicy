@@ -19,10 +19,13 @@ where
 import Data.Attoparsec.Text
 import Data.Char (toUpper)
 import qualified Data.Map as Map
-import Data.Massiv.Array as Massiv
+import Data.Massiv.Array as Massiv hiding (takeWhile)
 import Math.NumberTheory.Roots
-import RIO
+import RIO hiding (takeWhile)
+import RIO.Seq (Seq (..))
+import qualified RIO.Seq as Seq
 import Spicy.Common
+import Spicy.Data
 import Spicy.Molecule (Element)
 
 -- | @$energy@ block
@@ -31,14 +34,20 @@ energy = do
   void $ string "$energy" <* skipHorizontalSpace
   void $ string "SCF" <* skipHorizontalSpace
   void $ string "SCFKIN" <* skipHorizontalSpace
-  void $ string "SCFPOT" <* endOfLine
+  void $ string "SCFPOT" <* skipHorizontalSpace
+  corrMethod <- optional (many1 $ letter <|> digit) <* skipHorizontalSpace
+  endOfLine
 
-  void $ skipHorizontalSpace *> decimal @Int <* skipHorizontalSpace
-  scfEnergy <- double <* skipHorizontalSpace
-  _kin <- double <* skipHorizontalSpace
-  _pot <- double <* skipHorizontalSpace <* endOfLine
+  (_ :|> lastEnergy) <- fmap Seq.fromList . many1 $ do
+    void $ skipHorizontalSpace *> decimal @Int <* skipHorizontalSpace
+    scfEnergy <- double <* skipHorizontalSpace
+    _kin <- double <* skipHorizontalSpace
+    _pot <- double <* skipHorizontalSpace
+    case corrMethod of
+      Nothing -> endOfLine $> scfEnergy
+      Just _ -> fortranDouble <* endOfLine
 
-  return scfEnergy
+  return lastEnergy
 
 ----------------------------------------------------------------------------------------------------
 
@@ -51,7 +60,7 @@ gradient = do
 
   -- Summary stuff
   _cycle <- skipHorizontalSpace *> string "cycle =" *> skipHorizontalSpace *> decimal @Int <* skipHorizontalSpace
-  _scfEnergy <- string "SCF energy =" *> skipHorizontalSpace *> double <* skipHorizontalSpace
+  _energyType <- takeWhile (/= '=') *> char '=' *> skipHorizontalSpace *> double <* skipHorizontalSpace
   _gradMag <- string "|dE/dxyz| =" *> skipHorizontalSpace *> double <* endOfLine
 
   -- @$coord@ style coordinates for which the gradient is printed
@@ -61,12 +70,12 @@ gradient = do
     return ()
 
   -- Cartesian gradients, xyz component per atom and line
-  grad <- fmap (flatten . Massiv.fromLists' @S @Ix2 Par) . many1 $ do
+  grad <- fmap (Massiv.fromLists' @S @Ix2 Par) . many1 $ do
     xyz <- count 3 $ skipHorizontalSpace *> fortranDouble
     endOfLine
     return xyz
 
-  return . VectorS $ grad
+  return . VectorS . compute . flatten . Massiv.map bohr2Angstrom $ grad
 
 ----------------------------------------------------------------------------------------------------
 
@@ -74,7 +83,7 @@ gradient = do
 -- components still present.
 hessian :: Parser (MatrixS Double)
 hessian = do
-  void $ string "$nprhessian" <* optional " (projected)" <* endOfLine
+  void $ string "$nprhessian" <* endOfLine
 
   -- Iterate over lines
   allElements <- fmap (compute @S . sconcat) . many1 $ do
