@@ -676,7 +676,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
       -- removed.
       slFragments =
         let origFrags = mol ^. #fragment
-            fragsRestricted = origFrags & each % #atoms %~ IntSet.filter (`IntSet.member` newLayerInds)
+            fragsRestricted = origFrags & each % #atoms %~ IntSet.intersection newLayerInds
             nonEmptyFrags = IntMap.filter (\f -> not . IntSet.null $ f ^. #atoms) fragsRestricted
          in nonEmptyFrags
 
@@ -752,7 +752,7 @@ newSubLayer maxAtomIndex mol newLayerInds covScale capAtomInfo = do
             energyDerivatives = slEnergyDerivatives,
             calcContext = slCalcContext,
             jacobian = Nothing,
-            neighbourlist = fmap (`IntMap.restrictKeys` newLayerInds) $ mol ^. #neighbourlist
+            neighbourlist = mol ^. #neighbourlist
           }
 
   -- Add all capping atoms to the sublayer. Goes through all atoms that need to be capped, while the
