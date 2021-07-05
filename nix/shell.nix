@@ -44,19 +44,13 @@ in
       qchem.psi4Unstable
       qchem.gdma
       qchem.xtb
-    ] ++ lib.lists.optionals (qchem.turbomole != null) [ qchem.turbomole pkgs.tmDefine ]
+    ] ++ lib.lists.optional (qchem.turbomole != null)
     ;
 
     # Setup a runtime with QC wrappers available.
     shellHook = ''
       # Configure a correct spicyrc
       export SPICYRC=${spicyrc}
-
-      # Make the new define version available if turbomole is used
-      ${if nixpkgs.qchem.turbomole != null
-        then "export PATH=${pkgs.tmDefine}/bin:$PATH"
-        else ""
-      }
     '';
 
     # Prevents cabal from choosing alternate plans, so that
