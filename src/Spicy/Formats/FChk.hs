@@ -319,7 +319,7 @@ scalar = do
   label <- Text.strip <$> take 40 <* count 3 (char ' ')
   typeChar <- take 1 <* count 5 (char ' ')
   value <- case typeChar of
-    "I" -> ScalarInt <$> (skipHorizontalSpace *> decimal)
+    "I" -> ScalarInt <$> (skipHorizontalSpace *> signed decimal)
     "R" -> ScalarDouble <$> (skipHorizontalSpace *> double)
     "C" -> ScalarText <$> (skipHorizontalSpace *> takeWhile (not <$> isEndOfLine))
     "L" -> do
