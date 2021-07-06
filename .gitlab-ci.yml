@@ -2,6 +2,7 @@ variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
 stages:
+  - update
   - build
   - docs
 
@@ -12,14 +13,23 @@ before_script:
   - nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs;
   - nix-channel --update;
   - nix-channel --list;
+  - export NIX_PATH=nixpkgs=/root/.nix-defexpr/channels/nixpkgs
   # Install dependencies
-  - nix-env -iA nixpkgs.bash nixpkgs.git;
+  - nix-env -iA nixpkgs.bash nixpkgs.git nixpkgs.niv nixpkgs.openssh;
   - export NIXPKGS_ALLOW_UNFREE=1;
   # QChem configuration for external packages and tuning.
   - export NIXQC_SRCURL=http://sol
   - export NIXQC_AVX=1
-  # Make a snapshot of the nix store
-  - nix path-info --all > /tmp/store-path-pre-build;
+  # Authenticate runner to allow pushing to the repo
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+  - git config --global user.email "phillip.seeber@googlemail.com"
+  - git config --global user.name "sheepforce"
+  - gitlab_hostname=$(echo "${CI_REPOSITORY_URL}" | sed -e 's|https\?://gitlab-ci-token:.*@||g' | sed -e 's|/.*||g')
+  - ssh-keyscan "${gitlab_hostname}" >> ~/.ssh/known_hosts
+  - chmod 644 ~/.ssh/known_hosts
 
 # Build fully with Cabal without nix stuff.
 cabalBuild:
@@ -37,9 +47,9 @@ cabalBuild:
     - chmod +x x86_64-linux-ghcup && mv x86_64-linux-ghcup $HOME/.ghcup/bin/ghcup
     # Install Haskell toolchain
     - ghcup upgrade
-    - ghcup install ghc 8.10.4
+    - ghcup install ghc 8.10.5
     - ghcup install cabal
-    - ghcup set ghc 8.10.4
+    - ghcup set ghc 8.10.5
     - cabal update
   script:
     - cabal build
@@ -61,9 +71,9 @@ cabalDocs:
     - chmod +x x86_64-linux-ghcup && mv x86_64-linux-ghcup $HOME/.ghcup/bin/ghcup
     # Install Haskell toolchain
     - ghcup upgrade
-    - ghcup install ghc 8.10.4
+    - ghcup install ghc 8.10.5
     - ghcup install cabal
-    - ghcup set ghc 8.10.4
+    - ghcup set ghc 8.10.5
     - cabal update
   script:
     - cabal haddock -f dev
@@ -128,3 +138,29 @@ nixStaticBuild:
       - release
       - delevop
       - merge_requests
+
+# Automatic niv updates and merge requests.
+nivUpdate:
+  stage: update
+  tags:
+    - nix
+  script:
+    # Make the pr script available
+    - cp ./.gitlab/createmr.sh /tmp/.
+    # Perform the update in a new branch and push changes.
+    - git fetch origin
+    - url_host=$(echo "${CI_REPOSITORY_URL}" | sed -e 's|https\?://gitlab-ci-token:.*@|ssh://git@|g')
+    - echo "${url_host}"
+    - git remote set-url --push origin "${url_host}"
+    - git checkout develop
+    - git checkout -b updates/niv
+    - git pull origin updates/niv
+    - niv update
+    - git commit -a -m "niv upstream updates" || echo "Nothing to commit"
+    - git push -u origin updates/niv
+    # Make a new merge request
+    - cp /tmp/createmr.sh ./.gitlab/createmr.sh
+    - chmod +x ./.gitlab/createmr.sh
+    - HOST=${CI_PROJECT_URL} CI_PROJECT_ID=${CI_PROJECT_ID} CI_COMMIT_REF_NAME="updates/niv" GITLAB_USER_ID="4452487" PRIVATE_TOKEN=${PRIVATE_TOKEN} ./.gitlab/createmr.sh
+  rules:
+    - if: $UPDATE_NIV == "1"
