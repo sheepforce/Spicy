@@ -154,13 +154,13 @@ nivUpdate:
     - git remote set-url --push origin "${url_host}"
     - git checkout develop
     - git checkout -b updates/niv
-    - git pull origin updates/niv
+    - git pull origin updates/niv || echo "No remote configured yet"
     - niv update
     - git commit -a -m "niv upstream updates" || echo "Nothing to commit"
     - git push -u origin updates/niv
     # Make a new merge request
     - cp /tmp/createmr.sh ./.gitlab/createmr.sh
     - chmod +x ./.gitlab/createmr.sh
-    - HOST=${CI_PROJECT_URL} CI_PROJECT_ID=${CI_PROJECT_ID} CI_COMMIT_REF_NAME="updates/niv" GITLAB_USER_ID="4452487" PRIVATE_TOKEN=${PRIVATE_TOKEN} ./.gitlab/createmr.sh
+    - HOST=${CI_PROJECT_URL} CI_PROJECT_ID=${CI_PROJECT_ID} CI_COMMIT_REF_NAME="updates/niv" GITLAB_USER_ID="9271401" PRIVATE_TOKEN=${PRIVATE_TOKEN} ./.gitlab/createmr.sh
   rules:
     - if: $UPDATE_NIV == "1"
