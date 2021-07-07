@@ -18,7 +18,7 @@ before_script:
   - nix-env -iA nixpkgs.bash nixpkgs.git nixpkgs.niv nixpkgs.openssh;
   - export NIXPKGS_ALLOW_UNFREE=1;
   # QChem configuration for external packages and tuning.
-  - export NIXQC_SRCURL=http://sol
+  - export NIXQC_SRCURL=http://sol/nix-src
   - export NIXQC_AVX=1
   # Authenticate runner to allow pushing to the repo
   - eval $(ssh-agent -s)
