@@ -1,13 +1,4 @@
-*.stack-work
-Temp
-Test.hs
-*.so
-*.so.*
 goldentests/output/*.*
-public
 dist-newstyle
-*.local
-cabal.project.local~
-result
-result-*
-Tests/
+cabal.project.local*
+*result*

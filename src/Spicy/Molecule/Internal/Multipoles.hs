@@ -105,6 +105,7 @@ isSphericalRef ref = case ref of
 -- information. The point charges will be represented in a \(4 \times (p N)\) matrix, where \(p\) is
 -- the number of point charges used per atom to expand the multipole moments, and \(N\) is the
 -- number of dummy atoms in the molecule. See also 'OctahedralModel'.
+{-# SCC molToPointCharges #-}
 molToPointCharges :: (MonadThrow m) => Molecule -> m (Matrix S Double)
 molToPointCharges mol = do
   let -- Obtain some initial information.
@@ -251,6 +252,7 @@ toOctrahedralModel dist mp =
 -- \]
 -- the expression can be implemented with linear algebra:
 -- \[ \mathbf{C}' = \mathbf{P}^T \mathbf{E} \mathbf{C} \]
+{-# SCC sphericalToLocal #-}
 sphericalToLocal ::
   (MonadThrow m) =>
   -- | The matrix \(\mathbf{E}\)
@@ -301,6 +303,7 @@ data BestBondPartners
 
 -- | Groups the atoms into groups of three non-colinear atoms within fragments. These groups are
 -- allowed to overlap.
+{-#SCC makeReferenceGroups #-}
 makeReferenceGroups ::
   (MonadThrow m) =>
   -- | The whole layer for which to form groups.
@@ -329,6 +332,7 @@ makeReferenceGroups mol = do
 ----------------------------------------------------------------------------------------------------
 
 -- | Build the local reference frame atom groups within the atoms and bonds of a fragment.
+{-# SCC groupsInFrag #-}
 groupsInFrag ::
   MonadThrow m =>
   -- | Atoms in the current fragment only.
@@ -385,6 +389,7 @@ groupsInFrag atoms nl bondMat = do
 --   4. If there is no bond partner at all we use the 2 nearest neighbours of this atom.
 --      This requires a neighbourlist.
 --   5. If there is just one or none neighbour in the neighbourlist 'Two' or 'One' will be returned.
+{-# SCC selectCases #-}
 selectCases ::
   MonadThrow m =>
   -- | All atoms in the current fragment.

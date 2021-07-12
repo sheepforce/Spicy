@@ -7,12 +7,6 @@ maintainer:          "phillip.seeber@uni-jena.de"
 copyright:           "2021 Phillip Seeber, Sebastian Seidenath"
 
 build-type: Simple
-#build-type: Custom
-#custom-setup:
-#  dependencies:
-#    - base
-#    - Cabal
-#    - accelerate-llvm-native
 
 extra-source-files:
   - README.md
@@ -20,10 +14,6 @@ extra-source-files:
   - data/Fonts/*
   - goldentests/input/
   - goldentests/goldenfiles/
-
-# Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
@@ -108,7 +98,7 @@ executables:
     ghc-options:
      - -threaded
      - -rtsopts
-     - -with-rtsopts=-N
+     - '"-with-rtsopts=-N -qa"'
 
 tests:
   unittests:
@@ -122,39 +112,3 @@ tests:
     ghc-options:
       - -threaded
       - -rtsopts
-
-benchmarks:
-  bench:
-    main: bench.hs
-    source-dirs: app
-    dependencies:
-      - spicy
-      - criterion >= 1.5.9.0 && < 1.6
-    default-extensions:
-      - BangPatterns
-      - OverloadedStrings
-      - NoImplicitPrelude
-      - FlexibleContexts
-      - ScopedTypeVariables
-      - OverloadedLabels
-      - DataKinds
-      - FlexibleInstances
-      - MultiParamTypeClasses
-      - UndecidableInstances
-      - TypeFamilies
-      - DuplicateRecordFields
-      - ScopedTypeVariables
-      - DataKinds
-      - DeriveAnyClass
-      - DeriveDataTypeable
-      - DeriveGeneric
-      - DeriveTraversable
-      - FlexibleInstances
-      - GeneralizedNewtypeDeriving
-      - TypeApplications
-      - RecordWildCards
-      - NamedFieldPuns
-    ghc-options:
-     - -threaded
-     - -rtsopts
-     - -with-rtsopts=-N

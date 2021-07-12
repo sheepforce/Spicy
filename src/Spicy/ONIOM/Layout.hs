@@ -35,6 +35,7 @@ import Spicy.InputFile
 import Spicy.Molecule
 import System.Path as Path
 
+{-# SCC mcOniomNLayout #-}
 mcOniomNLayout :: (HasInputFile env, HasMolecule env) => RIO env ()
 mcOniomNLayout = do
   -- Obtain environment
