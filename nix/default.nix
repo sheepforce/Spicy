@@ -1,4 +1,4 @@
-{ static ? false, wrap ? !static }:
+{ static ? false, wrap ? !static, profiling ? false }:
 let
   pkgs = import ./pkgs.nix;
   nixpkgs = pkgs.nixpkgs;
@@ -43,5 +43,9 @@ in with buildPkgs; haskell-nix.project {
           --set SPICYRC ${spicyrc}
       '' else "";
     }
-  ];
+  ] ++ nixpkgs.lib.lists.optional profiling {
+         enableExecutableProfiling = true;
+         enableLibraryProfiling = true;
+       }
+  ;
 }

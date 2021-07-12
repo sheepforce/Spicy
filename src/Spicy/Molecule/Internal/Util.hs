@@ -67,7 +67,7 @@ module Spicy.Molecule.Internal.Util
     calcGeomConv,
     multipoleTransfer,
     getCoordsNetVec,
-    reshapeCoords3M
+    reshapeCoords3M,
   )
 where
 
@@ -139,6 +139,7 @@ import System.IO.Unsafe
 --   - Fragments of the same layer are completelty disjoint in their atom indices
 --   - Bonds of a layer are bidirectorial
 --   - The size of '_atom_Coordinates' is strictly 3 for all atoms of this layer
+{-# SCC checkMolecule #-}
 checkMolecule :: MonadThrow m => Molecule -> m Molecule
 checkMolecule mol = do
   unless layerIndCheck . throwM . localExc $
@@ -354,9 +355,9 @@ molFoldl f s mol =
 
 ----------------------------------------------------------------------------------------------------
 
--- |
--- Like a fold through a molecule. This steps through the left-most branch of a molecule completely
--- before going to the more right sites. The folding function has access to the current 'MolID'.
+-- | Like a fold through a molecule. This steps through the left-most branch of a molecule
+-- completely before going to the more right sites. The folding function has access to the current
+-- 'MolID'.
 molFoldlWithMolID :: (a -> MolID -> Molecule -> a) -> a -> Molecule -> a
 molFoldlWithMolID f s mol = go Empty f s mol
   where
@@ -619,6 +620,7 @@ calcIDLensGen (CalcID molID' calcKey') = castOptic @An_AffineTraversal (molIDLen
 -- - '_#subMol': Will be empty.
 -- - '_molecule_EnergyDerivatives': Everything will be 'Nothing'.
 -- - '_molecule_CalcContext': Will be empty.
+{-# SCC newSubLayer #-}
 newSubLayer ::
   MonadThrow m =>
   -- | The maximum index of all atoms in the full system.
@@ -1298,6 +1300,7 @@ getAtomsAsVector mol = Massiv.fromList Par . fmap snd . IntMap.toAscList . (^. #
 -- are within a certain distance. The neighbours are free of self-interaction. NOTE: contains
 -- a morally pure use of unsafePerformIO in order to parallelise the operation.
 {-# INLINE neighbourList #-}
+{-# SCC neighbourList #-}
 neighbourList :: (MonadThrow m) => Double -> Molecule -> m (IntMap IntSet)
 neighbourList maxNeighbourDist mol = do
   -- Gets the atom coordinates in Nx3 matrix representation.
@@ -1516,6 +1519,7 @@ neighbourList maxNeighbourDist mol = do
 --
 -- If the covalent radius of an element is unknown, no bonds for this atom will be defined.
 {-# INLINE guessBondMatrixSimple #-}
+{-# SCC guessBondMatrixSimple #-}
 guessBondMatrixSimple :: (MonadThrow m, MonadIO m) => Maybe Double -> Molecule -> m BondMatrix
 guessBondMatrixSimple covScaling mol = do
   let -- Mapping from the dense 0-based coordinates to the sparse indexing in the Molecule.
@@ -1603,6 +1607,7 @@ guessBondMatrixSimple covScaling mol = do
 -- | Linear scaling version of bond matrix guessing based on covalent radii. Constructs a
 -- neighbourlist first and only checks within the neighbour list for potential bond partners.
 {-# INLINE guessBondMatrix #-}
+{-# SCC guessBondMatrix #-}
 guessBondMatrix :: (MonadThrow m) => Maybe Double -> Molecule -> m BondMatrix
 guessBondMatrix covScaling mol = do
   let -- Original IntMap of the atoms.
@@ -1689,6 +1694,7 @@ guessBondMatrix covScaling mol = do
 -- Sets of atoms, which do not have any covalent connections to atoms outside of their own set are
 -- considered a fragment.
 {-# INLINE fragmentDetectionDetached #-}
+{-# SCC fragmentDetectionDetached #-}
 fragmentDetectionDetached :: MonadThrow m => Molecule -> m (IntMap IntSet)
 fragmentDetectionDetached mol = do
   -- Make sure the molecule is sane, otherwise the fragments will potentially be garbage.
@@ -1798,6 +1804,7 @@ fragmentDetectionDetached mol = do
 --
 -- It will furthermore join all neighbour lists top down, so that also for dummy atoms neighbours
 -- are available.
+{-# SCC getPolarisationCloudFromAbove #-}
 getPolarisationCloudFromAbove ::
   (MonadThrow m) =>
   -- | The whole molecular system with the multipoles at least in the layer above the
@@ -1857,11 +1864,14 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
           -- - The bond matrix will be updated only to contain the filtered atoms.
           realBonds = cleanBondMatByAtomInds (localReal ^. #bonds) realAtomsKeys
           -- - The neighbourlist will be updated to contain only filtered atoms.
-          realNeighbours = fmap (\nlAtDist ->
-            let keysRestricted = IntMap.restrictKeys nlAtDist realAtomsKeys
-                targetsRestricted = IntMap.map (IntSet.intersection realAtomsKeys) keysRestricted
-            in targetsRestricted)
-            $ localReal ^. #neighbourlist
+          realNeighbours =
+            fmap
+              ( \nlAtDist ->
+                  let keysRestricted = IntMap.restrictKeys nlAtDist realAtomsKeys
+                      targetsRestricted = IntMap.map (IntSet.intersection realAtomsKeys) keysRestricted
+                   in targetsRestricted
+              )
+              $ localReal ^. #neighbourlist
           -- - The fragments will be updated only to contain the filtered atoms.
           realFragments =
             IntMap.map
@@ -1914,13 +1924,11 @@ getPolarisationCloudFromAbove mol layerID poleScalings = do
 
     -- Combines given neighbour lists at a distance.
     combineNLAtDist :: NeighbourList -> NeighbourList -> NeighbourList
-    combineNLAtDist nlReal nlModel  = IntMap.unionWith (<>) nlModel nlReal
+    combineNLAtDist nlReal nlModel = IntMap.unionWith (<>) nlModel nlReal
 
     -- Combine all neighbour lists at all distances.
     combineNLs :: Map Double NeighbourList -> Map Double NeighbourList -> Map Double NeighbourList
     combineNLs nlsModel nlsReal = Map.unionWith combineNLAtDist nlsReal nlsModel
-
-
 
 ----------------------------------------------------------------------------------------------------
 
@@ -1979,6 +1987,7 @@ combineDistanceGroups distGroups =
 --
 -- The function takes a maximum distance in bonds to search. The search ends, if either no new atoms
 -- can be found or the search would extend beyond the maximum search distance.
+{-# SCC bondDistanceGroups #-}
 bondDistanceGroups ::
   MonadThrow m =>
   -- | The molecule layer which to use for the search. Sublayers are ignored.
@@ -2151,6 +2160,7 @@ fragmentAtomInfo2AtomsAndFragments info =
 --   - To obtain an element of the Jacobian all contributions are summed up.
 
 -- TODO (phillip|p=5|#Improvement #ExternalDependency) - As soon as Massiv supports sparse arrays, use them! https://github.com/lehins/massiv/issues/50
+{-# SCC getJacobian #-}
 getJacobian ::
   MonadThrow m =>
   -- | Atoms of the real system.
@@ -2509,6 +2519,7 @@ getAllMolIDsHierarchically mol =
 -- but the position vector represents an update to all real top layer atoms.
 -- The coordinates in the vector need to be in the same (strictly
 -- ascending) order as the atoms in the 'IntSet' (always strictly ascending).
+{-# SCC updatePositionsPosVec #-}
 updatePositionsPosVec :: MonadThrow m => Vector S Double -> IntSet -> Molecule -> m Molecule
 updatePositionsPosVec pos sel mol = do
   -- Obtain all top level atoms.

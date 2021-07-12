@@ -41,6 +41,7 @@ logSource = "i-PI client"
 -- | A simple i-PI client whose structure is suitable for optimisations. Energies are expected as
 -- Hartree and gradients as Hartree/Bohr. Conversion from Spicy's Hartree/Angstrom must happen
 -- outside this function, when constructing and deconstructing the 'ForceData' and 'PosData' types.
+{-# SCC ipiClient #-}
 ipiClient ::
   (HasLogFunc env) =>
   IPI ->

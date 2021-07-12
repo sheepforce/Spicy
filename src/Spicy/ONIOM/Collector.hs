@@ -36,6 +36,7 @@ import Spicy.Common
 import Spicy.Molecule hiding (S)
 
 -- | Collector for multicentre ONIOM-N calculations.
+{-# SCC multicentreOniomNCollector #-}
 multicentreOniomNCollector :: HasMolecule env => RIO env ()
 multicentreOniomNCollector = do
   molT <- view moleculeL
@@ -62,6 +63,7 @@ multicentreOniomNCollector = do
 --
 -- The idea is to express the full ONIOM finger tree as a recursion over local multi-centre ONIOM2
 -- setups, where the deepest layer of each branch forms the base case of the recursion.
+{-# SCC collector #-}
 collector :: MonadThrow m => Molecule -> m Molecule
 collector mol = collectorDepth maxDepth mol
   where
@@ -76,6 +78,7 @@ collector mol = collectorDepth maxDepth mol
 
 -- | Energy derivative collector up to a given depth of the ONIOM tree. If the maximum depth or
 -- larger is given, this will collect the full ONIOM tree.
+{-# SCC collectorDepth #-}
 collectorDepth :: MonadThrow m => Int -> Molecule -> m Molecule
 collectorDepth depth molecule
   | depth < 0 = throwM . localExc $ "Cannot collect for negative depth."
@@ -124,6 +127,7 @@ collectorDepth depth molecule
 ----------------------------------------------------------------------------------------------------
 
 -- | Transformer for energy derivatives of local MC-ONIOM2 setups.
+{-# SCC eDerivTransformation #-}
 eDerivTransformation ::
   ( MonadThrow m,
     Traversable t
@@ -197,6 +201,7 @@ getEDeriv oniomKey mol =
 -- atom in the layer will normally get the multipole moment from the calculation output. But if this
 -- layer is later used to provide multipoles for a real system, the link atom moments will first be
 -- distributed to the real atoms.
+{-# SCC multipoleTransformation #-}
 multipoleTransformation :: (Foldable t, Functor t, MonadThrow m) => t Molecule -> Molecule -> m Molecule
 multipoleTransformation models real = do
   -- Get the multipoles of the real system from the high level calculation on this layer.

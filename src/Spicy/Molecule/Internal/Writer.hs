@@ -525,6 +525,7 @@ writeSpicy mol =
 --     charges, which is different than what happens in the calculations. Therefore they are not
 --     directly comparable. Furthermore, an atom might have different charge sets, for each layer it
 --     is found in.
+{-# SCC writeONIOM #-}
 writeONIOM :: (MonadThrow m) => Molecule -> m Text
 writeONIOM mol = do
   --  Check sanity.

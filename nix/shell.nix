@@ -2,7 +2,7 @@ let
   pkgs = import ./pkgs.nix;
   haskellPkgs = pkgs.haskellPkgs;
   nixpkgs = pkgs.nixpkgs;
-  spicyPkgs = import ./default.nix { wrap = false; };
+  spicyPkgs = import ./default.nix { wrap = false; profiling = true; };
 
   # Spicy runtime configuration setup.
   spicyrc = with nixpkgs;writeTextFile {
@@ -29,15 +29,21 @@ in
     # See overlays/tools.nix for more details
     tools = {
       cabal = "3.4.0.0";
-      hlint = "3.3";
       haskell-language-server = "1.2.0.0"; # Hackage versions should be available
-      hpack = "0.34.4";
-      ormolu = "0.1.4.1";
+      hlint = "latest";
+      hpack = "latest";
+      ormolu = "latest";
+      profiteur = "latest";
+      ghc-prof-flamegraph = "latest";
+      hp2pretty = "latest";
+      hs-speedscope = "latest";
+      threadscope = "latest";
     };
 
     # Some you may need to get some other way.
     buildInputs = with nixpkgs; [
       niv
+      flamegraph
       qchem.pysisyphus
       qchem.psi4Unstable
       qchem.gdma
